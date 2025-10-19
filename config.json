@@ -1,0 +1,14 @@
+{
+    "general":{
+        "AI_name": "铃依",
+        "current_model": "local_api"
+    },
+    "api":{
+        "local_api": "http://localhost:11434/api/chat",
+        "local_model": "gemma3:4b"
+    },
+    "ui":{
+        "username": "用户",
+        "text_size": "9"
+    }
+}
