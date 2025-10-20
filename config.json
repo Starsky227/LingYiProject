@@ -1,7 +1,7 @@
 {
     "general":{
         "AI_name": "铃依",
-        "current_model": "local_api"
+        "local_model": true
     },
     "api":{
         "local_api": "http://localhost:11434/api/chat",
