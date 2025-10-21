@@ -9,6 +9,7 @@
     },
     "ui":{
         "username": "用户",
-        "text_size": "9"
+        "text_size": "9",
+        "image_name": "LingYi_img.png"
     }
 }

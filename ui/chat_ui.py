@@ -1,10 +1,11 @@
 import os
 import json
 import threading
+import datetime
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTextEdit,
-                             QHBoxLayout, QSizePolicy)
+                             QHBoxLayout, QSizePolicy, QLabel)
 from PyQt5.QtCore import pyqtSignal, Qt, QEvent
-from PyQt5.QtGui import QTextCursor, QFontMetrics, QKeyEvent, QFont
+from PyQt5.QtGui import QTextCursor, QFontMetrics, QKeyEvent, QFont, QPixmap
 
 # 获取当前文件夹路径
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -13,11 +14,12 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(current_dir, "..", "config.json")
 config_path = os.path.normpath(config_path)
 
-# 读取 JSON 文件
+# 读取 JSON 配置
 with open(config_path, "r", encoding="utf-8") as f:
     configjson = json.load(f)
 USERNAME = configjson["ui"]["username"]
 TEXT_SIZE = int(configjson["ui"]["text_size"])
+IMAGE_NAME = configjson["ui"].get("image_name", "LingYi_img.png")
 
 class ChatUI(QWidget):
     # 定义从工作线程到 GUI 线程传递数据的信号
@@ -28,15 +30,17 @@ class ChatUI(QWidget):
         super().__init__()
         # 窗口标题与初始尺寸
         self.setWindowTitle(f"{ai_name}")
-        self.resize(700, 600)
+        self.resize(900, 600)
 
         self.chat_with_model = chat_with_model
         self.ai_name = ai_name
         self.messages = []
 
-        # 主垂直布局
-        layout = QVBoxLayout(self)
+        # 主水平布局：左侧为聊天区（垂直布局），右侧为图片区
+        main_h_layout = QHBoxLayout(self)
 
+        # 左侧：聊天与输入的垂直布局
+        left_v_layout = QVBoxLayout()
         # 设置字体大小（从 config 读取）
         ui_font = QFont()
         ui_font.setPointSize(TEXT_SIZE)
@@ -45,9 +49,9 @@ class ChatUI(QWidget):
         self.chat_box = QTextEdit(self)
         self.chat_box.setReadOnly(True)
         self.chat_box.setFont(ui_font)
-        layout.addWidget(self.chat_box)
+        left_v_layout.addWidget(self.chat_box)
 
-        # 底部输入区域：使用 QTextEdit 实现自适应高度（默认1行，高度自动增长，最多4行）
+        # 底部输入区域：使用 QTextEdit 实现自适应高度（默认为 1 行，最多 4 行）
         bottom_layout = QHBoxLayout()
 
         self.input_field = QTextEdit(self)
@@ -65,12 +69,45 @@ class ChatUI(QWidget):
         max_h = int(self._single_line_height * 4 + self._v_padding)
         self.input_field.setFixedHeight(min_h)
         self.input_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        # 监听文本变化以调整高度
+
+        # 文本变化时调整高度
         self.input_field.textChanged.connect(self._adjust_input_height)
         # 使用事件过滤器处理 Enter 发送与 Shift/Ctrl+Enter 换行
         self.input_field.installEventFilter(self)
+
         bottom_layout.addWidget(self.input_field)
-        layout.addLayout(bottom_layout)
+        # 不使用发送按钮，改为回车发送
+        left_v_layout.addLayout(bottom_layout)
+
+        # 将左侧布局放入主布局
+        from PyQt5.QtWidgets import QWidget as _QW
+        left_container = _QW()
+        left_container.setLayout(left_v_layout)
+        main_h_layout.addWidget(left_container, stretch=1)
+
+        # 右侧：图片显示区
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignTop | Qt.AlignHCenter)
+        self.image_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        self.image_label.setFixedWidth(220)  # 固定宽度，可调整
+
+        # 尝试加载 img 文件夹下的 IMAGE_NAME
+        image_path = os.path.normpath(os.path.join(current_dir, "..", "ui", "img", IMAGE_NAME))
+        if os.path.exists(image_path):
+            try:
+                pix = QPixmap(image_path)
+                if not pix.isNull():
+                    # 按宽度缩放，保持纵横比
+                    pix = pix.scaled(self.image_label.width(), self.height()-40, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    self.image_label.setPixmap(pix)
+                else:
+                    self.image_label.setText("无法加载图片")
+            except Exception:
+                self.image_label.setText("加载图片出错")
+        else:
+            self.image_label.setText("未找到图片")
+
+        main_h_layout.addWidget(self.image_label, stretch=0)
 
         # 占位符追踪（用于显示“AI 正在输入”）
         self.placeholder_shown = False
@@ -86,7 +123,7 @@ class ChatUI(QWidget):
         self._adjust_input_height()
 
     def _adjust_input_height(self):
-        """根据输入内容自动调整输入框高度（1~4行）"""
+        """根据输入内容自动调整输入框高度（1 到 4 行）"""
         doc = self.input_field.document()
         # 文档的 blockCount() 大致等同于行数
         block_count = max(1, doc.blockCount())
@@ -129,7 +166,21 @@ class ChatUI(QWidget):
         self._append_text(chunk)
 
     def _finish_reply(self):
-        """模型回复完成后的处理（换行分隔）"""
+        """模型回复完成后的处理（换行分隔），并将 AI 回复写入日志文件"""
+        # 查找最近一条 assistant 回复内容并写日志
+        assistant_text = ""
+        for msg in reversed(self.messages):
+            if msg.get("role") == "assistant":
+                assistant_text = msg.get("content", "").strip()
+                if assistant_text:
+                    break
+        if assistant_text:
+            try:
+                self._write_chat_log(self.ai_name, assistant_text)
+            except Exception:
+                pass
+
+        # 在聊天框追加换行分隔
         self._append_text("\n")
 
     def show_placeholder(self):
@@ -155,6 +206,25 @@ class ChatUI(QWidget):
         self.placeholder_shown = False
         self._placeholder_start = None
 
+    # 本地写日志（每次用户或 AI 发言后调用）
+    def _write_chat_log(self, sender: str, text: str):
+        """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
+        try:
+            # 日志目录位于项目根的 logs/chat_logs
+            logs_dir = os.path.normpath(os.path.join(current_dir, "..", "logs", "chat_logs"))
+            os.makedirs(logs_dir, exist_ok=True)
+            filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
+            path = os.path.join(logs_dir, filename)
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+            # 将换行替换为空格以保持单行记录
+            safe_text = text.replace("\r", " ").replace("\n", " ")
+            line = f"{ts} {sender} {safe_text}\n"
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(line)
+        except Exception as e:
+            # 写日志失败不影响主流程，打印到控制台以便排查
+            print(f"[日志错误] 无法写入聊天日志: {e}")
+
     # 用户触发：发送消息
     def send_message(self):
         # 获取输入内容（使用 toPlainText 以兼容 QTextEdit）
@@ -163,6 +233,11 @@ class ChatUI(QWidget):
             return
         # 在聊天框添加用户消息并换行
         self._append_text(f"{USERNAME}: {user_input}\n")
+        # 将用户消息写入日志
+        try:
+            self._write_chat_log(USERNAME, user_input)
+        except Exception:
+            pass
         # 清空输入框并重置高度
         self.input_field.clear()
         self._adjust_input_height()
