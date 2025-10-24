@@ -1,0 +1,170 @@
+import os
+import json
+from pathlib import Path
+from typing import Callable
+
+from pydantic import BaseModel, Field, field_validator
+from rpds import List
+
+# 为方便使用，提供快捷访问函数
+def get_ai_name() -> str:
+    """获取AI名称"""
+    return config.system.ai_name
+
+# 配置变更监听器
+_config_listeners: List[Callable] = []
+
+def add_config_listener(callback: Callable):
+    """添加配置变更监听器"""
+    _config_listeners.append(callback)
+
+def remove_config_listener(callback: Callable):
+    """移除配置变更监听器"""
+    if callback in _config_listeners:
+        _config_listeners.remove(callback)
+
+def notify_config_changed():
+    """通知所有监听器配置已变更"""
+    for listener in _config_listeners:
+        try:
+            listener()
+        except Exception as e:
+            print(f"配置监听器执行失败: {e}")
+
+def setup_environment():
+    """设置环境变量解决兼容性问题"""
+    env_vars = {
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1", 
+        "OPENBLAS_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "TOKENIZERS_PARALLELISM": "false",
+        "PYTORCH_MPS_HIGH_WATERMARK_RATIO": "0.0",
+        "PYTORCH_ENABLE_MPS_FALLBACK": "1"
+    }
+    for key, value in env_vars.items():
+        os.environ.setdefault(key, value)
+
+def load_config():
+    """加载配置"""
+    config_path = str(Path(__file__).parent.parent / "config.json")
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            print("配置加载成功")
+            return LingyiConfig(**config)
+        except Exception as e:
+            print(f"加载配置时出错: {e}")
+            return LingyiConfig()
+    else:
+        print(f"配置文件不存在: {config_path}")
+        return LingyiConfig()
+
+
+class SystemConfig(BaseModel):
+    """系统基础配置"""
+    version: str = Field(default="0.0.1", description="系统版本号")
+    ai_name: str = Field(default="铃依", description="AI助手名称")
+    base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
+    log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "logs", description="日志目录")
+    local_model: bool = Field(default=True, description="是否使用本地模型")
+    debug: bool = Field(default=False, description="是否启用调试模式")
+    log_level: str = Field(default="INFO", description="日志级别")
+
+    @field_validator('log_level')
+    @classmethod
+    def validate_log_level(cls, v):
+        valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        if v.upper() not in valid_levels:
+            print(f'日志级别 {v} 无效，使用默认值 INFO')
+            return 'INFO'
+        return v.upper()
+    
+class APIConfig(BaseModel):
+    """API相关配置"""
+    local_api: str = Field(default="http://localhost:11434/api/chat", description="本地API地址")
+    local_model: str = Field(default="gemma3", description="本地模型名称")
+
+class APIServerConfig(BaseModel):
+    """API服务器相关配置"""
+    enabled: bool = Field(default=True, description="是否启用API服务器")
+    host: str = Field(default="127.0.0.1", description="API服务器主机")
+    port: int = Field(default=8000, description="API服务器端口")
+    auto_start: bool = Field(default=True, description="是否自动启动API服务器")
+
+class AgentServerConfig(BaseModel):
+    """Agent服务器相关配置"""
+    enabled: bool = Field(default=True, description="是否启用Agent服务器")
+    host: str = Field(default="127.0.0.1", description="Agent服务器主机")
+    port: int = Field(default=8001, description="Agent服务器端口")
+    auto_start: bool = Field(default=True, description="是否自动启动Agent服务器")
+
+class MCPServerConfig(BaseModel):
+    """MCP服务器相关配置"""
+    enabled: bool = Field(default=True, description="是否启用MCP服务器")
+    host: str = Field(default="127.0.0.1", description="MCP服务器主机")
+    port: int = Field(default=8003, description="MCP服务器端口")
+    auto_start: bool = Field(default=True, description="是否自动启动MCP服务器")
+
+class UIConfig(BaseModel):
+    """UI相关配置"""
+    username: str = Field(default="用户", description="默认用户名")
+    text_size: int = Field(default=10, description="UI文本大小")
+    image_name: str = Field(default="LingYi_img.png", description="UI使用的图片名称")
+
+class Crawl4AIConfig(BaseModel):
+    """Crawl4AI相关配置"""
+    headless: bool = Field(default=True, description="是否启用无头模式")
+    timeout: int = Field(default=30000, description="超时时间（毫秒）")
+    user_agent: str = Field(default="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", description="用户代理")
+    viewport_width: int = Field(default=1920, description="视口宽度")
+    viewport_height: int = Field(default=1080, description="视口高度")
+
+
+class LingyiConfig(BaseModel):
+    """取自naga的主配置加载"""
+    system: SystemConfig = Field(default_factory=SystemConfig)
+    api: APIConfig = Field(default_factory=APIConfig)
+    api_server: APIServerConfig = Field(default_factory=APIServerConfig)
+    agent_server: AgentServerConfig = Field(default_factory=AgentServerConfig)
+    mcp_server: MCPServerConfig = Field(default_factory=MCPServerConfig)
+    ui: UIConfig = Field(default_factory=UIConfig)
+    crawl4ai: Crawl4AIConfig = Field(default_factory=Crawl4AIConfig)
+
+    def __init__(self, **kwargs):
+        setup_environment()
+        super().__init__(**kwargs)
+        self.system.log_dir.mkdir(parents=True, exist_ok=True)  # 确保递归创建日志目录
+
+config = load_config()
+
+def reload_config() -> LingyiConfig:
+    """重新加载配置"""
+    global config
+    config = load_config()
+    notify_config_changed()
+    return config
+
+def hot_reload_config() -> LingyiConfig:
+    """热更新配置 - 重新加载配置并通知所有模块"""
+    global config
+    old_config = config
+    config = load_config()
+    notify_config_changed()
+    print(f"配置已热更新: {old_config.system.version} -> {config.system.version}")
+    return config
+
+def get_config() -> LingyiConfig:
+    """获取当前配置"""
+    return config
+
+# 初始化时打印配置信息
+if config.system.debug:
+    print(f"Lingyi {config.system.version} 配置已加载")
+    print(f"使用模型: {'本地模型 ' + config.api.local_model if config.system.local_model else '远程模型'}")
+    print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
+    print(f"Agent服务器: {'启用' if config.agent_server.enabled else '禁用'} ({config.agent_server.host}:{config.agent_server.port})")
+    print(f"MCP服务器: {'启用' if config.mcp_server.enabled else '禁用'} ({config.mcp_server.host}:{config.mcp_server.port})")

@@ -2,6 +2,7 @@ import os
 import json
 import requests
 from typing import Dict, List, Optional, Tuple
+from mcp_server.mcp_manager import mcp_manager
 
 # 获取项目根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,10 +21,17 @@ if os.path.exists(prompt_path):
     with open(prompt_path, "r", encoding="utf-8") as f:
         INTENT_PROMPT = f.read().strip()
 
+# 读取对话分析提示词
+CONVERSATION_PROMPT = ""
+prompt_path = os.path.join(BASE_DIR, "system", "prompts", "conversation_analyzer_prompt.txt")
+if os.path.exists(prompt_path):
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        CONVERSATION_PROMPT = f.read().strip()
+
 def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
     """
-    使用 LLM 分析最后一条用户消息的意图
-    返回: (意图标签, 解释)
+    分析最后一条用户消息的意图，使用对话分析提示词
+    返回: (意图, 解释)
     """
     # 获取最后一条用户消息
     last_user_msg = None
@@ -36,9 +44,16 @@ def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
         return "unknown", "无用户消息"
 
     try:
+        # 准备提示词（替换对话内容和可用工具）
+        prompt = CONVERSATION_PROMPT.replace(
+            "{conversation}", last_user_msg
+        ).replace(
+            "{available_tools}", mcp_manager.get_available_tools_description()
+        )
+
         # 构建分析请求
         analysis_messages = [
-            {"role": "system", "content": INTENT_PROMPT},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": last_user_msg}
         ]
 
