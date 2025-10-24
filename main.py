@@ -1,15 +1,21 @@
+import logging
 import sys
 import json
 import os
 from PyQt5.QtWidgets import QApplication
 from ui.chat_ui import ChatUI
 
+# 配置日志
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("memory")
+logger.setLevel(logging.INFO)
+
 # 从 config 调取配置（保留在 main 用于 UI 显示等）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 with open(os.path.join(BASE_DIR, "config.json"), "r", encoding="utf-8") as f:
     configjson = json.load(f)
 
-AI_NAME = configjson["general"]["AI_name"]
+AI_NAME = configjson["general"]["ai_name"]
 LOCAL_MODEL = configjson["api"]["local_model"]
 USERNAME = configjson["ui"]["username"]
 print("AI name:", AI_NAME)

@@ -1,0 +1,67 @@
+{
+  "name": "Crawl4AI网页解析",
+  "displayName": "Crawl4AI网页解析",
+  "version": "1.0.0",
+  "author": "pyl(1708213363@qq.com)",
+  "agentType": "mcp",
+  "description": "使用Crawl4AI解析网页内容，返回结构化的Markdown格式给AI",
+  "entryPoint": {
+    "module": "mcpserver.agent_crawl4ai.crawl4ai_agent",
+    "class": "Crawl4aiAgent",
+    "function": "create_crawl4ai_agent"
+  },
+  "factory": {
+    "validate_config": "validate_agent_config",
+    "get_dependencies": "get_agent_dependencies"
+  },
+  "communication": {
+    "protocol": "stdio",
+    "timeout": 30000
+  },
+  "capabilities": {
+    "invocationCommands": [
+      {
+        "command": "网页解析",
+        "description": "解析指定网页，返回Markdown格式内容；参数：url（网页地址，必需），css_selector（可选CSS选择器），wait_for（可选等待元素），max_chars（获取前x个字符，默认4096）",
+        "example": "{\"tool_name\":\"网页解析\",\"url\":\"https://example.com\",\"max_chars\":4096}"
+      }
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "tool_name": {"type": "string", "description": "工具名称：网页解析"},
+      "url": {"type": "string", "description": "要解析的网页URL"},
+      "css_selector": {"type": "string", "description": "可选CSS选择器，用于提取特定内容"},
+      "wait_for": {"type": "string", "description": "可选等待的元素选择器"},
+      "javascript_enabled": {"type": "boolean", "description": "是否启用JavaScript执行，默认true"},
+      "screenshot": {"type": "boolean", "description": "是否生成截图，默认false"},
+      "max_chars": {"type": "integer", "description": "获取网页内容的前x个字符，默认4096"}
+    },
+    "required": ["tool_name", "url"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "description": "操作状态"},
+      "message": {"type": "string", "description": "操作结果描述"},
+      "data": {"type": "string", "description": "解析后的Markdown内容"},
+      "metadata": {"type": "object", "description": "页面元数据"},
+      "error": {"type": "string", "description": "错误信息"}
+    }
+  },
+  "configSchema": {
+    "headless": "boolean",
+    "timeout": "number",
+    "user_agent": "string",
+    "viewport_width": "number",
+    "viewport_height": "number",
+    "max_chars": "number"
+  },
+  "runtime": {
+    "instance": null,
+    "is_initialized": false,
+    "last_used": null,
+    "usage_count": 0
+  }
+}

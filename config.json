@@ -1,15 +1,43 @@
 {
     "general":{
-        "AI_name": "铃依",
-        "local_model": true
+        "version": "0.0.1",
+        "ai_name": "铃依",
+        "local_model": true,
+        "debug": true,
+        "log_level": "INFO"
     },
     "api":{
         "local_api": "http://localhost:11434/api/chat",
         "local_model": "gemma3:4b"
     },
+    "api_server": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8000,
+        "auto_start": true
+    },
+    "agentserver": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8001,
+        "auto_start": true
+    },
+    "mcpserver": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8003,
+        "auto_start": true
+    },
     "ui":{
-        "username": "用户",
-        "text_size": "9",
+        "username": "星空",
+        "text_size": "10",
         "image_name": "LingYi_img.png"
+    },
+    "crawl4ai": {
+        "headless": true,
+        "timeout": 30000,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "viewport_width": 1280,
+        "viewport_height": 720
     }
 }
