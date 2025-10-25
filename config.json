@@ -2,13 +2,13 @@
     "general":{
         "version": "0.0.1",
         "ai_name": "铃依",
-        "local_model": true,
         "debug": true,
         "log_level": "INFO"
     },
     "api":{
-        "local_api": "http://localhost:11434/api/chat",
-        "local_model": "gemma3:4b"
+        "api_key": "ollama",
+        "base_url": "http://localhost:11434/v1",
+        "model": "gemma3:4b"
     },
     "api_server": {
         "enabled": true,

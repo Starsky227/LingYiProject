@@ -1,10 +1,9 @@
 import os
 import json
 from pathlib import Path
-from typing import Callable
+from typing import Callable, List
 
 from pydantic import BaseModel, Field, field_validator
-from rpds import List
 
 # 为方便使用，提供快捷访问函数
 def get_ai_name() -> str:
@@ -70,8 +69,7 @@ class SystemConfig(BaseModel):
     ai_name: str = Field(default="铃依", description="AI助手名称")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
     log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "logs", description="日志目录")
-    local_model: bool = Field(default=True, description="是否使用本地模型")
-    debug: bool = Field(default=False, description="是否启用调试模式")
+    debug: bool = Field(default=True, description="是否启用调试模式")
     log_level: str = Field(default="INFO", description="日志级别")
 
     @field_validator('log_level')
@@ -85,8 +83,9 @@ class SystemConfig(BaseModel):
     
 class APIConfig(BaseModel):
     """API相关配置"""
-    local_api: str = Field(default="http://localhost:11434/api/chat", description="本地API地址")
-    local_model: str = Field(default="gemma3", description="本地模型名称")
+    api_key: str = Field(default="ollama", description="API密钥")
+    base_url: str = Field(default="http://localhost:11434/v1", description="API基础URL")
+    model: str = Field(default="gemma3:4b", description="模型名称")
 
 class APIServerConfig(BaseModel):
     """API服务器相关配置"""
@@ -164,7 +163,13 @@ def get_config() -> LingyiConfig:
 # 初始化时打印配置信息
 if config.system.debug:
     print(f"Lingyi {config.system.version} 配置已加载")
-    print(f"使用模型: {'本地模型 ' + config.api.local_model if config.system.local_model else '远程模型'}")
     print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
     print(f"Agent服务器: {'启用' if config.agent_server.enabled else '禁用'} ({config.agent_server.host}:{config.agent_server.port})")
     print(f"MCP服务器: {'启用' if config.mcp_server.enabled else '禁用'} ({config.mcp_server.host}:{config.mcp_server.port})")
+
+
+# 向后兼容的AI_NAME常量
+AI_NAME = config.system.ai_name
+
+import logging
+logger = logging.getLogger(__name__)

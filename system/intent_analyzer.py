@@ -2,7 +2,7 @@ import os
 import json
 import requests
 from typing import Dict, List, Optional, Tuple
-from mcp_server.mcp_manager import mcp_manager
+from mcpserver.mcp_manager import mcp_manager
 
 # 获取项目根目录
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
