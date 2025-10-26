@@ -1,5 +1,6 @@
 crawl4ai>=0.7.4
 fastapi>=0.116.2
+langchain_openai>=1.0.0
 mcp>=1.8.0
 openai>=2.6.1
 PyQt5>=5.15.9

@@ -5,10 +5,6 @@ from typing import Callable, List
 
 from pydantic import BaseModel, Field, field_validator
 
-# 为方便使用，提供快捷访问函数
-def get_ai_name() -> str:
-    """获取AI名称"""
-    return config.system.ai_name
 
 # 配置变更监听器
 _config_listeners: List[Callable] = []
@@ -166,10 +162,6 @@ if config.system.debug:
     print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
     print(f"Agent服务器: {'启用' if config.agent_server.enabled else '禁用'} ({config.agent_server.host}:{config.agent_server.port})")
     print(f"MCP服务器: {'启用' if config.mcp_server.enabled else '禁用'} ({config.mcp_server.host}:{config.mcp_server.port})")
-
-
-# 向后兼容的AI_NAME常量
-AI_NAME = config.system.ai_name
 
 import logging
 logger = logging.getLogger(__name__)
