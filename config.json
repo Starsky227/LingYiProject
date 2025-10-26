@@ -1,5 +1,5 @@
 {
-    "general":{
+    "system":{
         "version": "0.0.1",
         "ai_name": "铃依",
         "debug": true,
