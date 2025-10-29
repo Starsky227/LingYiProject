@@ -28,6 +28,19 @@
         "port": 8003,
         "auto_start": true
     },
+    "grag": {
+        "enabled": true,
+        "auto_extract": true,
+        "context_length": 5,
+        "similarity_threshold": 0.6,
+        "neo4j_uri": "neo4j://127.0.0.1:7687",
+        "neo4j_user": "neo4j",
+        "neo4j_password": "Lingyi328@bot",
+        "neo4j_database": "neo4j",
+        "extraction_timeout": 12,
+        "extraction_retries": 2,
+        "base_timeout": 15
+    },
     "ui":{
         "username": "星空",
         "text_size": "10",

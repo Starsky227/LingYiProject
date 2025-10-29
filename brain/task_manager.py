@@ -54,6 +54,8 @@ class Task:
     completed_at: Optional[float] = None
     result: Any = None
     error: Optional[str] = None
+    retry_count: int = 0
+    max_retries: int = 3
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
@@ -65,7 +67,9 @@ class Task:
             "created_at": datetime.fromtimestamp(self.created_at).isoformat(),
             "started_at": datetime.fromtimestamp(self.started_at).isoformat() if self.started_at else None,
             "completed_at": datetime.fromtimestamp(self.completed_at).isoformat() if self.completed_at else None,
-            "error": self.error
+            "error": self.error,
+            "retry_count": self.retry_count,
+            "max_retries": self.max_retries,
         }
 
 class TaskManager:
@@ -180,10 +184,23 @@ class TaskManager:
             logger.info(f"任务 {task.name} 完成，耗时: {elapsed:.2f}秒")
             
         except Exception as e:
-            task.status = TaskStatus.FAILED
+            # 记录错误并处理重试
             task.error = str(e)
-            task.completed_at = time.time()
-            logger.error(f"任务 {task.name} 执行失败: {e}")
+            task.retry_count += 1
+
+            if task.retry_count <= task.max_retries:
+                # 按要求输出重试提示
+                logger.warning(f"任务 {task.name} 失败……正在重试第{task.retry_count}次。")
+                # 重置状态并重新入队
+                task.status = TaskStatus.PENDING
+                task.started_at = None
+                task.completed_at = None
+                await self._task_queue.put((-task.priority.value, task.task_id))
+            else:
+                # 达到最大重试次数，标记为失败
+                task.status = TaskStatus.FAILED
+                task.completed_at = time.time()
+                logger.error(f"任务 {task.name} 最终失败，已重试 {task.retry_count - 1} 次，放弃。")
     
     def submit_task(
         self,
