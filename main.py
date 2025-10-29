@@ -7,7 +7,7 @@ import os
 import threading
 from PyQt5.QtWidgets import QApplication
 import uvicorn
-from brain import task_manager
+from brain.task_manager import task_manager
 from system import config
 from ui.chat_ui import ChatUI
 # 从独立服务模块导入模型交互函数与预加载函数
@@ -61,6 +61,9 @@ class ServiceManager:
         """初始化后台服务 - 优化启动流程"""
         logger.info("正在启动后台服务...")
         try:
+            # 启动任务管理器
+            await task_manager.start()
+            
             # 标记服务就绪
             self._services_ready = True
             logger.info(f"任务管理器状态: running={task_manager.is_running}")
