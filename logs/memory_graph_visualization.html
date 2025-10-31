@@ -1,0 +1,528 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>记忆图谱可视化</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .container {
+            display: flex;
+            height: calc(100vh - 80px);
+        }
+        
+        .sidebar {
+            width: 300px;
+            background: white;
+            padding: 20px;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            overflow-y: auto;
+        }
+        
+        .main-content {
+            flex: 1;
+            position: relative;
+        }
+        
+        #graph-container {
+            width: 100%;
+            height: 100%;
+            background: white;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        .node-details {
+            background: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid #e0e0e0;
+            display: none;
+        }
+        
+        .detail-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 5px;
+        }
+        
+        .property-item {
+            margin-bottom: 8px;
+            font-size: 13px;
+        }
+        
+        .property-key {
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .property-value {
+            color: #777;
+            margin-left: 10px;
+        }
+        
+        .node {
+            cursor: pointer;
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        
+        .node:hover {
+            stroke: #333;
+            stroke-width: 3px;
+        }
+        
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+            stroke-width: 1.5px;
+        }
+        
+        .link:hover {
+            stroke: #333;
+            stroke-opacity: 0.8;
+            stroke-width: 2px;
+        }
+        
+        .node-label {
+            font-size: 11px;
+            text-anchor: middle;
+            pointer-events: none;
+            fill: #333;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+        }
+        
+        .link-label {
+            font-size: 10px;
+            text-anchor: middle;
+            pointer-events: none;
+            fill: #666;
+            font-style: italic;
+            background: rgba(255,255,255,0.8);
+        }
+        
+        .controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        
+        .control-button {
+            margin: 2px;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .zoom-controls {
+            background: #667eea;
+            color: white;
+        }
+        
+        .filter-controls {
+            background: #28a745;
+            color: white;
+        }
+        
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            font-size: 12px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🧠 记忆图谱可视化</h1>
+        <p>交互式知识图谱展示 - 点击节点查看详情</p>
+    </div>
+    
+    <div class="container">
+        <div class="sidebar">
+            <div class="stat-card">
+                <div class="stat-title">📊 图谱统计</div>
+                <div class="stat-item">
+                    <span>节点总数:</span>
+                    <span id="total-nodes">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>关系总数:</span>
+                    <span id="total-links">-</span>
+                </div>
+                <div class="stat-item">
+                    <span>更新时间:</span>
+                    <span id="updated-time">-</span>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-title">🏷️ 节点类型</div>
+                <div id="node-types"></div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-title">🔗 关系类型</div>
+                <div id="relation-types"></div>
+            </div>
+            
+            <div class="node-details" id="node-details">
+                <div class="detail-title">节点详情</div>
+                <div id="node-properties"></div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <svg id="graph-container"></svg>
+            
+            <div class="controls">
+                <button class="control-button zoom-controls" onclick="zoomIn()">放大</button>
+                <button class="control-button zoom-controls" onclick="zoomOut()">缩小</button>
+                <button class="control-button zoom-controls" onclick="resetZoom()">重置</button>
+                <button class="control-button filter-controls" onclick="toggleNodeLabels()">节点标签</button>
+                <button class="control-button filter-controls" onclick="toggleLinkLabels()">关系标签</button>
+            </div>
+            
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #4CAF50;"></div>
+                    <span>实体节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #FF9800;"></div>
+                    <span>时间节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #2196F3;"></div>
+                    <span>地点节点</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #9E9E9E;"></div>
+                    <span>其他节点</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 图谱数据占位符
+        const graphData = {"nodes": [{"id": 0, "neo4j_id": "0", "label": "C", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "C", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 1, "neo4j_id": "1", "label": "鸡肉嫩而不腻", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "鸡肉嫩而不腻", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 2, "neo4j_id": "2", "label": "A", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "A", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 3, "neo4j_id": "3", "label": "下单", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "下单", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 4, "neo4j_id": "4", "label": "中午的食物", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "中午的食物", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 5, "neo4j_id": "5", "label": "中午", "group": "Time", "labels": ["Time"], "properties": {"source": "用户", "name": "中午", "last_updated": "2025-10-31T16:30"}, "size": 12, "color": "#FF9800"}, {"id": 6, "neo4j_id": "6", "label": "B", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "B", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 7, "neo4j_id": "7", "label": "主食类食物", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "主食类食物", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 8, "neo4j_id": "8", "label": "今天", "group": "Time", "labels": ["Time"], "properties": {"source": "用户", "name": "今天", "last_updated": "2025-10-31T16:29"}, "size": 12, "color": "#FF9800"}, {"id": 9, "neo4j_id": "9", "label": "带汤带肉的", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "带汤带肉的", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 10, "neo4j_id": "10", "label": "凤添吉", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "凤添吉", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 11, "neo4j_id": "11", "label": "鸡肉嫩", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "鸡肉嫩", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 12, "neo4j_id": "12", "label": "酒香", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "酒香", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 13, "neo4j_id": "13", "label": "吃", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "吃", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 14, "neo4j_id": "14", "label": "主食类", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "主食类", "last_updated": "2025-10-31T16:29", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 15, "neo4j_id": "15", "label": "醉鸡煲", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "醉鸡煲", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 16, "neo4j_id": "16", "label": "中午吃啥", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "中午吃啥", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 17, "neo4j_id": "17", "label": "面", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "面", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 18, "neo4j_id": "18", "label": "昨天", "group": "Time", "labels": ["Time"], "properties": {"source": "用户", "name": "昨天", "last_updated": "2025-10-31T16:30"}, "size": 12, "color": "#FF9800"}, {"id": 19, "neo4j_id": "19", "label": "醉鸡煲会不会很腥", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "醉鸡煲会不会很腥", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 20, "neo4j_id": "20", "label": "醉鸡煲不会很腥", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "醉鸡煲不会很腥", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 21, "neo4j_id": "21", "label": "凤添吉处理得很干净", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "凤添吉处理得很干净", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 22, "neo4j_id": "22", "label": "凤添吉加了药材去味", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "凤添吉加了药材去味", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 23, "neo4j_id": "23", "label": "现在天有点凉", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "现在天有点凉", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 24, "neo4j_id": "24", "label": "现在", "group": "Time", "labels": ["Time"], "properties": {"source": "用户", "name": "现在", "last_updated": "2025-10-31T16:30"}, "size": 12, "color": "#FF9800"}, {"id": 25, "neo4j_id": "25", "label": "喝口热汤多舒服", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "喝口热汤多舒服", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 26, "neo4j_id": "26", "label": "分量够不够我们三个人吃", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "分量够不够我们三个人吃", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 27, "neo4j_id": "27", "label": "不腻", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "不腻", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 28, "neo4j_id": "28", "label": "干净", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "干净", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 29, "neo4j_id": "29", "label": "药材", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "药材", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 30, "neo4j_id": "30", "label": "天", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "天", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 31, "neo4j_id": "31", "label": "有点凉", "group": "Time", "labels": ["Time"], "properties": {"source": "用户", "name": "有点凉", "last_updated": "2025-10-31T16:30"}, "size": 12, "color": "#FF9800"}, {"id": 32, "neo4j_id": "32", "label": "喝口热汤", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "喝口热汤", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 33, "neo4j_id": "33", "label": "踩雷", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "踩雷", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 34, "neo4j_id": "34", "label": "三人套餐", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "三人套餐", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 35, "neo4j_id": "35", "label": "配菜", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "配菜", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 36, "neo4j_id": "36", "label": "性价比", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "性价比", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 37, "neo4j_id": "37", "label": "分量", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "分量", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 38, "neo4j_id": "38", "label": "鸡肉", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "鸡肉", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}, {"id": 39, "neo4j_id": "39", "label": "定凤添吉的", "group": "Entity", "labels": ["Entity"], "properties": {"source": "用户", "name": "定凤添吉的", "last_updated": "2025-10-31T16:30", "confidence": 0.5}, "size": 15, "color": "#4CAF50"}], "links": [{"source": 0, "target": 1, "type": "评价", "properties": {"source": "用户", "predicate": "评价", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "triple"}, "neo4j_id": "1152921504606846976"}, {"source": 0, "target": 10, "type": "推荐", "properties": {"source": "用户", "action": "推荐", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917535624710848522"}, {"source": 0, "target": 15, "type": "推荐", "properties": {"source": "用户", "action": "推荐", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917535624710848527"}, {"source": 0, "target": 36, "type": "说", "properties": {"source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917541122268987428"}, {"source": 0, "target": 34, "type": "提供", "properties": {"source": "用户", "action": "提供", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152941295816146944"}, {"source": 0, "target": 36, "type": "提供", "properties": {"source": "用户", "action": "提供", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1155193095629832192"}, {"source": 2, "target": 3, "type": "决定", "properties": {"source": "用户", "predicate": "决定", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "triple"}, "neo4j_id": "1152922604118474754"}, {"source": 2, "target": 4, "type": "纠结", "properties": {"time": "中午", "source": "用户", "action": "纠结", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917531226664337412"}, {"source": 2, "target": 13, "type": "纠结", "properties": {"time": "中午", "source": "用户", "action": "纠结", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917531226664337421"}, {"source": 2, "target": 16, "type": "纠结", "properties": {"time": "中午", "source": "用户", "action": "纠结", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917531226664337424"}, {"source": 2, "target": 5, "type": "HAPPENED_AT", "properties": {"source": "用户", "action_context": "纠结", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30"}, "neo4j_id": "6917532326175965189"}, {"source": 2, "target": 15, "type": "担心", "properties": {"source": "用户", "action": "担心", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152929201188241410"}, {"source": 2, "target": 19, "type": "担心", "properties": {"source": "用户", "action": "担心", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917536724222476307"}, {"source": 2, "target": 26, "type": "询问", "properties": {"source": "用户", "action": "询问", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917540022757359642"}, {"source": 2, "target": 15, "type": "说", "properties": {"source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152933599234752514"}, {"source": 2, "target": 33, "type": "说", "properties": {"source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917541122268987425"}, {"source": 2, "target": 37, "type": "问", "properties": {"source": "用户", "action": "问", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917546619827126309"}, {"source": 6, "target": 8, "type": "HAPPENED_AT", "properties": {"source": "用户", "action_context": "不想吃", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29"}, "neo4j_id": "6917532326175965192"}, {"source": 6, "target": 18, "type": "HAPPENED_AT", "properties": {"source": "用户", "action_context": "吃", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30"}, "neo4j_id": "6917532326175965202"}, {"source": 6, "target": 24, "type": "HAPPENED_AT", "properties": {"source": "用户", "action_context": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30"}, "neo4j_id": "6917532326175965208"}, {"source": 6, "target": 31, "type": "HAPPENED_AT", "properties": {"source": "用户", "action_context": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30"}, "neo4j_id": "6917532326175965215"}, {"source": 6, "target": 7, "type": "不想吃", "properties": {"time": "今天", "source": "用户", "action": "不想吃", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152925902653358086"}, {"source": 6, "target": 14, "type": "不想吃", "properties": {"time": "今天", "source": "用户", "action": "不想吃", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917533425687592974"}, {"source": 6, "target": 9, "type": "想吃", "properties": {"source": "用户", "action": "想吃", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917534525199220745"}, {"source": 6, "target": 15, "type": "认为", "properties": {"source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152930300699869190"}, {"source": 6, "target": 20, "type": "认为", "properties": {"source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917537823734104084"}, {"source": 6, "target": 21, "type": "认为", "properties": {"source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917537823734104085"}, {"source": 6, "target": 22, "type": "认为", "properties": {"source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917537823734104086"}, {"source": 6, "target": 23, "type": "认为", "properties": {"time": "现在", "source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917537823734104087"}, {"source": 6, "target": 25, "type": "认为", "properties": {"time": "现在", "source": "用户", "action": "认为", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917537823734104089"}, {"source": 6, "target": 17, "type": "吃", "properties": {"time": "昨天", "source": "用户", "action": "吃", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917538923245731857"}, {"source": 6, "target": 10, "type": "说", "properties": {"source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152933599234752518"}, {"source": 6, "target": 30, "type": "说", "properties": {"time": "有点凉", "source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917541122268987422"}, {"source": 6, "target": 32, "type": "说", "properties": {"source": "用户", "action": "说", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917541122268987424"}, {"source": 6, "target": 39, "type": "建议", "properties": {"source": "用户", "action": "建议", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917547719338754087"}, {"source": 6, "target": 10, "type": "描述", "properties": {"source": "用户", "action": "描述", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152942395327774726"}, {"source": 6, "target": 29, "type": "描述", "properties": {"source": "用户", "action": "描述", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1155194195141459974"}, {"source": 10, "target": 11, "type": "评价", "properties": {"source": "用户", "action": "评价", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917529027641081867"}, {"source": 10, "target": 12, "type": "评价", "properties": {"source": "用户", "action": "评价", "created_at": "2025-10-31T16:29", "last_updated": "2025-10-31T16:29", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917529027641081868"}, {"source": 10, "target": 28, "type": "处理", "properties": {"source": "用户", "action": "处理", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917542221780615196"}, {"source": 10, "target": 38, "type": "处理", "properties": {"source": "用户", "action": "处理", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917542221780615206"}, {"source": 10, "target": 29, "type": "加", "properties": {"source": "用户", "action": "加", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917543321292242973"}, {"source": 10, "target": 34, "type": "有", "properties": {"source": "用户", "action": "有", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917544420803870754"}, {"source": 10, "target": 35, "type": "送", "properties": {"source": "用户", "action": "送", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917545520315498531"}, {"source": 15, "target": 11, "type": "评价", "properties": {"source": "用户", "action": "评价", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "1152921504606846991"}, {"source": 15, "target": 27, "type": "评价", "properties": {"source": "用户", "action": "评价", "created_at": "2025-10-31T16:30", "last_updated": "2025-10-31T16:30", "confidence": 0.5, "type": "quintuple"}, "neo4j_id": "6917529027641081883"}], "stats": {"total_nodes": 40, "total_links": 46, "node_types": {"Entity": 35, "Time": 5}, "relation_types": {"评价": 5, "推荐": 2, "说": 6, "提供": 2, "决定": 1, "纠结": 3, "HAPPENED_AT": 5, "担心": 2, "询问": 1, "问": 1, "不想吃": 2, "想吃": 1, "认为": 6, "吃": 1, "建议": 1, "描述": 2, "处理": 2, "加": 1, "有": 1, "送": 1}, "updated_at": "2025-10-31T16:41:38.918027"}, "metadata": {"node_count": 40, "relationship_count": 46, "node_labels": {"Entity": 35, "Time": 5}, "relationship_types": {"说": 6, "认为": 6, "评价": 5, "HAPPENED_AT": 5, "纠结": 3, "推荐": 2, "提供": 2, "担心": 2, "不想吃": 2, "描述": 2, "处理": 2, "决定": 1, "询问": 1, "问": 1, "想吃": 1, "吃": 1, "建议": 1, "加": 1, "有": 1, "送": 1}, "source": "neo4j", "neo4j_uri": "neo4j://127.0.0.1:7687", "neo4j_database": "neo4j"}};
+        
+        // 设置画布
+        const svg = d3.select("#graph-container");
+        const width = svg.node().getBoundingClientRect().width;
+        const height = svg.node().getBoundingClientRect().height;
+        
+        svg.attr("width", width).attr("height", height);
+        
+        // 创建缩放行为
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3])
+            .on("zoom", function(event) {
+                container.attr("transform", event.transform);
+            });
+        
+        svg.call(zoom);
+        
+        // 创建容器组
+        const container = svg.append("g");
+        
+        // 创建力导向图
+        const simulation = d3.forceSimulation(graphData.nodes)
+            .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(100))
+            .force("charge", d3.forceManyBody().strength(-300))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(d => d.size + 5));
+        
+        // 创建箭头标记
+        container.append("defs").selectAll("marker")
+            .data(["end"])
+            .enter().append("marker")
+            .attr("id", "arrow")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 20)
+            .attr("refY", 0)
+            .attr("markerWidth", 6)
+            .attr("markerHeight", 6)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", "#999");
+        
+        // 创建链接
+        const link = container.append("g")
+            .selectAll("line")
+            .data(graphData.links)
+            .enter().append("line")
+            .attr("class", "link")
+            .attr("marker-end", "url(#arrow)");
+        
+        // 创建节点
+        const node = container.append("g")
+            .selectAll("circle")
+            .data(graphData.nodes)
+            .enter().append("circle")
+            .attr("class", "node")
+            .attr("r", d => d.size)
+            .attr("fill", d => d.color)
+            .on("click", showNodeDetails)
+            .call(d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended));
+        
+        // 创建节点标签（显示在节点上）
+        const nodeLabels = container.append("g")
+            .selectAll("text")
+            .data(graphData.nodes)
+            .enter().append("text")
+            .attr("class", "node-label")
+            .text(d => d.label.length > 8 ? d.label.substring(0, 8) + "..." : d.label)
+            .style("display", "block");
+        
+        // 创建关系标签背景
+        const linkLabelBgs = container.append("g")
+            .selectAll("rect")
+            .data(graphData.links)
+            .enter().append("rect")
+            .attr("class", "link-label-bg")
+            .attr("fill", "rgba(255,255,255,0.8)")
+            .attr("stroke", "rgba(200,200,200,0.5)")
+            .attr("stroke-width", 0.5)
+            .attr("rx", 3)
+            .attr("ry", 3);
+        
+        // 创建关系标签（显示在连接线上）
+        const linkLabels = container.append("g")
+            .selectAll("text")
+            .data(graphData.links)
+            .enter().append("text")
+            .attr("class", "link-label")
+            .text(d => {
+                // 优先显示predicate或action属性，否则显示关系类型
+                if (d.properties && d.properties.predicate) {
+                    return d.properties.predicate.length > 10 ? d.properties.predicate.substring(0, 10) + "..." : d.properties.predicate;
+                } else if (d.properties && d.properties.action) {
+                    return d.properties.action.length > 10 ? d.properties.action.substring(0, 10) + "..." : d.properties.action;
+                } else {
+                    return d.type.length > 10 ? d.type.substring(0, 10) + "..." : d.type;
+                }
+            })
+            .style("display", "block");
+        
+        // 更新位置
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+            
+            node
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+            
+            // 节点标签跟随节点
+            nodeLabels
+                .attr("x", d => d.x)
+                .attr("y", d => d.y + 4); // 稍微向下偏移，让文字在节点中心偏下
+            
+            // 关系标签显示在连接线的中点
+            linkLabels
+                .attr("x", d => (d.source.x + d.target.x) / 2)
+                .attr("y", d => (d.source.y + d.target.y) / 2 - 5); // 稍微向上偏移，避免与线重叠
+            
+            // 关系标签背景跟随标签位置
+            linkLabelBgs.each(function(d) {
+                const text = linkLabels.filter(data => data === d).node();
+                if (text) {
+                    const bbox = text.getBBox();
+                    d3.select(this)
+                        .attr("x", bbox.x - 2)
+                        .attr("y", bbox.y - 1)
+                        .attr("width", bbox.width + 4)
+                        .attr("height", bbox.height + 2);
+                }
+            });
+        });
+        
+        // 拖拽函数
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        // 显示节点详情
+        function showNodeDetails(event, d) {
+            const detailsDiv = document.getElementById("node-details");
+            const propertiesDiv = document.getElementById("node-properties");
+            
+            detailsDiv.style.display = "block";
+            
+            let html = `
+                <div class="property-item">
+                    <span class="property-key">节点ID:</span>
+                    <span class="property-value">${d.neo4j_id}</span>
+                </div>
+                <div class="property-item">
+                    <span class="property-key">标签:</span>
+                    <span class="property-value">${d.labels.join(", ")}</span>
+                </div>
+                <div class="property-item">
+                    <span class="property-key">名称:</span>
+                    <span class="property-value">${d.label}</span>
+                </div>
+            `;
+            
+            // 显示所有属性
+            for (const [key, value] of Object.entries(d.properties)) {
+                html += `
+                    <div class="property-item">
+                        <span class="property-key">${key}:</span>
+                        <span class="property-value">${JSON.stringify(value)}</span>
+                    </div>
+                `;
+            }
+            
+            propertiesDiv.innerHTML = html;
+        }
+        
+        // 控制函数
+        function zoomIn() {
+            svg.transition().call(zoom.scaleBy, 1.2);
+        }
+        
+        function zoomOut() {
+            svg.transition().call(zoom.scaleBy, 0.8);
+        }
+        
+        function resetZoom() {
+            svg.transition().call(zoom.transform, d3.zoomIdentity);
+        }
+        
+        let nodeLabelsVisible = true;
+        let linkLabelsVisible = true;
+        
+        function toggleNodeLabels() {
+            nodeLabelsVisible = !nodeLabelsVisible;
+            nodeLabels.style("display", nodeLabelsVisible ? "block" : "none");
+        }
+        
+        function toggleLinkLabels() {
+            linkLabelsVisible = !linkLabelsVisible;
+            linkLabels.style("display", linkLabelsVisible ? "block" : "none");
+            linkLabelBgs.style("display", linkLabelsVisible ? "block" : "none");
+        }
+        
+        // 初始化统计信息
+        function initStats() {
+            document.getElementById("total-nodes").textContent = graphData.stats.total_nodes;
+            document.getElementById("total-links").textContent = graphData.stats.total_links;
+            document.getElementById("updated-time").textContent = new Date(graphData.stats.updated_at).toLocaleString();
+            
+            // 节点类型统计
+            const nodeTypesDiv = document.getElementById("node-types");
+            let nodeTypesHtml = "";
+            for (const [type, count] of Object.entries(graphData.stats.node_types)) {
+                nodeTypesHtml += `
+                    <div class="stat-item">
+                        <span>${type}:</span>
+                        <span>${count}</span>
+                    </div>
+                `;
+            }
+            nodeTypesDiv.innerHTML = nodeTypesHtml;
+            
+            // 关系类型统计
+            const relationTypesDiv = document.getElementById("relation-types");
+            let relationTypesHtml = "";
+            for (const [type, count] of Object.entries(graphData.stats.relation_types)) {
+                relationTypesHtml += `
+                    <div class="stat-item">
+                        <span>${type}:</span>
+                        <span>${count}</span>
+                    </div>
+                `;
+            }
+            relationTypesDiv.innerHTML = relationTypesHtml;
+        }
+        
+        // 初始化
+        initStats();
+    </script>
+</body>
+</html>
+        

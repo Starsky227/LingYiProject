@@ -1,0 +1,578 @@
+{
+  "triples": [
+    {
+      "subject": "C",
+      "predicate": "评价",
+      "object": "鸡肉嫩而不腻",
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "predicate": "决定",
+      "object": "下单",
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    }
+  ],
+  "quintuples": [
+    {
+      "subject": "A",
+      "action": "纠结",
+      "object": "中午的食物",
+      "time": "中午",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "B",
+      "action": "不想吃",
+      "object": "主食类食物",
+      "time": "今天",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "B",
+      "action": "想吃",
+      "object": "带汤带肉的",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "评价",
+      "object": "鸡肉嫩",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "评价",
+      "object": "酒香",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "A",
+      "action": "纠结",
+      "object": "吃",
+      "time": "中午",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "B",
+      "action": "不想吃",
+      "object": "主食类",
+      "time": "今天",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "A",
+      "action": "担心",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "A",
+      "action": "纠结",
+      "object": "吃",
+      "time": "中午",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "B",
+      "action": "不想吃",
+      "object": "主食类",
+      "time": "今天",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "A",
+      "action": "担心",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:29"
+    },
+    {
+      "subject": "A",
+      "action": "纠结",
+      "object": "中午吃啥",
+      "time": "中午",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "吃",
+      "object": "面",
+      "time": "昨天",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "担心",
+      "object": "醉鸡煲会不会很腥",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "醉鸡煲不会很腥",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "凤添吉处理得很干净",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "凤添吉加了药材去味",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "现在天有点凉",
+      "time": "现在",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "喝口热汤多舒服",
+      "time": "现在",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "询问",
+      "object": "分量够不够我们三个人吃",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "吃",
+      "object": "面",
+      "time": "昨天",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "醉鸡煲",
+      "action": "评价",
+      "object": "鸡肉嫩",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "醉鸡煲",
+      "action": "评价",
+      "object": "不腻",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "说",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "处理",
+      "object": "干净",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "加",
+      "object": "药材",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "说",
+      "object": "天",
+      "time": "有点凉",
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "说",
+      "object": "喝口热汤",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "说",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "说",
+      "object": "踩雷",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "说",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "有",
+      "object": "三人套餐",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "送",
+      "object": "配菜",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "说",
+      "object": "性价比",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "问",
+      "object": "分量",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "担心",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "推荐",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "凤添吉",
+      "action": "处理",
+      "object": "鸡肉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "建议",
+      "object": "定凤添吉的",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "提供",
+      "object": "三人套餐",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "A",
+      "action": "担心",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "认为",
+      "object": "醉鸡煲",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "描述",
+      "object": "凤添吉",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "B",
+      "action": "描述",
+      "object": "药材",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "提供",
+      "object": "三人套餐",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    },
+    {
+      "subject": "C",
+      "action": "提供",
+      "object": "性价比",
+      "time": null,
+      "location": null,
+      "source": "用户",
+      "confidence": 0.5,
+      "time_record": "2025-10-31T16:30"
+    }
+  ],
+  "metadata": {
+    "last_updated": "2025-10-31T16:30",
+    "total_triples": 2,
+    "total_quintuples": 55,
+    "total_memories": 57
+  }
+}
