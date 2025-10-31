@@ -104,6 +104,20 @@ class MCPServerConfig(BaseModel):
     port: int = Field(default=8003, description="MCP服务器端口")
     auto_start: bool = Field(default=True, description="是否自动启动MCP服务器")
 
+class GRAGConfig(BaseModel):
+    """GRAG知识图谱记忆系统配置"""
+    enabled: bool = Field(default=False, description="是否启用GRAG记忆系统")
+    auto_extract: bool = Field(default=False, description="是否自动提取对话中的五元组")
+    context_length: int = Field(default=5, ge=1, le=20, description="记忆上下文长度")
+    similarity_threshold: float = Field(default=0.6, ge=0.0, le=1.0, description="记忆检索相似度阈值")
+    neo4j_uri: str = Field(default="neo4j://127.0.0.1:7687", description="Neo4j连接URI")
+    neo4j_user: str = Field(default="neo4j", description="Neo4j用户名")
+    neo4j_password: str = Field(default="your_password", description="Neo4j密码")
+    neo4j_database: str = Field(default="neo4j", description="Neo4j数据库名")
+    extraction_timeout: int = Field(default=12, ge=1, le=60, description="知识提取超时时间（秒）")
+    extraction_retries: int = Field(default=2, ge=0, le=5, description="知识提取重试次数")
+    base_timeout: int = Field(default=15, ge=5, le=120, description="基础操作超时时间（秒）")
+
 class UIConfig(BaseModel):
     """UI相关配置"""
     username: str = Field(default="用户", description="默认用户名")
@@ -125,6 +139,7 @@ class LingyiConfig(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig)
     api_server: APIServerConfig = Field(default_factory=APIServerConfig)
     agent_server: AgentServerConfig = Field(default_factory=AgentServerConfig)
+    grag: GRAGConfig = Field(default_factory=GRAGConfig)
     mcp_server: MCPServerConfig = Field(default_factory=MCPServerConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     crawl4ai: Crawl4AIConfig = Field(default_factory=Crawl4AIConfig)
@@ -162,6 +177,7 @@ if config.system.debug:
     print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
     print(f"Agent服务器: {'启用' if config.agent_server.enabled else '禁用'} ({config.agent_server.host}:{config.agent_server.port})")
     print(f"MCP服务器: {'启用' if config.mcp_server.enabled else '禁用'} ({config.mcp_server.host}:{config.mcp_server.port})")
+    print(f"GRAG记忆系统: {'启用' if config.grag.enabled else '禁用'}")
 
 import logging
 logger = logging.getLogger(__name__)

@@ -1,0 +1,1158 @@
+{
+  "nodes": [
+    {
+      "id": "0",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "C",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "1",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "鸡肉嫩而不腻",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "2",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "A",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "3",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "下单",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "4",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "中午的食物",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "5",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "中午",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "6",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "B",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "7",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "主食类食物",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "8",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "今天",
+        "last_updated": "2025-10-31T16:29"
+      }
+    },
+    {
+      "id": "9",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "带汤带肉的",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "10",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "凤添吉",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "11",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "鸡肉嫩",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "12",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "酒香",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "13",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "吃",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "14",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "主食类",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "15",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "醉鸡煲",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "16",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "中午吃啥",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "17",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "面",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "18",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "昨天",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "19",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "醉鸡煲会不会很腥",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "20",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "醉鸡煲不会很腥",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "21",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "凤添吉处理得很干净",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "22",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "凤添吉加了药材去味",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "23",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "现在天有点凉",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "24",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "现在",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "25",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "喝口热汤多舒服",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "26",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "分量够不够我们三个人吃",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "27",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "不腻",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "28",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "干净",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "29",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "药材",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "30",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "天",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "31",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "有点凉",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "32",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "喝口热汤",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "33",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "踩雷",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "34",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "三人套餐",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "35",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "配菜",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "36",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "性价比",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "37",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "分量",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "38",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "鸡肉",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "39",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "定凤添吉的",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "1152921504606846976",
+      "type": "评价",
+      "start_node": "0",
+      "end_node": "1",
+      "properties": {
+        "source": "用户",
+        "predicate": "评价",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "6917535624710848522",
+      "type": "推荐",
+      "start_node": "0",
+      "end_node": "10",
+      "properties": {
+        "source": "用户",
+        "action": "推荐",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917535624710848527",
+      "type": "推荐",
+      "start_node": "0",
+      "end_node": "15",
+      "properties": {
+        "source": "用户",
+        "action": "推荐",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987428",
+      "type": "说",
+      "start_node": "0",
+      "end_node": "36",
+      "properties": {
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152941295816146944",
+      "type": "提供",
+      "start_node": "0",
+      "end_node": "34",
+      "properties": {
+        "source": "用户",
+        "action": "提供",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1155193095629832192",
+      "type": "提供",
+      "start_node": "0",
+      "end_node": "36",
+      "properties": {
+        "source": "用户",
+        "action": "提供",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152922604118474754",
+      "type": "决定",
+      "start_node": "2",
+      "end_node": "3",
+      "properties": {
+        "source": "用户",
+        "predicate": "决定",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "6917531226664337412",
+      "type": "纠结",
+      "start_node": "2",
+      "end_node": "4",
+      "properties": {
+        "time": "中午",
+        "source": "用户",
+        "action": "纠结",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917531226664337421",
+      "type": "纠结",
+      "start_node": "2",
+      "end_node": "13",
+      "properties": {
+        "time": "中午",
+        "source": "用户",
+        "action": "纠结",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917531226664337424",
+      "type": "纠结",
+      "start_node": "2",
+      "end_node": "16",
+      "properties": {
+        "time": "中午",
+        "source": "用户",
+        "action": "纠结",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917532326175965189",
+      "type": "HAPPENED_AT",
+      "start_node": "2",
+      "end_node": "5",
+      "properties": {
+        "source": "用户",
+        "action_context": "纠结",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "1152929201188241410",
+      "type": "担心",
+      "start_node": "2",
+      "end_node": "15",
+      "properties": {
+        "source": "用户",
+        "action": "担心",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917536724222476307",
+      "type": "担心",
+      "start_node": "2",
+      "end_node": "19",
+      "properties": {
+        "source": "用户",
+        "action": "担心",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917540022757359642",
+      "type": "询问",
+      "start_node": "2",
+      "end_node": "26",
+      "properties": {
+        "source": "用户",
+        "action": "询问",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152933599234752514",
+      "type": "说",
+      "start_node": "2",
+      "end_node": "15",
+      "properties": {
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987425",
+      "type": "说",
+      "start_node": "2",
+      "end_node": "33",
+      "properties": {
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917546619827126309",
+      "type": "问",
+      "start_node": "2",
+      "end_node": "37",
+      "properties": {
+        "source": "用户",
+        "action": "问",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917532326175965192",
+      "type": "HAPPENED_AT",
+      "start_node": "6",
+      "end_node": "8",
+      "properties": {
+        "source": "用户",
+        "action_context": "不想吃",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29"
+      }
+    },
+    {
+      "id": "6917532326175965202",
+      "type": "HAPPENED_AT",
+      "start_node": "6",
+      "end_node": "18",
+      "properties": {
+        "source": "用户",
+        "action_context": "吃",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "6917532326175965208",
+      "type": "HAPPENED_AT",
+      "start_node": "6",
+      "end_node": "24",
+      "properties": {
+        "source": "用户",
+        "action_context": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "6917532326175965215",
+      "type": "HAPPENED_AT",
+      "start_node": "6",
+      "end_node": "31",
+      "properties": {
+        "source": "用户",
+        "action_context": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30"
+      }
+    },
+    {
+      "id": "1152925902653358086",
+      "type": "不想吃",
+      "start_node": "6",
+      "end_node": "7",
+      "properties": {
+        "time": "今天",
+        "source": "用户",
+        "action": "不想吃",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917533425687592974",
+      "type": "不想吃",
+      "start_node": "6",
+      "end_node": "14",
+      "properties": {
+        "time": "今天",
+        "source": "用户",
+        "action": "不想吃",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917534525199220745",
+      "type": "想吃",
+      "start_node": "6",
+      "end_node": "9",
+      "properties": {
+        "source": "用户",
+        "action": "想吃",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152930300699869190",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "15",
+      "properties": {
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104084",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "20",
+      "properties": {
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104085",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "21",
+      "properties": {
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104086",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "22",
+      "properties": {
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104087",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "23",
+      "properties": {
+        "time": "现在",
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104089",
+      "type": "认为",
+      "start_node": "6",
+      "end_node": "25",
+      "properties": {
+        "time": "现在",
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917538923245731857",
+      "type": "吃",
+      "start_node": "6",
+      "end_node": "17",
+      "properties": {
+        "time": "昨天",
+        "source": "用户",
+        "action": "吃",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152933599234752518",
+      "type": "说",
+      "start_node": "6",
+      "end_node": "10",
+      "properties": {
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987422",
+      "type": "说",
+      "start_node": "6",
+      "end_node": "30",
+      "properties": {
+        "time": "有点凉",
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987424",
+      "type": "说",
+      "start_node": "6",
+      "end_node": "32",
+      "properties": {
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917547719338754087",
+      "type": "建议",
+      "start_node": "6",
+      "end_node": "39",
+      "properties": {
+        "source": "用户",
+        "action": "建议",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152942395327774726",
+      "type": "描述",
+      "start_node": "6",
+      "end_node": "10",
+      "properties": {
+        "source": "用户",
+        "action": "描述",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1155194195141459974",
+      "type": "描述",
+      "start_node": "6",
+      "end_node": "29",
+      "properties": {
+        "source": "用户",
+        "action": "描述",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917529027641081867",
+      "type": "评价",
+      "start_node": "10",
+      "end_node": "11",
+      "properties": {
+        "source": "用户",
+        "action": "评价",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917529027641081868",
+      "type": "评价",
+      "start_node": "10",
+      "end_node": "12",
+      "properties": {
+        "source": "用户",
+        "action": "评价",
+        "created_at": "2025-10-31T16:29",
+        "last_updated": "2025-10-31T16:29",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917542221780615196",
+      "type": "处理",
+      "start_node": "10",
+      "end_node": "28",
+      "properties": {
+        "source": "用户",
+        "action": "处理",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917542221780615206",
+      "type": "处理",
+      "start_node": "10",
+      "end_node": "38",
+      "properties": {
+        "source": "用户",
+        "action": "处理",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917543321292242973",
+      "type": "加",
+      "start_node": "10",
+      "end_node": "29",
+      "properties": {
+        "source": "用户",
+        "action": "加",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917544420803870754",
+      "type": "有",
+      "start_node": "10",
+      "end_node": "34",
+      "properties": {
+        "source": "用户",
+        "action": "有",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917545520315498531",
+      "type": "送",
+      "start_node": "10",
+      "end_node": "35",
+      "properties": {
+        "source": "用户",
+        "action": "送",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152921504606846991",
+      "type": "评价",
+      "start_node": "15",
+      "end_node": "11",
+      "properties": {
+        "source": "用户",
+        "action": "评价",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917529027641081883",
+      "type": "评价",
+      "start_node": "15",
+      "end_node": "27",
+      "properties": {
+        "source": "用户",
+        "action": "评价",
+        "created_at": "2025-10-31T16:30",
+        "last_updated": "2025-10-31T16:30",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    }
+  ],
+  "metadata": {
+    "node_count": 40,
+    "relationship_count": 46,
+    "node_labels": {
+      "Entity": 35,
+      "Time": 5
+    },
+    "relationship_types": {
+      "说": 6,
+      "认为": 6,
+      "评价": 5,
+      "HAPPENED_AT": 5,
+      "纠结": 3,
+      "推荐": 2,
+      "提供": 2,
+      "担心": 2,
+      "不想吃": 2,
+      "描述": 2,
+      "处理": 2,
+      "决定": 1,
+      "询问": 1,
+      "问": 1,
+      "想吃": 1,
+      "吃": 1,
+      "建议": 1,
+      "加": 1,
+      "有": 1,
+      "送": 1
+    },
+    "source": "neo4j",
+    "neo4j_uri": "neo4j://127.0.0.1:7687",
+    "neo4j_database": "neo4j"
+  },
+  "updated_at": "2025-10-31T16:41:38.918027"
+}

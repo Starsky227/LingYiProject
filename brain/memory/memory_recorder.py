@@ -21,6 +21,9 @@ import sys
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict, Any, Optional
+from datetime import datetime
+from dataclasses import asdict
+from pathlib import Path
 
 # 添加项目根目录到模块搜索路径
 _project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -63,6 +66,9 @@ class Triple:
     subject: str
     predicate: str
     object: str
+    source: str = "用户"
+    confidence: float = 0.5
+    time_record: str = ""
 
 
 @dataclass
@@ -72,6 +78,9 @@ class Quintuple:
     object: str
     time: Optional[str] = None
     location: Optional[str] = None
+    source: str = "用户"
+    confidence: float = 0.5
+    time_record: str = ""
 
 
 @dataclass
@@ -206,14 +215,29 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                 subj = str(data.get("subject", "")).strip()
                 pred = str(data.get("predicate", "")).strip()
                 obj = str(data.get("object", "")).strip()
+                # Note: 'source' field no longer in prompt output, using default
+                source = "用户"
+                current_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
                 if subj and pred and obj:
-                    triples.append(Triple(subject=subj, predicate=pred, object=obj))
+                    triples.append(
+                        Triple(
+                            subject=subj, 
+                            predicate=pred, 
+                            object=obj, 
+                            source=source,
+                            confidence=0.5,
+                            time_record=current_time
+                        )
+                    )
             elif t == "quintuple":
                 subj = str(data.get("subject", "")).strip()
                 action = str(data.get("action", "")).strip()
                 obj = str(data.get("object", "")).strip()
                 tm = data.get("time")
                 loc = data.get("location")
+                # Note: 'source' field no longer in prompt output, using default
+                source = "用户"
+                current_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
                 # time/location 可以为 null
                 if subj and action and obj:
                     quintuples.append(
@@ -223,6 +247,9 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                             object=obj,
                             time=(None if tm in (None, "", "null") else str(tm)),
                             location=(None if loc in (None, "", "null") else str(loc)),
+                            source=source,
+                            confidence=0.5,
+                            time_record=current_time
                         )
                     )
             else:
@@ -243,11 +270,14 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
         if triples:
             logger.info(f"[记忆] 识别到 {len(triples)} 条三元组。")
 
-    # TODO: 将 triples/quintuples 持久化到本地 JSON 文件（后续实现）
-    # 例如：
-    # save_path = os.path.join(_project_root(), "data", "memories.json")
-    # ensure_dir(...)
-    # append_or_merge_memories(save_path, triples, quintuples)
+    # 将 triples/quintuples 持久化到 recent_memory.json
+    if has_memory:
+        try:
+            _save_memories_to_json(triples, quintuples)
+            logger.info(f"[记忆] 成功保存到 recent_memory.json: {len(triples)} 三元组, {len(quintuples)} 五元组")
+        except Exception as e:
+            logger.error(f"[记忆] recent_memory.json 保存异常: {e}")
+            # 不阻断流程，继续返回结果
 
     return MemoryResult(
         has_memory=has_memory,
@@ -260,20 +290,33 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
 
 
 # ---- 核心入口 ----
-def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = TaskPriority.LOW) -> str:
+def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = TaskPriority.LOW, max_messages: int = 6) -> str:
     """
     在一轮对话结束后调用：
+    - 自动提取最近的消息记录（默认6条，适应多角色互动场景）
     - 读取分类提示词（同步）
     - 将记忆提取任务提交到 task_manager（异步执行）
     - 返回任务 ID，可通过 task_manager.get_task_status(task_id) 查询进度
+    
+    Args:
+        messages: 完整的消息列表
+        priority: 任务优先级
+        max_messages: 最大处理消息数量（默认6条，支持3用户+3AI或多角色场景）
     """
+    # 提取最近的消息记录
+    recent_messages = _extract_recent_messages(messages, max_messages)
+    
+    if not recent_messages:
+        logger.info("[记忆] 没有有效的消息需要处理")
+        return ""
+    
     # 同步读取提示词和处理对话文本
     system_prompt = _read_classifier_prompt()
     if not system_prompt:
         logger.warning("[记忆] 提示词缺失，已终止本轮记忆提取。")
         return ""
 
-    conversation = _flatten_messages(messages)
+    conversation = _flatten_messages(recent_messages)
     
     # 提交异步任务
     task_id = task_manager.submit_task(
@@ -284,7 +327,7 @@ def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = Tas
         priority=priority
     )
     
-    logger.info(f"[记忆] 已提交记忆提取任务: {task_id}")
+    logger.info(f"[记忆] 已提交记忆提取任务: {task_id} (处理 {len(recent_messages)} 条最近消息)")
     return task_id
 
 
@@ -306,3 +349,100 @@ def get_memory_result(task_id: str) -> Optional[MemoryResult]:
         return status.get("result")
     
     return None
+
+
+# ---- JSON 持久化功能 ----
+def _save_memories_to_json(triples: List[Triple], quintuples: List[Quintuple], file_path: Optional[str] = None) -> bool:
+    """将三元组和五元组保存到 JSON 文件"""
+    if file_path is None:
+        file_path = os.path.join(config.system.log_dir, "recent_memory.json")
+    
+    try:
+        # 确保目录存在
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        
+        # 读取现有数据
+        existing_data = {"triples": [], "quintuples": [], "metadata": {}}
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+            except Exception as e:
+                logger.warning(f"[记忆] 读取现有JSON文件失败，将创建新文件: {e}")
+        
+        # 转换新数据为字典格式
+        new_triples = [asdict(triple) for triple in triples]
+        new_quintuples = [asdict(quintuple) for quintuple in quintuples]
+        
+        # 合并数据
+        existing_data["triples"].extend(new_triples)
+        existing_data["quintuples"].extend(new_quintuples)
+        
+        # 更新元数据
+        existing_data["metadata"] = {
+            "last_updated": datetime.now().strftime("%Y-%m-%dT%H:%M"),
+            "total_triples": len(existing_data["triples"]),
+            "total_quintuples": len(existing_data["quintuples"]),
+            "total_memories": len(existing_data["triples"]) + len(existing_data["quintuples"])
+        }
+        
+        # 保存到文件
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(existing_data, f, ensure_ascii=False, indent=2)
+        
+        logger.info(f"[记忆] 成功保存到 JSON: {len(new_triples)} 三元组, {len(new_quintuples)} 五元组 -> {file_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"[记忆] JSON 保存失败: {e}")
+        return False
+
+
+def _extract_recent_messages(messages: List[Dict[str, Any]], max_messages: int = 6) -> List[Dict[str, Any]]:
+    """
+    提取最近的消息记录，适应多角色互动场景
+    
+    Args:
+        messages: 完整的消息列表
+        max_messages: 最大消息数量（默认6条，支持3用户+3AI或多角色场景）
+    
+    Returns:
+        最近的消息列表，最多包含 max_messages 条消息
+    """
+    if not messages:
+        return []
+    
+    # 过滤有效消息（有role和content的消息）
+    valid_messages = []
+    for msg in messages:
+        role = msg.get("role", "").strip()
+        content = (msg.get("content") or "").strip()
+        if role and content:
+            valid_messages.append(msg)
+    
+    # 如果消息数量不足，返回全部
+    if len(valid_messages) <= max_messages:
+        logger.info(f"[记忆] 历史消息不足 {max_messages} 条，使用全部 {len(valid_messages)} 条消息")
+        return valid_messages
+    
+    # 提取最近的消息
+    recent_messages = valid_messages[-max_messages:]
+    logger.info(f"[记忆] 提取最近 {len(recent_messages)} 条消息进行记忆处理")
+    return recent_messages
+
+
+def record_recent_conversations_async(messages: List[Dict[str, Any]], max_messages: int = 6, priority: TaskPriority = TaskPriority.LOW) -> str:
+    """
+    异步处理最近的消息并保存到 recent_memory.json
+    注意：此函数现在直接调用 record_memories，推荐直接使用 record_memories
+    
+    Args:
+        messages: 完整的消息列表
+        max_messages: 要处理的最大消息数量（默认6条）
+        priority: 任务优先级
+    
+    Returns:
+        任务 ID
+    """
+    # 直接调用 record_memories，功能已经集成
+    return record_memories(messages, priority=priority, max_messages=max_messages)

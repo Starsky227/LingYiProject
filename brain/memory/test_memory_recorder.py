@@ -42,7 +42,10 @@ def print_memory_result_details(result, test_name):
             print(f"  第 {i} 个三元组:")
             print(f"    ├── subject (主体): '{triple.subject}' ({type(triple.subject).__name__})")
             print(f"    ├── predicate (谓词): '{triple.predicate}' ({type(triple.predicate).__name__})")
-            print(f"    └── object (客体): '{triple.object}' ({type(triple.object).__name__})")
+            print(f"    ├── object (客体): '{triple.object}' ({type(triple.object).__name__})")
+            print(f"    ├── source (来源): '{triple.source}' ({type(triple.source).__name__})")
+            print(f"    ├── confidence (置信度): {triple.confidence} ({type(triple.confidence).__name__})")
+            print(f"    └── time_record (记录时间): '{triple.time_record}' ({type(triple.time_record).__name__})")
     else:
         print("\n🔗 三元组: 无")
     
@@ -55,7 +58,10 @@ def print_memory_result_details(result, test_name):
             print(f"    ├── action (动作): '{quintuple.action}' ({type(quintuple.action).__name__})")
             print(f"    ├── object (客体): '{quintuple.object}' ({type(quintuple.object).__name__})")
             print(f"    ├── time (时间): {quintuple.time} ({type(quintuple.time).__name__})")
-            print(f"    └── location (地点): {quintuple.location} ({type(quintuple.location).__name__})")
+            print(f"    ├── location (地点): {quintuple.location} ({type(quintuple.location).__name__})")
+            print(f"    ├── source (来源): '{quintuple.source}' ({type(quintuple.source).__name__})")
+            print(f"    ├── confidence (置信度): {quintuple.confidence} ({type(quintuple.confidence).__name__})")
+            print(f"    └── time_record (记录时间): '{quintuple.time_record}' ({type(quintuple.time_record).__name__})")
     else:
         print("\n🎯 五元组: 无")
     
@@ -98,11 +104,18 @@ def test_extract_memories_task_direct():
                 ]
             },
             {
-                "name": "复合测试 - 个人信息",
+                "name": "复合测试 - 复杂提取（匹配新 prompt 示例）",
                 "messages": [
-                    {"role": "user", "content": "我叫张三，我喜欢喝咖啡"},
+                    {"role": "user", "content": "我昨天下午在玩我的世界，里面有一种怪物叫小白"},
+                    {"role": "assistant", "content": "我的世界确实有很多有趣的怪物！"}
+                ]
+            },
+            {
+                "name": "个人信息测试",
+                "messages": [
+                    {"role": "id12345", "content": "我叫张三，我喜欢喝咖啡"},
                     {"role": "assistant", "content": "你好张三！"},
-                    {"role": "user", "content": "我今天早上在星巴克买了拿铁"},
+                    {"role": "id12345", "content": "我今天早上在星巴克买了拿铁"},
                     {"role": "assistant", "content": "拿铁很受欢迎！"}
                 ]
             },
