@@ -94,6 +94,365 @@ class KnowledgeGraphManager:
             return self._connect()
         return True
     
+    def _parse_and_create_hierarchical_time(self, session, time_str: str, source: str, time_record: str) -> Optional[str]:
+        """
+        解析时间字符串并创建层次化的时间节点
+        支持多种格式:
+        - "2025年11月3日12点" -> Year:2025 -> Month:11月 -> Day:3日 -> Hour:12点
+        - "2025年11月3日" -> Year:2025 -> Month:11月 -> Day:3日  
+        - "2025年11月" -> Year:2025 -> Month:11月
+        - "2025年" -> Year:2025
+        返回最具体的时间节点名称（用于连接事件）
+        """
+        import re
+        
+        if not time_str:
+            return None
+            
+        try:
+            # 解析时间组件
+            year_match = re.search(r'(\d{4})年', time_str)
+            month_match = re.search(r'(\d{1,2})月', time_str)
+            day_match = re.search(r'(\d{1,2})日', time_str)
+            hour_match = re.search(r'(\d{1,2})点', time_str)
+            
+            if not year_match:
+                # 如果连年份都没有，创建通用时间节点
+                session.run("""
+                    MERGE (t:Time {name: $time})
+                    SET t.source = $source,
+                        t.last_updated = $time_record
+                """, 
+                    time=time_str,
+                    source=source,
+                    time_record=time_record
+                )
+                return time_str
+                
+            # 提取时间组件
+            year = year_match.group(1)
+            year_name = f"{year}年"
+            most_specific_node = year_name
+            
+            # 创建年份节点
+            session.run("""
+                MERGE (y:Time:Year {name: $year_name})
+                SET y.year = $year,
+                    y.time_type = 'year',
+                    y.source = $source,
+                    y.last_updated = $time_record
+            """, 
+                year_name=year_name,
+                year=int(year),
+                source=source,
+                time_record=time_record
+            )
+            
+            # 如果有月份
+            if month_match:
+                month = month_match.group(1)
+                # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11, 12
+                month = str(int(month))
+                month_name = f"{month}月"
+                most_specific_node = month_name
+                
+                # 创建月份节点
+                session.run("""
+                    MERGE (m:Time:Month {name: $month_name})
+                    SET m.month = $month,
+                        m.year = $year,
+                        m.time_type = 'month',
+                        m.source = $source,
+                        m.last_updated = $time_record
+                """, 
+                    month_name=month_name,
+                    month=int(month),
+                    year=int(year),
+                    source=source,
+                    time_record=time_record
+                )
+                
+                # 创建层次关系: Month -> Year
+                session.run("""
+                    MATCH (m:Time:Month {name: $month_name})
+                    MATCH (y:Time:Year {name: $year_name})
+                    MERGE (m)-[r:BELONGS_TO]->(y)
+                    SET r.created_at = $time_record,
+                        r.hierarchy_type = 'month_to_year'
+                """, 
+                    month_name=month_name,
+                    year_name=year_name,
+                    time_record=time_record
+                )
+                
+                # 如果有日期
+                if day_match:
+                    day = day_match.group(1)
+                    # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11等
+                    day = str(int(day))
+                    day_name = f"{day}日"
+                    most_specific_node = day_name
+                    
+                    # 创建日期节点
+                    session.run("""
+                        MERGE (d:Time:Day {name: $day_name})
+                        SET d.day = $day,
+                            d.month = $month,
+                            d.year = $year,
+                            d.time_type = 'day',
+                            d.source = $source,
+                            d.last_updated = $time_record
+                    """, 
+                        day_name=day_name,
+                        day=int(day),
+                        month=int(month),
+                        year=int(year),
+                        source=source,
+                        time_record=time_record
+                    )
+                    
+                    # 创建层次关系: Day -> Month
+                    session.run("""
+                        MATCH (d:Time:Day {name: $day_name})
+                        MATCH (m:Time:Month {name: $month_name})
+                        MERGE (d)-[r:BELONGS_TO]->(m)
+                        SET r.created_at = $time_record,
+                            r.hierarchy_type = 'day_to_month'
+                    """, 
+                        day_name=day_name,
+                        month_name=month_name,
+                        time_record=time_record
+                    )
+                    
+                    # 如果有小时
+                    if hour_match:
+                        hour = hour_match.group(1)
+                        # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11等
+                        hour = str(int(hour))
+                        hour_name = f"{hour}点"
+                        most_specific_node = hour_name
+                        
+                        # 创建小时节点
+                        session.run("""
+                            MERGE (h:Time:Hour {name: $hour_name})
+                            SET h.hour = $hour,
+                                h.day = $day,
+                                h.month = $month,
+                                h.year = $year,
+                                h.time_type = 'hour',
+                                h.source = $source,
+                                h.last_updated = $time_record
+                        """, 
+                            hour_name=hour_name,
+                            hour=int(hour),
+                            day=int(day),
+                            month=int(month),
+                            year=int(year),
+                            source=source,
+                            time_record=time_record
+                        )
+                        
+                        # 创建层次关系: Hour -> Day
+                        session.run("""
+                            MATCH (h:Time:Hour {name: $hour_name})
+                            MATCH (d:Time:Day {name: $day_name})
+                            MERGE (h)-[r:BELONGS_TO]->(d)
+                            SET r.created_at = $time_record,
+                                r.hierarchy_type = 'hour_to_day'
+                        """, 
+                            hour_name=hour_name,
+                            day_name=day_name,
+                            time_record=time_record
+                        )
+            
+            logger.debug(f"Created hierarchical time, most specific node: {most_specific_node}")
+            return most_specific_node  # 返回最具体的时间节点用于连接事件
+            
+        except Exception as e:
+            logger.error(f"Failed to parse hierarchical time '{time_str}': {e}")
+            # 回退到创建通用时间节点
+            try:
+                session.run("""
+                    MERGE (t:Time {name: $time})
+                    SET t.source = $source,
+                        t.last_updated = $time_record
+                """, 
+                    time=time_str,
+                    source=source,
+                    time_record=time_record
+                )
+                return time_str
+            except Exception as fallback_e:
+                logger.error(f"Failed to create fallback time node: {fallback_e}")
+                return None
+    
+    def _create_quintuple_cross_references(self, session, quintuples: List) -> bool:
+        """
+        检测五元组之间的交叉引用并创建关系
+        例如：A告诉B关于某个事件 -> 直接链接到该事件的五元组
+        """
+        import re
+        
+        try:
+            # 为每个五元组创建一个事件标识符
+            events = []
+            for quintuple in quintuples:
+                # 创建事件签名：主体+动作+客体+时间
+                event_signature = f"{quintuple.subject}_{quintuple.action}_{quintuple.object}_{quintuple.time or 'no_time'}"
+                events.append({
+                    'quintuple': quintuple,
+                    'signature': event_signature,
+                    'key_info': {
+                        'subject': quintuple.subject,
+                        'action': quintuple.action,
+                        'object': quintuple.object,
+                        'time': quintuple.time,
+                        'location': quintuple.location
+                    }
+                })
+            
+            # 检测讲述类型的五元组
+            narrative_actions = ['告诉', '说', '讲', '提到', '描述', '回忆']
+            
+            for event in events:
+                quintuple = event['quintuple']
+                
+                # 检查是否是讲述类型的动作
+                if any(action in quintuple.action for action in narrative_actions):
+                    object_content = quintuple.object
+                    
+                    # 尝试从object中提取时间、地点、人物信息
+                    time_matches = re.findall(r'\(([^)]+)\)', object_content)
+                    location_matches = re.findall(r'\[([^\]]+)\]', object_content)
+                    person_matches = re.findall(r'<([^>]+)>', object_content)
+                    
+                    # 查找可能匹配的事件
+                    for other_event in events:
+                        if other_event == event:  # 跳过自己
+                            continue
+                        
+                        other_quintuple = other_event['quintuple']
+                        match_score = 0
+                        
+                        # 检查时间匹配
+                        if time_matches and other_quintuple.time:
+                            for time_ref in time_matches:
+                                if time_ref in other_quintuple.time or other_quintuple.time in time_ref:
+                                    match_score += 3
+                        
+                        # 检查地点匹配
+                        if location_matches and other_quintuple.location:
+                            for loc_ref in location_matches:
+                                if loc_ref in other_quintuple.location or other_quintuple.location in loc_ref:
+                                    match_score += 2
+                        
+                        # 检查人物匹配
+                        if person_matches:
+                            for person_ref in person_matches:
+                                if person_ref == other_quintuple.subject:
+                                    match_score += 2
+                        
+                        # 检查动作关键词匹配
+                        object_clean = re.sub(r'[()<>\[\]]', '', object_content)
+                        if other_quintuple.action in object_clean or any(word in object_clean for word in other_quintuple.action.split()):
+                            match_score += 1
+                        
+                        # 如果匹配分数够高，创建引用关系
+                        if match_score >= 3:
+                            self._create_event_reference_relationship(
+                                session, quintuple, other_quintuple, match_score
+                            )
+                            logger.debug(f"Created cross-reference: {quintuple.subject} {quintuple.action} -> {other_quintuple.subject} {other_quintuple.action} (score: {match_score})")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to create quintuple cross-references: {e}")
+            return False
+    
+    def _create_event_reference_relationship(self, session, narrative_quintuple, referenced_quintuple, confidence_score: int):
+        """
+        在讲述类五元组和被引用的事件五元组之间创建引用关系
+        """
+        try:
+            # 创建事件节点（如果不存在）
+            narrative_event_id = f"event_{hash(f'{narrative_quintuple.subject}_{narrative_quintuple.action}_{narrative_quintuple.object}_{narrative_quintuple.time_record}')}"
+            referenced_event_id = f"event_{hash(f'{referenced_quintuple.subject}_{referenced_quintuple.action}_{referenced_quintuple.object}_{referenced_quintuple.time_record}')}"
+            
+            # 创建或更新讲述事件节点
+            session.run("""
+                MERGE (ne:Event {id: $narrative_event_id})
+                SET ne.subject = $narrative_subject,
+                    ne.action = $narrative_action,
+                    ne.object = $narrative_object,
+                    ne.time = $narrative_time,
+                    ne.location = $narrative_location,
+                    ne.source = $narrative_source,
+                    ne.confidence = $narrative_confidence,
+                    ne.importance = $narrative_importance,
+                    ne.time_record = $narrative_time_record,
+                    ne.event_type = 'narrative'
+            """, 
+                narrative_event_id=narrative_event_id,
+                narrative_subject=narrative_quintuple.subject,
+                narrative_action=narrative_quintuple.action,
+                narrative_object=narrative_quintuple.object,
+                narrative_time=narrative_quintuple.time,
+                narrative_location=narrative_quintuple.location,
+                narrative_source=narrative_quintuple.source,
+                narrative_confidence=narrative_quintuple.confidence,
+                narrative_importance=narrative_quintuple.importance,
+                narrative_time_record=narrative_quintuple.time_record
+            )
+            
+            # 创建或更新被引用事件节点
+            session.run("""
+                MERGE (re:Event {id: $referenced_event_id})
+                SET re.subject = $referenced_subject,
+                    re.action = $referenced_action,
+                    re.object = $referenced_object,
+                    re.time = $referenced_time,
+                    re.location = $referenced_location,
+                    re.source = $referenced_source,
+                    re.confidence = $referenced_confidence,
+                    re.importance = $referenced_importance,
+                    re.time_record = $referenced_time_record,
+                    re.event_type = 'actual'
+            """, 
+                referenced_event_id=referenced_event_id,
+                referenced_subject=referenced_quintuple.subject,
+                referenced_action=referenced_quintuple.action,
+                referenced_object=referenced_quintuple.object,
+                referenced_time=referenced_quintuple.time,
+                referenced_location=referenced_quintuple.location,
+                referenced_source=referenced_quintuple.source,
+                referenced_confidence=referenced_quintuple.confidence,
+                referenced_importance=referenced_quintuple.importance,
+                referenced_time_record=referenced_quintuple.time_record
+            )
+            
+            # 创建引用关系
+            session.run("""
+                MATCH (ne:Event {id: $narrative_event_id})
+                MATCH (re:Event {id: $referenced_event_id})
+                MERGE (ne)-[r:REFERS_TO]->(re)
+                SET r.confidence_score = $confidence_score,
+                    r.created_at = $time_record,
+                    r.relationship_type = 'narrative_reference'
+            """, 
+                narrative_event_id=narrative_event_id,
+                referenced_event_id=referenced_event_id,
+                confidence_score=confidence_score,
+                time_record=narrative_quintuple.time_record
+            )
+            
+            logger.debug(f"Created event reference relationship with confidence {confidence_score}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to create event reference relationship: {e}")
+            return False
+    
     def _create_triple_node_and_relationship(self, session, triple) -> bool:
         """创建三元组的节点和关系"""
         try:
@@ -175,24 +534,22 @@ class KnowledgeGraphManager:
                 MERGE (o:Entity {name: $object})
                 SET o.source = $source,
                     o.confidence = $confidence,
+                    o.importance = $importance,
+                    o.significance = 1,
                     o.last_updated = $time_record
             """, 
                 object=quintuple.object,
                 source=quintuple.source,
                 confidence=quintuple.confidence,
+                importance=quintuple.importance,
                 time_record=quintuple.time_record
             )
             
-            # 如果有时间信息，创建时间节点
+            # 如果有时间信息，创建层次化时间节点
+            specific_time_node = None
             if quintuple.time:
-                session.run("""
-                    MERGE (t:Time {name: $time})
-                    SET t.source = $source,
-                        t.last_updated = $time_record
-                """, 
-                    time=quintuple.time,
-                    source=quintuple.source,
-                    time_record=quintuple.time_record
+                specific_time_node = self._parse_and_create_hierarchical_time(
+                    session, quintuple.time, quintuple.source, quintuple.time_record
                 )
             
             # 如果有地点信息，创建地点节点
@@ -219,6 +576,7 @@ class KnowledgeGraphManager:
                 SET r.action = $action,
                     r.source = $source,
                     r.confidence = $confidence,
+                    r.importance = $importance,
                     r.created_at = $time_record,
                     r.type = 'quintuple',
                     r.time = $time,
@@ -229,43 +587,51 @@ class KnowledgeGraphManager:
                 action=quintuple.action,
                 source=quintuple.source,
                 confidence=quintuple.confidence,
+                importance=quintuple.importance,
                 time_record=quintuple.time_record,
                 time=quintuple.time,
                 location=quintuple.location
             )
             
-            # 如果有时间，创建时间关系
-            if quintuple.time:
-                session.run("""
-                    MATCH (s:Entity {name: $subject})
-                    MATCH (t:Time {name: $time})
-                    MERGE (s)-[r:HAPPENED_AT]->(t)
+            # 如果有时间，创建时间关系（连接到最具体的时间节点）
+            if specific_time_node:
+                # 根据时间节点类型选择合适的标签查询
+                time_query = """
+                    MATCH (o:Entity {name: $object})
+                    MATCH (t {name: $time_node})
+                    MERGE (o)-[r:HAPPENED_AT]->(t)
                     SET r.source = $source,
                         r.created_at = $time_record,
-                        r.action_context = $action
-                """, 
-                    subject=quintuple.subject,
-                    time=quintuple.time,
+                        r.action_context = $action,
+                        r.importance = $importance
+                """
+                session.run(time_query, 
+                    object=quintuple.object,
+                    time_node=specific_time_node,
                     source=quintuple.source,
                     time_record=quintuple.time_record,
-                    action=quintuple.action
+                    action=quintuple.action,
+                    importance=quintuple.importance
                 )
             
             # 如果有地点，创建地点关系
+            # 如果有地点，应该把地点关联到事件（object）而非主体
             if quintuple.location:
                 session.run("""
-                    MATCH (s:Entity {name: $subject})
+                    MATCH (o:Entity {name: $object})
                     MATCH (l:Location {name: $location})
-                    MERGE (s)-[r:HAPPENED_IN]->(l)
+                    MERGE (o)-[r:HAPPENED_IN]->(l)
                     SET r.source = $source,
                         r.created_at = $time_record,
-                        r.action_context = $action
+                        r.action_context = $action,
+                        r.importance = $importance
                 """, 
-                    subject=quintuple.subject,
+                    object=quintuple.object,
                     location=quintuple.location,
                     source=quintuple.source,
                     time_record=quintuple.time_record,
-                    action=quintuple.action
+                    action=quintuple.action,
+                    importance=quintuple.importance
                 )
             
             logger.debug(f"Created quintuple: {quintuple.subject} -> {quintuple.action} -> {quintuple.object}")
@@ -355,6 +721,12 @@ class KnowledgeGraphManager:
                                 errors.append(f"Failed to write quintuple: {quintuple}")
                         except Exception as e:
                             errors.append(f"Error writing quintuple {quintuple}: {e}")
+                    
+                    # 在所有五元组写入后，检测和创建交叉引用
+                    try:
+                        self._create_quintuple_cross_references(session, quintuples)
+                    except Exception as e:
+                        errors.append(f"Error creating cross-references: {e}")
                     
                     # 提交事务
                     tx.commit()
@@ -735,6 +1107,7 @@ class KnowledgeGraphManager:
             location = quintuple_data.get("location", "")
             source = quintuple_data.get("source", "")
             confidence = quintuple_data.get("confidence", 0.0)
+            importance = quintuple_data.get("importance", 0.5)
             time_record = quintuple_data.get("time_record", "")
             
             if not all([subject, action, object_name]):
@@ -759,24 +1132,22 @@ class KnowledgeGraphManager:
                 MERGE (o:Entity {name: $object})
                 SET o.source = $source,
                     o.confidence = $confidence,
+                    o.importance = $importance,
+                    o.significance = 1,
                     o.last_updated = $time_record
             """, 
                 object=object_name,
                 source=source,
                 confidence=confidence,
+                importance=importance,
                 time_record=time_record
             )
             
-            # 如果有时间信息，创建或更新时间节点
+            # 如果有时间信息，创建层次化时间节点
+            specific_time_node = None
             if time:
-                session.run("""
-                    MERGE (t:Time {name: $time})
-                    SET t.source = $source,
-                        t.last_updated = $time_record
-                """, 
-                    time=time,
-                    source=source,
-                    time_record=time_record
+                specific_time_node = self._parse_and_create_hierarchical_time(
+                    session, time, source, time_record
                 )
             
             # 如果有地点信息，创建或更新地点节点
@@ -804,6 +1175,7 @@ class KnowledgeGraphManager:
                 SET r.action = $action,
                     r.source = $source,
                     r.confidence = $confidence,
+                    r.importance = $importance,
                     r.created_at = $time_record,
                     r.type = 'quintuple',
                     r.time = $time,
@@ -815,45 +1187,53 @@ class KnowledgeGraphManager:
                 action=action,
                 source=source,
                 confidence=confidence,
+                importance=importance,
                 time_record=time_record,
                 time=time,
                 location=location
             )
             
-            # 如果有时间，创建或更新时间关系
-            if time:
-                session.run("""
-                    MATCH (s:Entity {name: $subject})
-                    MATCH (t:Time {name: $time})
-                    MERGE (s)-[r:HAPPENED_AT]->(t)
+            # 如果有时间，创建时间关系（连接到最具体的时间节点）
+            if specific_time_node:
+                # 根据时间节点类型选择合适的标签查询
+                time_query = """
+                    MATCH (o:Entity {name: $object})
+                    MATCH (t {name: $time_node})
+                    MERGE (o)-[r:HAPPENED_AT]->(t)
                     SET r.source = $source,
                         r.created_at = $time_record,
                         r.action_context = $action,
-                        r.last_updated = $time_record
-                """, 
-                    subject=subject,
-                    time=time,
+                        r.last_updated = $time_record,
+                        r.importance = $importance
+                """
+                session.run(time_query, 
+                    object=object_name,
+                    time_node=specific_time_node,
                     source=source,
                     time_record=time_record,
-                    action=action
+                    action=action,
+                    importance=importance
                 )
             
             # 如果有地点，创建或更新地点关系
+            # 如果有地点，关联到事件（object）而非主体
             if location:
                 session.run("""
-                    MATCH (s:Entity {name: $subject})
+                    MATCH (o:Entity {name: $object})
                     MATCH (l:Location {name: $location})
-                    MERGE (s)-[r:HAPPENED_IN]->(l)
+                    MERGE (o)-[r:HAPPENED_IN]->(l)
                     SET r.source = $source,
                         r.created_at = $time_record,
                         r.action_context = $action,
-                        r.last_updated = $time_record
+                        r.last_updated = $time_record,
+                        r.importance = $importance
                 """, 
-                    subject=subject,
+                    object=object_name,
                     location=location,
                     source=source,
                     time_record=time_record,
-                    action=action
+                    action=action,
+                    importance=importance
                 )
             
             logger.debug(f"Uploaded quintuple with dedup: {subject} -> {action} -> {object_name}")

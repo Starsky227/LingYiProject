@@ -85,7 +85,7 @@ def test_extract_memories_task_direct():
     
     try:
         # 导入必要的模块
-        from brain.memory.memory_recorder import _extract_memories_task, _read_classifier_prompt, _flatten_messages
+        from brain.memory.quintuples_extractor import _extract_memories_task, _read_classifier_prompt, _flatten_messages
         
         # 准备测试数据
         test_conversations = [
@@ -183,7 +183,7 @@ def test_custom_conversation():
     print_separator("自定义对话测试")
     
     try:
-        from brain.memory.memory_recorder import _extract_memories_task, _read_classifier_prompt, _flatten_messages
+        from brain.memory.quintuples_extractor import _extract_memories_task, _read_classifier_prompt, _flatten_messages
         
         # 读取系统提示词
         system_prompt = _read_classifier_prompt()

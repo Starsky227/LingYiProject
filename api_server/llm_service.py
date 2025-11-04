@@ -7,6 +7,7 @@ LLM 服务模块 - 提供与本地大模型的通信接口
 import os
 import sys
 import json
+import datetime
 from typing import List, Dict, Callable
 from openai import OpenAI
 
@@ -17,6 +18,7 @@ if PROJECT_ROOT not in sys.path:
 
 from system.config import config
 # from system.intent_analyzer import analyze_intent
+from brain.memory.quintuples_extractor import record_memories
 
 # API 配置
 API_KEY = config.api.api_key
@@ -44,6 +46,25 @@ if os.path.exists(_personality_path):
         SYSTEM_PROMPT = None
 
 
+def write_chat_log(sender: str, text: str):
+    """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
+    try:
+        # 日志目录位于项目根的 logs/chat_logs
+        logs_dir = os.path.normpath(os.path.join(PROJECT_ROOT, "logs", "chat_logs"))
+        os.makedirs(logs_dir, exist_ok=True)
+        filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
+        path = os.path.join(logs_dir, filename)
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        # 将换行替换为空格以保持单行记录
+        safe_text = text.replace("\r", " ").replace("\n", " ")
+        line = f"{ts} <{sender}> {safe_text}\n"
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        # 写日志失败不影响主流程，打印到控制台以便排查
+        print(f"[日志错误] 无法写入聊天日志: {e}")
+
+
 def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) -> str:
     """
     将消息发送到 Ollama，并以流式方式处理返回
@@ -55,6 +76,11 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     Returns:
         完整的模型回复文本
     """
+    # 记录最新的用户消息到日志
+    if messages and messages[-1].get("role") == "user":
+        user_content = messages[-1].get("content", "").strip()
+        if user_content:
+            write_chat_log(USERNAME, user_content)
     try:
         # 先进行意图识别
         # intent, explanation = analyze_intent(messages)
@@ -91,6 +117,20 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
                 content = chunk.choices[0].delta.content
                 full_reply += content
                 on_response(content)
+        
+        # 记录AI回复到日志
+        if full_reply.strip():
+            write_chat_log(AI_NAME, full_reply.strip())
+            
+            # 将完整对话记录为记忆（包含AI回复）
+            # 创建包含AI回复的完整消息列表
+            updated_messages = messages + [{"role": "assistant", "content": full_reply.strip()}]
+            try:
+                task_id = record_memories(updated_messages, max_messages=6)
+                if task_id:
+                    print(f"[记忆] 已提交记忆提取任务: {task_id}")
+            except Exception as e:
+                print(f"[记忆错误] 记忆提取失败: {e}")
         
         return full_reply
         

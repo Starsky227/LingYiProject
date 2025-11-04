@@ -166,20 +166,7 @@ class ChatUI(QWidget):
         self._append_text(chunk)
 
     def _finish_reply(self):
-        """模型回复完成后的处理（换行分隔），并将 AI 回复写入日志文件"""
-        # 查找最近一条 assistant 回复内容并写日志
-        assistant_text = ""
-        for msg in reversed(self.messages):
-            if msg.get("role") == "assistant":
-                assistant_text = msg.get("content", "").strip()
-                if assistant_text:
-                    break
-        if assistant_text:
-            try:
-                self._write_chat_log(self.ai_name, assistant_text)
-            except Exception:
-                pass
-
+        """模型回复完成后的处理（换行分隔）"""
         # 在聊天框追加换行分隔
         self._append_text("\n")
 
@@ -206,25 +193,6 @@ class ChatUI(QWidget):
         self.placeholder_shown = False
         self._placeholder_start = None
 
-    # 本地写日志（每次用户或 AI 发言后调用）
-    def _write_chat_log(self, sender: str, text: str):
-        """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
-        try:
-            # 日志目录位于项目根的 logs/chat_logs
-            logs_dir = os.path.normpath(os.path.join(current_dir, "..", "logs", "chat_logs"))
-            os.makedirs(logs_dir, exist_ok=True)
-            filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
-            path = os.path.join(logs_dir, filename)
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
-            # 将换行替换为空格以保持单行记录
-            safe_text = text.replace("\r", " ").replace("\n", " ")
-            line = f"{ts} {sender} {safe_text}\n"
-            with open(path, "a", encoding="utf-8") as f:
-                f.write(line)
-        except Exception as e:
-            # 写日志失败不影响主流程，打印到控制台以便排查
-            print(f"[日志错误] 无法写入聊天日志: {e}")
-
     # 用户触发：发送消息
     def send_message(self):
         # 获取输入内容（使用 toPlainText 以兼容 QTextEdit）
@@ -233,17 +201,17 @@ class ChatUI(QWidget):
             return
         # 在聊天框添加用户消息并换行
         self._append_text(f"{USERNAME}: {user_input}\n")
-        # 将用户消息写入日志
-        try:
-            self._write_chat_log(USERNAME, user_input)
-        except Exception:
-            pass
         # 清空输入框并重置高度
         self.input_field.clear()
         self._adjust_input_height()
 
         # 将用户消息加入消息列表并显示占位（等待模型返回）
-        self.messages.append({"role": "user", "content": user_input})
+        user_timestamp = datetime.datetime.now().isoformat()
+        self.messages.append({
+            "role": "user", 
+            "content": user_input,
+            "timestamp": user_timestamp
+        })
         self.show_placeholder()
         # 在工作线程中调用模型
         threading.Thread(target=self._worker_call_model, daemon=True).start()
@@ -257,5 +225,10 @@ class ChatUI(QWidget):
         # 调用注入的 chat_with_model（可能会逐块调用 on_response）
         reply = self.chat_with_model(self.messages, on_response)
         # 将完整回复记录到消息列表并通知主线程完成
-        self.messages.append({"role": "assistant", "content": reply})
+        assistant_timestamp = datetime.datetime.now().isoformat()
+        self.messages.append({
+            "role": "assistant", 
+            "content": reply,
+            "timestamp": assistant_timestamp
+        })
         self.finished_reply.emit()

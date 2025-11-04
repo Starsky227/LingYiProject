@@ -30,6 +30,12 @@ from system.config import config
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
+
+# 抑制 httpx 和相关库的详细日志输出
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 @dataclass

@@ -19,6 +19,7 @@ project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 sys.path.insert(0, project_root)
 
 from system.config import config
+from brain.memory.memory_download_from_neo4j import update_memory_graph_file
 
 logger = logging.getLogger(__name__)
 
@@ -715,6 +716,15 @@ def main():
     print("🧠 记忆图谱可视化工具")
     print("=" * 50)
     
+    # 首先同步Neo4j数据到本地JSON文件
+    print("\n🔄 正在同步最新的Neo4j数据...")
+    try:
+        update_memory_graph_file()
+        print("✅ Neo4j数据同步完成")
+    except Exception as e:
+        print(f"❌ Neo4j数据同步失败: {e}")
+        print("⚠️  将使用现有的本地数据进行可视化")
+    
     viewer = MemoryGraphViewer()
     
     # 生成HTML可视化
@@ -728,13 +738,9 @@ def main():
         print("- 节点标签切换")
         print("- 实时统计信息")
         
-        # 询问是否在浏览器中打开
-        try:
-            user_input = input("\n是否在浏览器中打开可视化页面? (y/n): ").strip().lower()
-            if user_input in ['y', 'yes', '是']:
-                viewer.open_in_browser()
-        except KeyboardInterrupt:
-            print("\n操作已取消")
+        # 直接在浏览器中打开可视化页面
+        print("\n🌐 正在浏览器中打开可视化页面...")
+        viewer.open_in_browser()
     else:
         print("❌ 可视化生成失败")
 
