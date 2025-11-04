@@ -9,6 +9,7 @@ import os
 import json
 import re
 import glob
+import shutil
 from datetime import datetime
 
 # 添加项目根目录到模块搜索路径
@@ -43,13 +44,45 @@ def parse_log_line(line, date_str):
         }
     return None
 
+def move_processed_file(source_file_path, filename):
+    """将处理完的日志文件移动到 logs/chat_logs 目录"""
+    try:
+        from system.config import config
+        
+        # 目标目录
+        target_dir = os.path.join(config.system.log_dir, "chat_logs")
+        
+        # 确保目标目录存在
+        os.makedirs(target_dir, exist_ok=True)
+        
+        # 目标文件路径
+        target_file_path = os.path.join(target_dir, filename)
+        
+        # 如果目标文件已存在，创建带时间戳的副本
+        if os.path.exists(target_file_path):
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            name, ext = os.path.splitext(filename)
+            new_filename = f"{name}_{timestamp}{ext}"
+            target_file_path = os.path.join(target_dir, new_filename)
+            print(f"    ⚠️  目标文件已存在，重命名为: {new_filename}")
+        
+        # 移动文件
+        shutil.move(source_file_path, target_file_path)
+        print(f"    📂 文件已移动到: {target_file_path}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"    ❌ 移动文件失败: {e}")
+        return False
+
 def load_chat_logs_from_folder():
     """从 logs_to_load 文件夹加载所有聊天日志文件并进行记忆提取"""
     print("🧠 从日志文件加载对话记忆（逐行录入模拟）")
     print("=" * 80)
     
     try:
-        from brain.memory.memory_recorder import _extract_memories_task, _read_classifier_prompt, _flatten_messages
+        from brain.memory.quintuples_extractor import _extract_memories_task, _read_classifier_prompt, _flatten_messages
         from system.config import config
         import time
         
@@ -120,11 +153,12 @@ def load_chat_logs_from_folder():
                     # 构建消息对象
                     message = {
                         "role": parsed['role'],
-                        "content": parsed['content']
+                        "content": parsed['content'],
+                        "timestamp": parsed['timestamp']
                     }
                     conversation_history.append(message)
                     
-                    print(f"    📤 第 {line_num} 轮 - {parsed['speaker']} ({parsed['timestamp']}): {parsed['content'][:50]}{'...' if len(parsed['content']) > 50 else ''}")
+                    print(f"    📤 第 {line_num} 轮 - ({parsed['timestamp']}) <{parsed['speaker']}> {parsed['content'][:50]}{'...' if len(parsed['content']) > 50 else ''}")
                     print(f"         当前历史: {len(conversation_history)} 条消息")
                     
                     # 直接调用记忆提取函数（同步版本）
@@ -133,9 +167,45 @@ def load_chat_logs_from_folder():
                         print(f"         ❌ 无法读取分类器提示词，跳过本轮")
                         continue
                     
-                    # 只处理最近6条消息
-                    recent_messages = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                    # 根据字数限制选择历史消息
+                    def select_messages_by_content_length(messages, max_chars=100, min_messages=2):
+                        """
+                        根据内容字数选择消息，确保至少包含min_messages条消息，
+                        在此基础上尽可能多地包含历史消息，但总字数不超过max_chars
+                        """
+                        if len(messages) <= min_messages:
+                            return messages
+                        
+                        # 从最新的消息开始，向前累积
+                        selected_messages = []
+                        total_chars = 0
+                        
+                        # 先确保至少有min_messages条消息
+                        for i in range(min(min_messages, len(messages))):
+                            msg = messages[-(i+1)]  # 从最后一条开始
+                            selected_messages.insert(0, msg)  # 插入到开头保持顺序
+                            total_chars += len(msg.get('content', ''))
+                        
+                        # 在字数限制内尽可能添加更多历史消息
+                        for i in range(min_messages, len(messages)):
+                            msg = messages[-(i+1)]
+                            msg_chars = len(msg.get('content', ''))
+                            
+                            if total_chars + msg_chars <= max_chars:
+                                selected_messages.insert(0, msg)
+                                total_chars += msg_chars
+                            else:
+                                break
+                        
+                        return selected_messages
+                    
+                    recent_messages = select_messages_by_content_length(conversation_history, max_chars=100, min_messages=2)
+                    total_content_chars = sum(len(msg.get('content', '')) for msg in recent_messages)
+                    
+                    print(f"         📝 选择了 {len(recent_messages)} 条消息，内容总字数: {total_content_chars} 字")
+                    
                     conversation_text = _flatten_messages(recent_messages)
+                    print(f"         📄 完整对话文本长度: {len(conversation_text)} 字符")
                     print(conversation_text)
                     
                     # 同步提取记忆
@@ -162,6 +232,13 @@ def load_chat_logs_from_folder():
                 
                 total_conversations += len(lines)
                 print(f"  ✅ 文件处理完成: {len(lines)} 轮对话")
+                
+                # 处理完成后移动文件到 logs/chat_logs 目录
+                print(f"  📦 移动已处理的文件...")
+                if move_processed_file(file_path, filename):
+                    print(f"  ✅ 文件移动成功，避免重复处理")
+                else:
+                    print(f"  ⚠️  文件移动失败，可能会在下次运行时重复处理")
                 
             except Exception as e:
                 print(f"  ❌ 处理文件异常: {e}")
@@ -216,6 +293,7 @@ def load_chat_logs_from_folder():
         print(f"  - 总对话轮数: {total_conversations}")
         print(f"  - 总提取记忆数: {total_memories_extracted}")
         print(f"💾 所有记忆已保存到 recent_memory.json")
+        print(f"📂 已处理的文件已移动到 logs/chat_logs 目录，避免重复处理")
         
         return True
         
@@ -240,6 +318,7 @@ def main():
     if main_success:
         print("🎉 日志文件记忆提取功能正常工作！")
         print("💡 重点：从 logs_to_load 文件夹逐行读取聊天记录，每轮对话都生成记忆并保存到 recent_memory.json")
+        print("📂 处理完的文件自动移动到 logs/chat_logs 目录，避免重复导入")
     else:
         print("⚠️  日志文件记忆提取失败，请检查:")
         print("  - 文件名格式是否为 chat_logs_YYYY_MM_DD.txt")

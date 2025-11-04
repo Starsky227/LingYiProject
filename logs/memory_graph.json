@@ -6,9 +6,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.3,
         "source": "用户",
-        "name": "C",
-        "last_updated": "2025-10-31T16:30",
+        "name": "D 可能因为 D 的暴脾气而担心 D 闹翻天",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     },
@@ -18,9 +20,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.45,
         "source": "用户",
-        "name": "鸡肉嫩而不腻",
-        "last_updated": "2025-10-31T16:30",
+        "name": "关于最近的瓜的信息",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -30,9 +34,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.6,
         "source": "用户",
-        "name": "A",
-        "last_updated": "2025-10-31T16:30",
+        "name": "老陈的媳妇在孩子上幼儿园填紧急联系人时，先写了 老王的电话，后来才改成 老陈的，这操作很耐人寻味",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     },
@@ -42,9 +48,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.3,
         "source": "用户",
-        "name": "下单",
-        "last_updated": "2025-10-31T16:30",
+        "name": "孩子上幼儿园填紧急联系人时，老陈媳妇写了老王的电话",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5
       }
     },
@@ -54,21 +62,26 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.35,
         "source": "用户",
-        "name": "中午的食物",
-        "last_updated": "2025-10-31T16:29",
+        "name": "说出最近的瓜",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
     {
       "id": "5",
       "labels": [
-        "Time"
+        "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.3,
         "source": "用户",
-        "name": "中午",
-        "last_updated": "2025-10-31T16:30"
+        "name": "B的家里的秘密",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5
       }
     },
     {
@@ -77,9 +90,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.45,
         "source": "用户",
-        "name": "B",
-        "last_updated": "2025-10-31T16:30",
+        "name": "告知最近有什么瓜",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -89,21 +104,26 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.4,
         "source": "用户",
-        "name": "主食类食物",
-        "last_updated": "2025-10-31T16:29",
+        "name": "A会发现B的家里的秘密",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5
       }
     },
     {
       "id": "8",
       "labels": [
-        "Time"
+        "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.3,
         "source": "用户",
-        "name": "今天",
-        "last_updated": "2025-10-31T16:29"
+        "name": "事情不要传到<老陈>的耳朵里",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5
       }
     },
     {
@@ -112,9 +132,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.4,
         "source": "用户",
-        "name": "带汤带肉的",
-        "last_updated": "2025-10-31T16:29",
+        "name": "事情已经传到<老陈>的耳朵里",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5
       }
     },
@@ -124,9 +146,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "凤添吉",
-        "last_updated": "2025-10-31T16:30",
+        "name": "A最近的瓜是关于C之前觉得不正常的C家",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -136,9 +160,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.45,
         "source": "用户",
-        "name": "鸡肉嫩",
-        "last_updated": "2025-10-31T16:30",
+        "name": "告知最近的瓜",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -148,9 +174,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "酒香",
-        "last_updated": "2025-10-31T16:29",
+        "name": "老陈家有异常",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -160,9 +188,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.35,
         "source": "用户",
-        "name": "吃",
-        "last_updated": "2025-10-31T16:29",
+        "name": "关于C的瓜",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5
       }
     },
@@ -172,9 +202,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "主食类",
-        "last_updated": "2025-10-31T16:29",
+        "name": "关于上次小区聚餐的事件",
+        "last_updated": "2025-11-04T12:47",
         "confidence": 0.5
       }
     },
@@ -184,9 +216,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "醉鸡煲",
-        "last_updated": "2025-10-31T16:30",
+        "name": "A在聚餐中，老陈的行为引起了B的注意",
+        "last_updated": "2025-11-04T12:47",
         "confidence": 0.5
       }
     },
@@ -196,9 +230,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.45,
         "source": "用户",
-        "name": "中午吃啥",
-        "last_updated": "2025-10-31T16:30",
+        "name": "A是否知道老陈的行为",
+        "last_updated": "2025-11-04T12:47",
         "confidence": 0.5
       }
     },
@@ -208,21 +244,24 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.45,
         "source": "用户",
-        "name": "面",
-        "last_updated": "2025-10-31T16:30",
+        "name": "对某件事的疑问",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
     {
       "id": "18",
       "labels": [
-        "Time"
+        "Entity"
       ],
       "properties": {
         "source": "用户",
-        "name": "昨天",
-        "last_updated": "2025-10-31T16:30"
+        "name": "A",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5
       }
     },
     {
@@ -232,8 +271,8 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "醉鸡煲会不会很腥",
-        "last_updated": "2025-10-31T16:30",
+        "name": "关于‘瓜’的更多信息",
+        "last_updated": "2025-11-04T02:27",
         "confidence": 0.5
       }
     },
@@ -244,8 +283,8 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "醉鸡煲不会很腥",
-        "last_updated": "2025-10-31T16:30",
+        "name": "D",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -256,8 +295,8 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "凤添吉处理得很干净",
-        "last_updated": "2025-10-31T16:30",
+        "name": "闺蜜",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     },
@@ -268,8 +307,8 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "凤添吉加了药材去味",
-        "last_updated": "2025-10-31T16:30",
+        "name": "老陈",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     },
@@ -280,20 +319,21 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "现在天有点凉",
-        "last_updated": "2025-10-31T16:30",
+        "name": "老陈的媳妇<老陈>的闺蜜",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     },
     {
       "id": "24",
       "labels": [
-        "Time"
+        "Entity"
       ],
       "properties": {
         "source": "用户",
-        "name": "现在",
-        "last_updated": "2025-10-31T16:30"
+        "name": "老王",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
       }
     },
     {
@@ -302,9 +342,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "喝口热汤多舒服",
-        "last_updated": "2025-10-31T16:30",
+        "name": "B可能对某件事是清楚的",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -314,9 +356,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "分量够不够我们三个人吃",
-        "last_updated": "2025-10-31T16:30",
+        "name": "B可能被老王资助而没有采取行动",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -326,22 +370,28 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "不腻",
-        "last_updated": "2025-10-31T16:30",
+        "name": "D可能认为D在9月30日用‘叔叔’的名义帮助D",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
     {
       "id": "28",
       "labels": [
-        "Entity"
+        "Time",
+        "Day"
       ],
       "properties": {
+        "time_type": "day",
         "source": "用户",
-        "name": "干净",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5
+        "name": "02日",
+        "month": 11,
+        "last_updated": "2025-11-04T12:48",
+        "year": 2025,
+        "day": 2
       }
     },
     {
@@ -350,9 +400,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "药材",
-        "last_updated": "2025-10-31T16:30",
+        "name": "D在9月30日用‘叔叔’的名义帮助D",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -362,21 +414,26 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.75,
         "source": "用户",
-        "name": "天",
-        "last_updated": "2025-10-31T16:30",
+        "name": "关于A关于幼儿园紧急联系人填写‘老陈媳妇’填写‘老王’电话的奇闻",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
     {
       "id": "31",
       "labels": [
-        "Time"
+        "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "有点凉",
-        "last_updated": "2025-10-31T16:30"
+        "name": "关于‘老陈’的家庭情况，认为‘老陈’的媳妇填写了‘老王’的电话，表示‘老陈’的媳妇在辛辛苦苦赚钱养家",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5
       }
     },
     {
@@ -385,9 +442,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "喝口热汤",
-        "last_updated": "2025-10-31T16:30",
+        "name": "对B家里的秘密感到担忧",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -397,9 +456,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "踩雷",
-        "last_updated": "2025-10-31T16:30",
+        "name": "A不要让B家里的秘密传到B耳朵里",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -409,9 +470,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "三人套餐",
-        "last_updated": "2025-10-31T16:30",
+        "name": "不要让老陈知道这件事",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -421,45 +484,11 @@
         "Entity"
       ],
       "properties": {
+        "significance": 1,
+        "importance": 0.65,
         "source": "用户",
-        "name": "配菜",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5
-      }
-    },
-    {
-      "id": "36",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "source": "用户",
-        "name": "性价比",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5
-      }
-    },
-    {
-      "id": "37",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "source": "用户",
-        "name": "分量",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5
-      }
-    },
-    {
-      "id": "38",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "source": "用户",
-        "name": "鸡肉",
-        "last_updated": "2025-10-31T16:30",
+        "name": "这件事已经传开了，并且瞒不过C的注意",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5
       }
     },
@@ -470,689 +499,1795 @@
       ],
       "properties": {
         "source": "用户",
-        "name": "定凤添吉的",
-        "last_updated": "2025-10-31T16:30",
+        "name": "养家",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "40",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "老陈媳妇",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "41",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "老王的电话",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "42",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.3,
+        "source": "用户",
+        "name": "关于最近的瓜",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "43",
+      "labels": [
+        "Time",
+        "Year"
+      ],
+      "properties": {
+        "time_type": "year",
+        "source": "用户",
+        "name": "2025年",
+        "last_updated": "2025-11-04T12:48",
+        "year": 2025
+      }
+    },
+    {
+      "id": "44",
+      "labels": [
+        "Time",
+        "Month"
+      ],
+      "properties": {
+        "time_type": "month",
+        "source": "用户",
+        "name": "11月",
+        "month": 11,
+        "last_updated": "2025-11-04T12:48",
+        "year": 2025
+      }
+    },
+    {
+      "id": "45",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time_type": "day",
+        "source": "用户",
+        "name": "2日",
+        "month": 11,
+        "last_updated": "2025-11-04T12:48",
+        "year": 2025,
+        "day": 2
+      }
+    },
+    {
+      "id": "46",
+      "labels": [
+        "Time",
+        "Hour"
+      ],
+      "properties": {
+        "time_type": "hour",
+        "source": "用户",
+        "name": "14点",
+        "month": 11,
+        "last_updated": "2025-11-04T12:48",
+        "year": 2025,
+        "hour": 14,
+        "day": 2
+      }
+    },
+    {
+      "id": "47",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.3,
+        "source": "用户",
+        "name": "B最近有什么瓜",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "48",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "B",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "51",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "C",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "52",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "source": "用户",
+        "name": "A所说的瓜是关于C之前觉得不正常的C家",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "53",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.45,
+        "source": "用户",
+        "name": "最近有什么瓜",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "54",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.4,
+        "source": "用户",
+        "name": "最近的瓜是关于<D>的家人的事情",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "55",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "source": "用户",
+        "name": "D的家人与D的闺蜜相似",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "56",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.3,
+        "source": "用户",
+        "name": "A是否听到了风声",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "58",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.4,
+        "source": "用户",
+        "name": "老陈的眉眼像<老王>一样",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "59",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "source": "用户",
+        "name": "老陈在聚餐时像个外人",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "60",
+      "labels": [
+        "Location"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "聚餐",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "61",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.3,
+        "source": "用户",
+        "name": "(2025年11月2日14点)<老王>给一个孩子夹菜，眼神亲密",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "62",
+      "labels": [
+        "Location"
+      ],
+      "properties": {
+        "source": "用户",
+        "name": "[小区]",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "64",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.4,
+        "source": "用户",
+        "name": "[外人]在旁边喝酒",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "65",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "source": "用户",
+        "name": "老陈在[小区]聚餐中的行为",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "66",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.3,
+        "source": "用户",
+        "name": "C 的发现",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "68",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "source": "用户",
+        "name": "老王多年来以‘叔叔’的名义帮衬<老陈>的事实",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5
       }
     }
   ],
   "relationships": [
     {
-      "id": "1152921504606846976",
-      "type": "评价",
+      "id": "1152924803141730304",
+      "type": "HAPPENED_AT",
       "start_node": "0",
-      "end_node": "1",
+      "end_node": "46",
       "properties": {
+        "importance": 0.3,
         "source": "用户",
-        "predicate": "评价",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "triple"
+        "action_context": "认为",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
       }
     },
     {
-      "id": "6917535624710848522",
-      "type": "推荐",
-      "start_node": "0",
-      "end_node": "10",
+      "id": "1152924803141730305",
+      "type": "HAPPENED_AT",
+      "start_node": "1",
+      "end_node": "46",
       "properties": {
+        "importance": 0.45,
         "source": "用户",
-        "action": "推荐",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "action_context": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
       }
     },
     {
-      "id": "6917535624710848527",
-      "type": "推荐",
-      "start_node": "0",
-      "end_node": "15",
-      "properties": {
-        "source": "用户",
-        "action": "推荐",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917541122268987428",
-      "type": "说",
-      "start_node": "0",
-      "end_node": "36",
-      "properties": {
-        "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "1152941295816146944",
-      "type": "提供",
-      "start_node": "0",
-      "end_node": "34",
-      "properties": {
-        "source": "用户",
-        "action": "提供",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "1155193095629832192",
-      "type": "提供",
-      "start_node": "0",
-      "end_node": "36",
-      "properties": {
-        "source": "用户",
-        "action": "提供",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "1152922604118474754",
-      "type": "决定",
-      "start_node": "2",
-      "end_node": "3",
-      "properties": {
-        "source": "用户",
-        "predicate": "决定",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "triple"
-      }
-    },
-    {
-      "id": "6917531226664337412",
-      "type": "纠结",
-      "start_node": "2",
-      "end_node": "4",
-      "properties": {
-        "time": "中午",
-        "source": "用户",
-        "action": "纠结",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917531226664337421",
-      "type": "纠结",
-      "start_node": "2",
-      "end_node": "13",
-      "properties": {
-        "time": "中午",
-        "source": "用户",
-        "action": "纠结",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917531226664337424",
-      "type": "纠结",
-      "start_node": "2",
-      "end_node": "16",
-      "properties": {
-        "time": "中午",
-        "source": "用户",
-        "action": "纠结",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917532326175965189",
+      "id": "1152924803141730306",
       "type": "HAPPENED_AT",
       "start_node": "2",
-      "end_node": "5",
+      "end_node": "46",
       "properties": {
+        "importance": 0.6,
         "source": "用户",
-        "action_context": "纠结",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30"
+        "action_context": "说",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
       }
     },
     {
-      "id": "1152929201188241410",
-      "type": "担心",
-      "start_node": "2",
-      "end_node": "15",
+      "id": "1152924803141730307",
+      "type": "HAPPENED_AT",
+      "start_node": "3",
+      "end_node": "46",
       "properties": {
+        "importance": 0.3,
         "source": "用户",
-        "action": "担心",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action_context": "说",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39"
+      }
+    },
+    {
+      "id": "1152924803141730308",
+      "type": "HAPPENED_AT",
+      "start_node": "4",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.35,
+        "source": "用户",
+        "action_context": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730309",
+      "type": "HAPPENED_AT",
+      "start_node": "5",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "感到惊讶",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39"
+      }
+    },
+    {
+      "id": "1152924803141730310",
+      "type": "HAPPENED_AT",
+      "start_node": "6",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.45,
+        "source": "用户",
+        "action_context": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730311",
+      "type": "HAPPENED_AT",
+      "start_node": "7",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "担心",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39"
+      }
+    },
+    {
+      "id": "1152924803141730312",
+      "type": "HAPPENED_AT",
+      "start_node": "8",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "希望",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39"
+      }
+    },
+    {
+      "id": "1152924803141730313",
+      "type": "HAPPENED_AT",
+      "start_node": "9",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "说",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39"
+      }
+    },
+    {
+      "id": "1152924803141730314",
+      "type": "HAPPENED_AT",
+      "start_node": "10",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730315",
+      "type": "HAPPENED_AT",
+      "start_node": "11",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.45,
+        "source": "用户",
+        "action_context": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730316",
+      "type": "HAPPENED_AT",
+      "start_node": "12",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730317",
+      "type": "HAPPENED_AT",
+      "start_node": "13",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.35,
+        "source": "用户",
+        "action_context": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730318",
+      "type": "HAPPENED_AT",
+      "start_node": "14",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "评论",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47"
+      }
+    },
+    {
+      "id": "1152924803141730319",
+      "type": "HAPPENED_AT",
+      "start_node": "15",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "疑问",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47"
+      }
+    },
+    {
+      "id": "1152924803141730320",
+      "type": "HAPPENED_AT",
+      "start_node": "16",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.45,
+        "source": "用户",
+        "action_context": "询问",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47"
+      }
+    },
+    {
+      "id": "1152924803141730321",
+      "type": "HAPPENED_AT",
+      "start_node": "17",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.45,
+        "source": "用户",
+        "action_context": "表达",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "6917540022757359617",
+      "type": "询问",
+      "start_node": "18",
+      "end_node": "1",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
+        "source": "用户",
+        "action": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917536724222476307",
-      "type": "担心",
-      "start_node": "2",
+      "id": "6917540022757359658",
+      "type": "询问",
+      "start_node": "18",
+      "end_node": "42",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "询问",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917540022757359663",
+      "type": "询问",
+      "start_node": "18",
+      "end_node": "47",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "询问",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917540022757359669",
+      "type": "询问",
+      "start_node": "18",
+      "end_node": "53",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
+        "source": "用户",
+        "action": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917549918362009658",
+      "type": "描述",
+      "start_node": "18",
+      "end_node": "58",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.4,
+        "source": "用户",
+        "action": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917549918362009659",
+      "type": "描述",
+      "start_node": "18",
+      "end_node": "59",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.5,
+        "source": "用户",
+        "location": "聚餐",
+        "action": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917559813966659616",
+      "type": "表达",
+      "start_node": "18",
+      "end_node": "32",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "表达",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152976480188235794",
+      "type": "没有提供",
+      "start_node": "18",
       "end_node": "19",
       "properties": {
         "source": "用户",
-        "action": "担心",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "predicate": "没有提供",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "6917591699803865149",
+      "type": "观察",
+      "start_node": "18",
+      "end_node": "61",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "location": "[小区]",
+        "action": "观察",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917540022757359642",
-      "type": "询问",
-      "start_node": "2",
-      "end_node": "26",
+      "id": "6917596097850376197",
+      "type": "感到惊讶",
+      "start_node": "18",
+      "end_node": "5",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
         "source": "用户",
-        "action": "询问",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "感到惊讶",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "1152933599234752514",
-      "type": "说",
-      "start_node": "2",
-      "end_node": "15",
-      "properties": {
-        "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917541122268987425",
-      "type": "说",
-      "start_node": "2",
-      "end_node": "33",
-      "properties": {
-        "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917546619827126309",
-      "type": "问",
-      "start_node": "2",
-      "end_node": "37",
-      "properties": {
-        "source": "用户",
-        "action": "问",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917532326175965192",
-      "type": "HAPPENED_AT",
-      "start_node": "6",
-      "end_node": "8",
-      "properties": {
-        "source": "用户",
-        "action_context": "不想吃",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29"
-      }
-    },
-    {
-      "id": "6917532326175965202",
-      "type": "HAPPENED_AT",
-      "start_node": "6",
-      "end_node": "18",
-      "properties": {
-        "source": "用户",
-        "action_context": "吃",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30"
-      }
-    },
-    {
-      "id": "6917532326175965208",
-      "type": "HAPPENED_AT",
-      "start_node": "6",
-      "end_node": "24",
-      "properties": {
-        "source": "用户",
-        "action_context": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30"
-      }
-    },
-    {
-      "id": "6917532326175965215",
-      "type": "HAPPENED_AT",
-      "start_node": "6",
-      "end_node": "31",
-      "properties": {
-        "source": "用户",
-        "action_context": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30"
-      }
-    },
-    {
-      "id": "1152925902653358086",
-      "type": "不想吃",
-      "start_node": "6",
-      "end_node": "7",
-      "properties": {
-        "time": "今天",
-        "source": "用户",
-        "action": "不想吃",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917533425687592974",
-      "type": "不想吃",
-      "start_node": "6",
+      "id": "6917598296873631758",
+      "type": "评论",
+      "start_node": "18",
       "end_node": "14",
       "properties": {
-        "time": "今天",
+        "time": "2025年11月2日14点",
+        "importance": 0.75,
         "source": "用户",
-        "action": "不想吃",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
+        "action": "评论",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917534525199220745",
-      "type": "想吃",
-      "start_node": "6",
-      "end_node": "9",
+      "id": "6917598296873631775",
+      "type": "评论",
+      "start_node": "18",
+      "end_node": "31",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
         "source": "用户",
-        "action": "想吃",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
+        "action": "评论",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "1152930300699869190",
-      "type": "认为",
-      "start_node": "6",
-      "end_node": "15",
+      "id": "6917540022757359629",
+      "type": "询问",
+      "start_node": "20",
+      "end_node": "13",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.35,
         "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917537823734104084",
-      "type": "认为",
-      "start_node": "6",
-      "end_node": "20",
+      "id": "6917540022757359672",
+      "type": "询问",
+      "start_node": "20",
+      "end_node": "56",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
         "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "询问",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917537823734104085",
-      "type": "认为",
-      "start_node": "6",
+      "id": "6917541122268987394",
+      "type": "说",
+      "start_node": "20",
+      "end_node": "2",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.6,
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987395",
+      "type": "说",
+      "start_node": "20",
+      "end_node": "3",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917549918362009655",
+      "type": "描述",
+      "start_node": "20",
+      "end_node": "55",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.5,
+        "source": "用户",
+        "action": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152977579699863572",
+      "type": "的",
+      "start_node": "20",
       "end_node": "21",
       "properties": {
         "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "predicate": "的",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
-        "type": "quintuple"
+        "type": "triple"
       }
     },
     {
-      "id": "6917537823734104086",
-      "type": "认为",
-      "start_node": "6",
-      "end_node": "22",
+      "id": "6917600495896887325",
+      "type": "指出",
+      "start_node": "20",
+      "end_node": "29",
       "properties": {
+        "time": "2025年11月02日14点",
+        "importance": 0.75,
         "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "指出",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917537823734104087",
-      "type": "认为",
-      "start_node": "6",
-      "end_node": "23",
-      "properties": {
-        "time": "现在",
-        "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917537823734104089",
-      "type": "认为",
-      "start_node": "6",
-      "end_node": "25",
-      "properties": {
-        "time": "现在",
-        "source": "用户",
-        "action": "认为",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917538923245731857",
-      "type": "吃",
-      "start_node": "6",
-      "end_node": "17",
-      "properties": {
-        "time": "昨天",
-        "source": "用户",
-        "action": "吃",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "1152933599234752518",
-      "type": "说",
-      "start_node": "6",
-      "end_node": "10",
-      "properties": {
-        "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
-      }
-    },
-    {
-      "id": "6917541122268987422",
-      "type": "说",
-      "start_node": "6",
+      "id": "6917601595408515102",
+      "type": "分享",
+      "start_node": "20",
       "end_node": "30",
       "properties": {
-        "time": "有点凉",
+        "time": "2025年11月2日14点",
+        "importance": 0.75,
         "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "分享",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917541122268987424",
-      "type": "说",
-      "start_node": "6",
-      "end_node": "32",
+      "id": "1152965485071958038",
+      "type": "是",
+      "start_node": "22",
+      "end_node": "23",
       "properties": {
         "source": "用户",
-        "action": "说",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "predicate": "是",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
-        "type": "quintuple"
+        "type": "triple"
       }
     },
     {
-      "id": "6917547719338754087",
-      "type": "建议",
-      "start_node": "6",
+      "id": "6917586202245726232",
+      "type": "的眉眼像",
+      "start_node": "22",
+      "end_node": "24",
+      "properties": {
+        "source": "用户",
+        "predicate": "的眉眼像",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "6917587301757354023",
+      "type": "在",
+      "start_node": "22",
       "end_node": "39",
       "properties": {
         "source": "用户",
-        "action": "建议",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "predicate": "在",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "6917593898827120704",
+      "type": "像",
+      "start_node": "22",
+      "end_node": "64",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.4,
+        "source": "用户",
+        "location": "[小区]",
+        "action": "像",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "1152942395327774726",
-      "type": "描述",
-      "start_node": "6",
-      "end_node": "10",
+      "id": "1152924803141730329",
+      "type": "HAPPENED_AT",
+      "start_node": "25",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730330",
+      "type": "HAPPENED_AT",
+      "start_node": "26",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "认为",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730331",
+      "type": "HAPPENED_AT",
+      "start_node": "27",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152958888002191388",
+      "type": "BELONGS_TO",
+      "start_node": "28",
+      "end_node": "44",
+      "properties": {
+        "hierarchy_type": "day_to_month",
+        "created_at": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730333",
+      "type": "HAPPENED_AT",
+      "start_node": "29",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "指出",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730334",
+      "type": "HAPPENED_AT",
+      "start_node": "30",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.75,
+        "source": "用户",
+        "action_context": "分享",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730335",
+      "type": "HAPPENED_AT",
+      "start_node": "31",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "评论",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730336",
+      "type": "HAPPENED_AT",
+      "start_node": "32",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "表达",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730337",
+      "type": "HAPPENED_AT",
+      "start_node": "33",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "希望",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730338",
+      "type": "HAPPENED_AT",
+      "start_node": "34",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "希望",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152924803141730339",
+      "type": "HAPPENED_AT",
+      "start_node": "35",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.65,
+        "source": "用户",
+        "action_context": "表示",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48"
+      }
+    },
+    {
+      "id": "1152980878234746920",
+      "type": "写了",
+      "start_node": "40",
+      "end_node": "41",
       "properties": {
         "source": "用户",
-        "action": "描述",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "predicate": "写了",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5,
-        "type": "quintuple"
+        "type": "triple"
       }
     },
     {
-      "id": "1155194195141459974",
-      "type": "描述",
-      "start_node": "6",
-      "end_node": "29",
+      "id": "6917532326175965230",
+      "type": "HAPPENED_AT",
+      "start_node": "42",
+      "end_node": "46",
       "properties": {
+        "importance": 0.3,
         "source": "用户",
-        "action": "描述",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "action_context": "询问",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27"
       }
     },
     {
-      "id": "6917529027641081867",
-      "type": "评价",
-      "start_node": "10",
-      "end_node": "11",
+      "id": "1152958888002191404",
+      "type": "BELONGS_TO",
+      "start_node": "44",
+      "end_node": "43",
       "properties": {
-        "source": "用户",
-        "action": "评价",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "hierarchy_type": "month_to_year",
+        "created_at": "2025-11-04T12:48"
       }
     },
     {
-      "id": "6917529027641081868",
-      "type": "评价",
-      "start_node": "10",
-      "end_node": "12",
+      "id": "1152958888002191405",
+      "type": "BELONGS_TO",
+      "start_node": "45",
+      "end_node": "44",
       "properties": {
-        "source": "用户",
-        "action": "评价",
-        "created_at": "2025-10-31T16:29",
-        "last_updated": "2025-10-31T16:29",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "hierarchy_type": "day_to_month",
+        "created_at": "2025-11-04T12:48"
       }
     },
     {
-      "id": "6917542221780615196",
-      "type": "处理",
-      "start_node": "10",
+      "id": "6919818210850111516",
+      "type": "BELONGS_TO",
+      "start_node": "46",
       "end_node": "28",
       "properties": {
-        "source": "用户",
-        "action": "处理",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "hierarchy_type": "hour_to_day",
+        "created_at": "2025-11-04T12:48"
       }
     },
     {
-      "id": "6917542221780615206",
-      "type": "处理",
-      "start_node": "10",
-      "end_node": "38",
+      "id": "1152958888002191406",
+      "type": "BELONGS_TO",
+      "start_node": "46",
+      "end_node": "45",
       "properties": {
-        "source": "用户",
-        "action": "处理",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "hierarchy_type": "hour_to_day",
+        "created_at": "2025-11-04T12:48"
       }
     },
     {
-      "id": "6917543321292242973",
-      "type": "加",
-      "start_node": "10",
-      "end_node": "29",
+      "id": "1152924803141730351",
+      "type": "HAPPENED_AT",
+      "start_node": "47",
+      "end_node": "46",
       "properties": {
+        "importance": 0.3,
         "source": "用户",
-        "action": "加",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "action_context": "询问",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27"
       }
     },
     {
-      "id": "6917544420803870754",
-      "type": "有",
-      "start_node": "10",
-      "end_node": "34",
+      "id": "6917536724222476295",
+      "type": "担心",
+      "start_node": "48",
+      "end_node": "7",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.4,
         "source": "用户",
-        "action": "有",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "担心",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917545520315498531",
-      "type": "送",
-      "start_node": "10",
-      "end_node": "35",
+      "id": "6917540022757359632",
+      "type": "询问",
+      "start_node": "48",
+      "end_node": "16",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
         "source": "用户",
-        "action": "送",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "询问",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "1152921504606846991",
-      "type": "评价",
-      "start_node": "15",
+      "id": "6917559813966659601",
+      "type": "表达",
+      "start_node": "48",
+      "end_node": "17",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
+        "source": "用户",
+        "action": "表达",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917589500780609540",
+      "type": "请求",
+      "start_node": "48",
+      "end_node": "4",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.35,
+        "source": "用户",
+        "action": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917589500780609542",
+      "type": "请求",
+      "start_node": "48",
+      "end_node": "6",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
+        "source": "用户",
+        "action": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917589500780609547",
+      "type": "请求",
+      "start_node": "48",
       "end_node": "11",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.45,
         "source": "用户",
-        "action": "评价",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "action": "请求",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
         "confidence": 0.5,
         "type": "quintuple"
       }
     },
     {
-      "id": "6917529027641081883",
-      "type": "评价",
-      "start_node": "15",
-      "end_node": "27",
+      "id": "6917594998338748481",
+      "type": "惊讶于",
+      "start_node": "48",
+      "end_node": "65",
       "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.5,
         "source": "用户",
-        "action": "评价",
-        "created_at": "2025-10-31T16:30",
-        "last_updated": "2025-10-31T16:30",
+        "location": "[小区]",
+        "action": "惊讶于",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
         "confidence": 0.5,
         "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917594998338748482",
+      "type": "惊讶于",
+      "start_node": "48",
+      "end_node": "66",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "惊讶于",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917597197362003976",
+      "type": "希望",
+      "start_node": "48",
+      "end_node": "8",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "希望",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917597197362004001",
+      "type": "希望",
+      "start_node": "48",
+      "end_node": "33",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "希望",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917597197362004002",
+      "type": "希望",
+      "start_node": "48",
+      "end_node": "34",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "希望",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917599396385259535",
+      "type": "疑问",
+      "start_node": "48",
+      "end_node": "15",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "疑问",
+        "created_at": "2025-11-04T12:47",
+        "last_updated": "2025-11-04T12:47",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104064",
+      "type": "认为",
+      "start_node": "51",
+      "end_node": "0",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.3,
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917537823734104090",
+      "type": "认为",
+      "start_node": "51",
+      "end_node": "26",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.75,
+        "source": "用户",
+        "action": "认为",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917541122268987401",
+      "type": "说",
+      "start_node": "51",
+      "end_node": "9",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.4,
+        "source": "用户",
+        "action": "说",
+        "created_at": "2025-11-04T02:39",
+        "last_updated": "2025-11-04T02:39",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917551017873637411",
+      "type": "表示",
+      "start_node": "51",
+      "end_node": "35",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "表示",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917569709571309636",
+      "type": "讲述",
+      "start_node": "51",
+      "end_node": "68",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.5,
+        "source": "用户",
+        "action": "讲述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917590600292237322",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "10",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.75,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917590600292237324",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "12",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.75,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917590600292237337",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "25",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.65,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917590600292237339",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "27",
+      "properties": {
+        "time": "2025年11月02日14点",
+        "importance": 0.75,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T12:48",
+        "last_updated": "2025-11-04T12:48",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152983077258002483",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "52",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.5,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "6917590600292237366",
+      "type": "猜测",
+      "start_node": "51",
+      "end_node": "54",
+      "properties": {
+        "time": "2025年11月2日14点",
+        "importance": 0.4,
+        "source": "用户",
+        "action": "猜测",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "1152924803141730356",
+      "type": "HAPPENED_AT",
+      "start_node": "52",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T02:27",
+        "last_updated": "2025-11-04T02:27"
+      }
+    },
+    {
+      "id": "1152924803141730357",
+      "type": "HAPPENED_AT",
+      "start_node": "53",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.45,
+        "source": "用户",
+        "action_context": "询问",
+        "created_at": "2025-11-04T12:45",
+        "last_updated": "2025-11-04T12:45"
+      }
+    },
+    {
+      "id": "1152924803141730358",
+      "type": "HAPPENED_AT",
+      "start_node": "54",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "猜测",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730359",
+      "type": "HAPPENED_AT",
+      "start_node": "55",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730360",
+      "type": "HAPPENED_AT",
+      "start_node": "56",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "询问",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730362",
+      "type": "HAPPENED_AT",
+      "start_node": "58",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730363",
+      "type": "HAPPENED_AT",
+      "start_node": "59",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "6917560913478287420",
+      "type": "HAPPENED_IN",
+      "start_node": "59",
+      "end_node": "60",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "描述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730365",
+      "type": "HAPPENED_AT",
+      "start_node": "61",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "观察",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "6917560913478287422",
+      "type": "HAPPENED_IN",
+      "start_node": "61",
+      "end_node": "62",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "观察",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730368",
+      "type": "HAPPENED_AT",
+      "start_node": "64",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "像",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152953390444052544",
+      "type": "HAPPENED_IN",
+      "start_node": "64",
+      "end_node": "62",
+      "properties": {
+        "importance": 0.4,
+        "source": "用户",
+        "action_context": "像",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730369",
+      "type": "HAPPENED_AT",
+      "start_node": "65",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "惊讶于",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152953390444052545",
+      "type": "HAPPENED_IN",
+      "start_node": "65",
+      "end_node": "62",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "惊讶于",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730370",
+      "type": "HAPPENED_AT",
+      "start_node": "66",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.3,
+        "source": "用户",
+        "action_context": "惊讶于",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
+      }
+    },
+    {
+      "id": "1152924803141730372",
+      "type": "HAPPENED_AT",
+      "start_node": "68",
+      "end_node": "46",
+      "properties": {
+        "importance": 0.5,
+        "source": "用户",
+        "action_context": "讲述",
+        "created_at": "2025-11-04T02:38",
+        "last_updated": "2025-11-04T02:38"
       }
     }
   ],
   "metadata": {
-    "node_count": 40,
-    "relationship_count": 46,
+    "node_count": 61,
+    "relationship_count": 99,
     "node_labels": {
-      "Entity": 35,
-      "Time": 5
+      "Entity": 54,
+      "Time": 5,
+      "Day": 2,
+      "Location": 2,
+      "Year": 1,
+      "Month": 1,
+      "Hour": 1
     },
     "relationship_types": {
-      "说": 6,
-      "认为": 6,
-      "评价": 5,
-      "HAPPENED_AT": 5,
-      "纠结": 3,
-      "推荐": 2,
-      "提供": 2,
-      "担心": 2,
-      "不想吃": 2,
-      "描述": 2,
-      "处理": 2,
-      "决定": 1,
-      "询问": 1,
-      "问": 1,
-      "想吃": 1,
-      "吃": 1,
-      "建议": 1,
-      "加": 1,
-      "有": 1,
-      "送": 1
+      "HAPPENED_AT": 42,
+      "询问": 7,
+      "猜测": 6,
+      "BELONGS_TO": 5,
+      "HAPPENED_IN": 4,
+      "描述": 3,
+      "说": 3,
+      "请求": 3,
+      "希望": 3,
+      "表达": 2,
+      "评论": 2,
+      "惊讶于": 2,
+      "认为": 2,
+      "没有提供": 1,
+      "观察": 1,
+      "感到惊讶": 1,
+      "的": 1,
+      "指出": 1,
+      "分享": 1,
+      "是": 1,
+      "的眉眼像": 1,
+      "在": 1,
+      "像": 1,
+      "写了": 1,
+      "担心": 1,
+      "疑问": 1,
+      "表示": 1,
+      "讲述": 1
     },
     "source": "neo4j",
     "neo4j_uri": "neo4j://127.0.0.1:7687",
     "neo4j_database": "neo4j"
   },
-  "updated_at": "2025-10-31T16:41:38.918027"
+  "updated_at": "2025-11-04T13:01:09.638373"
 }

@@ -18,7 +18,7 @@ import logging
 import os
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -54,6 +54,11 @@ async_client = AsyncOpenAI(
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# 抑制 httpx 和相关库的详细日志输出
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
+
 # ---- 数据结构 ----
 class MemoryType(str, Enum):
     NONE = "none"
@@ -78,6 +83,8 @@ class Quintuple:
     object: str
     time: Optional[str] = None
     location: Optional[str] = None
+    importance: float = 0.5  # 新增重要性字段
+    with_: Optional[List[str]] = None  # 新增同行者字段，使用with_避免关键字冲突
     source: str = "用户"
     confidence: float = 0.5
     time_record: str = ""
@@ -118,16 +125,150 @@ def _read_classifier_prompt() -> Optional[str]:
         return None
 
 
+def _get_real_timestamps_from_logs(messages: List[Dict[str, Any]]) -> List[Optional[str]]:
+    """
+    从日志文件中获取真实的对话时间戳
+    返回与messages对应的时间戳列表，如果找不到则为None
+    """
+    if not messages:
+        return []
+    
+    try:
+        # 获取今天的日志文件
+        logs_dir = os.path.join(_project_root(), "logs", "chat_logs")
+        today_filename = datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
+        log_file_path = os.path.join(logs_dir, today_filename)
+        
+        if not os.path.exists(log_file_path):
+            logger.warning(f"[记忆] 今日日志文件不存在: {log_file_path}")
+            return [None] * len(messages)
+        
+        # 读取日志文件
+        with open(log_file_path, "r", encoding="utf-8") as f:
+            log_lines = f.readlines()
+        
+        # 解析日志行，提取时间戳和内容
+        log_entries = []
+        for line in log_lines:
+            line = line.strip()
+            if not line:
+                continue
+            # 格式: HH:MM:SS <speaker> content
+            parts = line.split(" ", 2)
+            if len(parts) >= 3:
+                time_str = parts[0]
+                speaker = parts[1].strip("<>")
+                content = parts[2]
+                log_entries.append({
+                    "time": time_str,
+                    "speaker": speaker,
+                    "content": content
+                })
+        
+        # 匹配消息内容到日志条目
+        timestamps = []
+        for msg in messages:
+            content = (msg.get("content") or "").strip()
+            role = msg.get("role", "user")
+            
+            # 转换角色名称
+            if role == "user":
+                expected_speaker = config.ui.username if hasattr(config, 'ui') and hasattr(config.ui, 'username') else "用户"
+            elif role == "assistant":
+                expected_speaker = config.system.ai_name if hasattr(config, 'system') and hasattr(config.system, 'ai_name') else "AI"
+            else:
+                expected_speaker = role
+            
+            # 在日志中查找匹配的条目
+            found_timestamp = None
+            for entry in log_entries:
+                # 内容匹配（处理换行符替换）
+                log_content = entry["content"].replace(" ", " ")  # 日志中换行被替换为空格
+                if (entry["speaker"] == expected_speaker and 
+                    (content in log_content or log_content in content or 
+                     content.replace("\n", " ").replace("\r", " ") == log_content)):
+                    found_timestamp = entry["time"]
+                    break
+            
+            timestamps.append(found_timestamp)
+        
+        return timestamps
+        
+    except Exception as e:
+        logger.error(f"[记忆] 从日志获取时间戳失败: {e}")
+        return [None] * len(messages)
+
+
 def _flatten_messages(messages: List[Dict[str, Any]]) -> str:
-    """将对话历史转为可读文本，便于送入分类器"""
+    """将对话历史转为带时间戳的文本格式，直接使用消息中的真实时间戳"""
     lines = []
-    for m in messages:
+    current_time = datetime.now()
+    
+    for i, m in enumerate(messages):
         role = m.get("role", "user")
         content = (m.get("content") or "").strip()
         if not content:
             continue
-        lines.append(f"{role}: {content}")
+        
+        timestamp = None
+        
+        # 直接使用消息中的真实时间戳
+        msg_timestamp = m.get("timestamp")
+        if msg_timestamp:
+            try:
+                # 解析ISO格式时间戳
+                if isinstance(msg_timestamp, str):
+                    msg_time = datetime.fromisoformat(msg_timestamp.replace('Z', '+00:00'))
+                else:
+                    msg_time = msg_timestamp
+                timestamp = msg_time.strftime("%Y_%m_%d_%H:%M:%S")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"[记忆] 消息时间戳解析失败: {msg_timestamp}, 错误: {e}")
+        
+        # 如果消息没有时间戳，报错并终止
+        if not timestamp:
+            error_msg = f"[记忆] 消息缺少时间戳信息，无法处理记忆提取。消息索引: {i}, role: {role}, content: {content[:50]}..."
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+        
+        # 直接使用原始角色名
+        lines.append(f"{timestamp} <{role}> {content}")
+    
     return "\n".join(lines)
+
+
+def _summarize_dialogue(conversation: str) -> str:
+    """使用对话总结器处理对话内容"""
+    try:
+        # 读取对话总结器提示词
+        prompt_path = os.path.join(_project_root(), "brain", "memory", "prompt", "dialogue_summarizer.txt")
+        if not os.path.exists(prompt_path):
+            logging.warning(f"对话总结器提示词文件不存在: {prompt_path}")
+            return conversation
+            
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            summarizer_prompt = f.read().strip()
+        
+        # 构建完整提示
+        full_prompt = f"{summarizer_prompt}\n\n输入：\n{conversation}\n\n输出："
+        
+        # 调用模型进行对话总结
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": "你是一个专业的对话总结器，严格按照格式要求处理对话内容。"},
+                {"role": "user", "content": full_prompt}
+            ],
+            temperature=0.3
+        )
+        
+        result = response.choices[0].message.content.strip()
+        logging.info(f"对话总结完成，原文长度: {len(conversation)}, 总结长度: {len(result)}")
+        return result
+        
+    except Exception as e:
+        logging.error(f"对话总结失败: {e}")
+        return conversation
 
 
 def _safe_json_parse(text: str) -> Optional[Any]:
@@ -194,7 +335,13 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
     """
     实际的记忆提取逻辑（同步函数，会在 task_manager 的工作线程中执行）
     """
-    user_prompt = f"输入：\n{conversation}\n输出："
+    # 首先使用对话总结器处理对话内容
+    logging.info("开始对话总结处理...")
+    summarized_conversation = _summarize_dialogue(conversation)
+    logging.info(f"对话总结完成: {summarized_conversation[:100]}...")
+    
+    # 将总结后的内容发送给记忆分类器
+    user_prompt = f"输入：\n{summarized_conversation}\n输出："
     
     # 使用 OpenAI 客户端调用模型
     raw = _call_model_with_openai(system_prompt, user_prompt)
@@ -235,6 +382,24 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                 obj = str(data.get("object", "")).strip()
                 tm = data.get("time")
                 loc = data.get("location")
+                importance = data.get("importance", 0.5)  # 新增重要性字段
+                with_list = data.get("with")  # 新增同行者字段
+                
+                # 处理重要性字段
+                try:
+                    importance = float(importance) if importance is not None else 0.5
+                    # 确保重要性在合理范围内
+                    importance = max(0.0, min(1.0, importance))
+                except (ValueError, TypeError):
+                    importance = 0.5
+                
+                # 处理同行者字段
+                with_processed = None
+                if with_list and isinstance(with_list, list):
+                    with_processed = [str(item).strip() for item in with_list if str(item).strip()]
+                    if not with_processed:  # 如果列表为空，设为None
+                        with_processed = None
+                
                 # Note: 'source' field no longer in prompt output, using default
                 source = "用户"
                 current_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
@@ -247,6 +412,8 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                             object=obj,
                             time=(None if tm in (None, "", "null") else str(tm)),
                             location=(None if loc in (None, "", "null") else str(loc)),
+                            importance=importance,
+                            with_=with_processed,
                             source=source,
                             confidence=0.5,
                             time_record=current_time
@@ -372,7 +539,13 @@ def _save_memories_to_json(triples: List[Triple], quintuples: List[Quintuple], f
         
         # 转换新数据为字典格式
         new_triples = [asdict(triple) for triple in triples]
-        new_quintuples = [asdict(quintuple) for quintuple in quintuples]
+        new_quintuples = []
+        for quintuple in quintuples:
+            quintuple_dict = asdict(quintuple)
+            # 将 with_ 字段重命名为 with
+            if 'with_' in quintuple_dict:
+                quintuple_dict['with'] = quintuple_dict.pop('with_')
+            new_quintuples.append(quintuple_dict)
         
         # 合并数据
         existing_data["triples"].extend(new_triples)

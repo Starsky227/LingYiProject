@@ -15,12 +15,12 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from brain.memory.knowledge_graph_manager import upload_recent_memory_to_graph
-from brain.memory.memory_loader import update_memory_graph_file, load_memory_graph_from_file
+from brain.memory.memory_download_from_neo4j import update_memory_graph_file, load_memory_graph_from_file
 
-def test_upload_and_download_memories():
-    """测试将recent_memory.json上传到Neo4j，然后下载到memory_graph.json"""
+def upload_memories():
+    """recent_memory.json上传到Neo4j，然后下载到memory_graph.json"""
     print("=" * 60)
-    print("开始测试：上传recent_memory.json到Neo4j，然后下载到memory_graph.json")
+    print("正在上传：recent_memory.json到Neo4j，然后下载到memory_graph.json")
     print("=" * 60)
     
     # 第一步：上传recent_memory.json到Neo4j
@@ -90,11 +90,11 @@ def test_upload_and_download_memories():
         return False
     
     print("\n" + "=" * 60)
-    print("✅ 测试完成：记忆数据已成功从recent_memory.json上传到Neo4j，并下载到memory_graph.json")
+    print("✅ 记忆数据已成功从上传到neo4j，memory_graph.json已同步。")
     print("=" * 60)
     return True
 
-def test_check_memory_files():
+def check_memory_files():
     """检查相关记忆文件的存在性和内容"""
     print("\n" + "=" * 60)
     print("检查记忆文件状态")
@@ -156,10 +156,10 @@ if __name__ == "__main__":
     print("🧠 知识图谱测试开始...")
     
     # 检查文件状态
-    test_check_memory_files()
+    check_memory_files()
     
     # 执行上传和下载测试
-    success = test_upload_and_download_memories()
+    success = upload_memories()
     
     if success:
         print("\n🎉 所有测试通过！")
