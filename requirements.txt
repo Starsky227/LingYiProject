@@ -5,5 +5,7 @@ mcp>=1.8.0
 neo4j>=5.26.0
 openai>=2.6.1
 PyQt5>=5.15.9
+pytz>=2023.3
+python-dateutil>=2.8.2
 requests>=2.31.0
 uvicorn>=0.38.0

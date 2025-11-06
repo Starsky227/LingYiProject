@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-该文件为测试文件，无具体测试目的。包含多条测试代码，非当前测试目标的代码会被注释掉。
-需要测试时候直接运行即可。
-"""
 
 import os
 import sys
@@ -153,17 +149,17 @@ def check_memory_files():
         print(f"   ❌ 文件不存在")
 
 if __name__ == "__main__":
-    print("🧠 知识图谱测试开始...")
+    print("🧠 知识图谱上传开始...")
     
     # 检查文件状态
     check_memory_files()
     
-    # 执行上传和下载测试
+    # 执行上传和下载
     success = upload_memories()
     
     if success:
-        print("\n🎉 所有测试通过！")
+        print("\n🎉 记忆上传完成！")
     else:
-        print("\n❌ 测试失败，请检查错误信息")
+        print("\n❌ 上传失败，请检查错误信息")
     
-    print("\n测试结束。")
+    print("\n上传结束。")

@@ -11,7 +11,7 @@ from brain.task_manager import task_manager
 from system import config
 from ui.chat_ui import ChatUI
 # 从独立服务模块导入模型交互函数与预加载函数
-from api_server.llm_service import chat_with_model, preload_and_get_greeting
+from api_server.llm_service import chat_with_model, preload_model
 
 # 获取当前脚本目录
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -189,24 +189,17 @@ def main():
     service_mgr.start_background_services()
     service_mgr.start_all_servers()
     
-    # 先预加载模型并获取问候语（阻塞）
+    # 预加载模型（阻塞）
     print("🔄 正在预加载模型...")
-    greeting = preload_and_get_greeting()
+    model_loaded = preload_model()
     
-    if greeting:
-        print(f"✅ 模型预加载完成，问候语: {greeting[:50]}...")
-    else:
-        print("⚠️  模型预加载未返回问候语")
+    if not model_loaded:
+        print("❌ 模型预加载失败，程序可能无法正常工作")
 
     # 启动 UI
     app = QApplication(sys.argv)
     window = ChatUI(chat_with_model, ai_name=AI_NAME)
     window.show()
-
-    # 预加载完成后，在 UI 中显示模型的问候（主线程中操作）
-    if greeting:
-        window._append_text(f"{AI_NAME}: {greeting}\n")
-        window.messages.append({"role": "assistant", "content": greeting})
 
     sys.exit(app.exec_())
 

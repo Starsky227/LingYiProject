@@ -15,7 +15,7 @@ from aiohttp import ClientSession
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcpserver.mcp_registry import MCP_REGISTRY # MCP服务注册表
 
-from system.config import config, AI_NAME, logger
+from system.config import config, logger
 
 # 配置日志
 logging.basicConfig(

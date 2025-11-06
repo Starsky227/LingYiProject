@@ -11,8 +11,6 @@ from typing import Dict, Any, List, Optional
 from system.config import config, logger
 from langchain_openai import ChatOpenAI
 
-from system.config import get_prompt
-
 class ConversationAnalyzer:
     """
     对话分析器模块：分析语音对话轮次以推断潜在任务意图

@@ -27,7 +27,7 @@ except ImportError:
     print("Neo4j driver not installed. Please install with: pip install neo4j")
     sys.exit(1)
 
-from system.config import config
+from system.config import config, is_neo4j_available
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,11 @@ class KnowledgeGraphManager:
         """连接到 Neo4j 数据库"""
         if not config.grag.enabled:
             logger.warning("GRAG is disabled, skipping Neo4j connection")
+            return False
+            
+        # 使用全局连接状态检查，避免重复连接尝试
+        if not is_neo4j_available():
+            logger.warning("Neo4j connection unavailable, skipping connection attempt")
             return False
             
         try:
@@ -90,6 +95,10 @@ class KnowledgeGraphManager:
     
     def _ensure_connection(self) -> bool:
         """确保数据库连接可用"""
+        # 首先检查全局连接状态
+        if not is_neo4j_available():
+            return False
+            
         if not self.connected:
             return self._connect()
         return True
