@@ -2,6 +2,8 @@ import os
 import json
 import threading
 import datetime
+
+from system.config import config
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QTextEdit,
                              QHBoxLayout, QSizePolicy, QLabel)
 from PyQt5.QtCore import pyqtSignal, Qt, QEvent
@@ -15,11 +17,14 @@ config_path = os.path.join(current_dir, "..", "config.json")
 config_path = os.path.normpath(config_path)
 
 # 读取 JSON 配置
-with open(config_path, "r", encoding="utf-8") as f:
-    configjson = json.load(f)
-USERNAME = configjson["ui"]["username"]
-TEXT_SIZE = int(configjson["ui"]["text_size"])
-IMAGE_NAME = configjson["ui"].get("image_name", "LingYi_img.png")
+# API 配置
+API_KEY = config.api.api_key
+API_URL = config.api.base_url
+MODEL = config.api.model
+AI_NAME = config.system.ai_name
+USERNAME = config.ui.username
+TEXT_SIZE = config.ui.text_size
+IMAGE_NAME = config.ui.image_name
 
 class ChatUI(QWidget):
     # 定义从工作线程到 GUI 线程传递数据的信号
@@ -208,7 +213,7 @@ class ChatUI(QWidget):
         # 将用户消息加入消息列表并显示占位（等待模型返回）
         user_timestamp = datetime.datetime.now().isoformat()
         self.messages.append({
-            "role": "user", 
+            "role": USERNAME, 
             "content": user_input,
             "timestamp": user_timestamp
         })

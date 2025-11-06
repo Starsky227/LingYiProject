@@ -1,0 +1,31 @@
+{
+  "triples": [
+    {
+      "subject": "",
+      "predicate": "",
+      "object": "",
+      "source": "",
+      "confidence": 0.5,
+      "time_record": ""
+    }],
+  "quintuples": [
+    {
+      "subject": "",
+      "action": "",
+      "object": "",
+      "time": "",
+      "location": null,
+      "importance": 0.5,
+      "source": "",
+      "confidence": 0.5,
+      "time_record": "",
+      "with": null
+    }
+  ],
+  "metadata": {
+    "last_updated": "2025-11-04T19:29",
+    "total_triples": 0,
+    "total_quintuples": 1,
+    "total_memories": 1
+  }
+}

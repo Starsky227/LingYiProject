@@ -149,11 +149,42 @@ class LingyiConfig(BaseModel):
         super().__init__(**kwargs)
         self.system.log_dir.mkdir(parents=True, exist_ok=True)  # 确保递归创建日志目录
 
+# 全局Neo4j连接状态管理
+_neo4j_connection_tested = False
+_neo4j_connection_available = False
+
+def is_neo4j_available() -> bool:
+    """检查Neo4j是否可用（带缓存）"""
+    global _neo4j_connection_tested, _neo4j_connection_available
+    
+    if not config.grag.enabled:
+        return False
+    
+    # 如果已经测试过，直接返回缓存结果
+    if _neo4j_connection_tested:
+        return _neo4j_connection_available
+    
+    # 首次测试连接
+    _neo4j_connection_available = check_neo4j_connection()
+    _neo4j_connection_tested = True
+    
+    if not _neo4j_connection_available:
+        print("⚠️  Neo4j数据库连接失败，GRAG记忆系统将被禁用")
+    
+    return _neo4j_connection_available
+
+def reset_neo4j_connection_status():
+    """重置Neo4j连接状态（用于配置重载时）"""
+    global _neo4j_connection_tested, _neo4j_connection_available
+    _neo4j_connection_tested = False
+    _neo4j_connection_available = False
+
 config = load_config()
 
 def reload_config() -> LingyiConfig:
     """重新加载配置"""
     global config
+    reset_neo4j_connection_status()  # 重置Neo4j连接状态
     config = load_config()
     notify_config_changed()
     return config
@@ -162,6 +193,7 @@ def hot_reload_config() -> LingyiConfig:
     """热更新配置 - 重新加载配置并通知所有模块"""
     global config
     old_config = config
+    reset_neo4j_connection_status()  # 重置Neo4j连接状态
     config = load_config()
     notify_config_changed()
     print(f"配置已热更新: {old_config.system.version} -> {config.system.version}")
@@ -171,13 +203,51 @@ def get_config() -> LingyiConfig:
     """获取当前配置"""
     return config
 
+def check_neo4j_connection() -> bool:
+    """检查Neo4j数据库连接状态"""
+    if not config.grag.enabled:
+        return False
+    
+    try:
+        from neo4j import GraphDatabase
+        from neo4j.exceptions import ServiceUnavailable, AuthError
+        
+        uri = config.grag.neo4j_uri
+        user = config.grag.neo4j_user
+        password = config.grag.neo4j_password
+        database = config.grag.neo4j_database
+        
+        driver = GraphDatabase.driver(
+            uri, 
+            auth=(user, password),
+            database=database,
+            connection_acquisition_timeout=5  # 5秒超时
+        )
+        
+        # 测试连接
+        with driver.session() as session:
+            result = session.run("RETURN 1 as test")
+            test_value = result.single()["test"]
+            driver.close()
+            return test_value == 1
+            
+    except (AuthError, ServiceUnavailable, Exception):
+        return False
+
 # 初始化时打印配置信息
 if config.system.debug:
     print(f"Lingyi {config.system.version} 配置已加载")
     print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
     print(f"Agent服务器: {'启用' if config.agent_server.enabled else '禁用'} ({config.agent_server.host}:{config.agent_server.port})")
     print(f"MCP服务器: {'启用' if config.mcp_server.enabled else '禁用'} ({config.mcp_server.host}:{config.mcp_server.port})")
-    print(f"GRAG记忆系统: {'启用' if config.grag.enabled else '禁用'}")
+    
+    # 检查GRAG记忆系统连接状态
+    if config.grag.enabled:
+        neo4j_connected = is_neo4j_available()
+        connection_status = "已连接" if neo4j_connected else "连接失败，已禁用"
+        print(f"GRAG记忆系统: 启用 - Neo4j数据库{connection_status}")
+    else:
+        print(f"GRAG记忆系统: 禁用")
 
 import logging
 logger = logging.getLogger(__name__)

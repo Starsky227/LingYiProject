@@ -1,0 +1,86 @@
+{
+  "name": "系统时间获取",
+  "displayName": "系统时间获取",
+  "version": "1.0.0",
+  "author": "LingYi AI Assistant",
+  "agentType": "mcp",
+  "description": "获取当前系统时间，支持多种格式和时区",
+  "entryPoint": {
+    "module": "mcpserver.agent_date_time.datetime_agent",
+    "class": "DateTimeAgent",
+    "function": "create_datetime_agent"
+  },
+  "factory": {
+    "validate_config": "validate_agent_config",
+    "get_dependencies": "get_agent_dependencies"
+  },
+  "communication": {
+    "protocol": "stdio",
+    "timeout": 5000
+  },
+  "capabilities": {
+    "invocationCommands": [
+      {
+        "command": "获取当前时间",
+        "description": "获取当前系统时间；参数：format（时间格式，可选，默认ISO），timezone（时区，可选，默认本地时区），language（语言，可选，默认中文）",
+        "example": "{\"tool_name\":\"获取当前时间\",\"format\":\"ISO\",\"timezone\":\"Asia/Shanghai\",\"language\":\"zh\"}"
+      },
+      {
+        "command": "时间计算",
+        "description": "基于当前时间进行时间计算；参数：operation（操作类型：add/subtract），amount（数量），unit（单位：seconds/minutes/hours/days/weeks/months/years）",
+        "example": "{\"tool_name\":\"时间计算\",\"operation\":\"add\",\"amount\":7,\"unit\":\"days\"}"
+      },
+      {
+        "command": "时间格式转换",
+        "description": "将时间字符串转换为指定格式；参数：input_time（输入时间字符串），input_format（输入格式，可选），output_format（输出格式）",
+        "example": "{\"tool_name\":\"时间格式转换\",\"input_time\":\"2025-11-04 14:30:00\",\"output_format\":\"%Y年%m月%d日 %H时%M分\"}"
+      }
+    ]
+  },
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "tool_name": {"type": "string", "description": "工具名称：获取当前时间 | 时间计算 | 时间格式转换"},
+      "format": {"type": "string", "description": "时间格式：ISO/readable/timestamp/custom，默认ISO"},
+      "timezone": {"type": "string", "description": "时区，如Asia/Shanghai、UTC等，默认本地时区"},
+      "language": {"type": "string", "description": "语言：zh（中文）/en（英文），默认zh"},
+      "operation": {"type": "string", "description": "计算操作：add（加）/subtract（减）"},
+      "amount": {"type": "integer", "description": "时间数量"},
+      "unit": {"type": "string", "description": "时间单位：seconds/minutes/hours/days/weeks/months/years"},
+      "input_time": {"type": "string", "description": "输入的时间字符串"},
+      "input_format": {"type": "string", "description": "输入时间的格式"},
+      "output_format": {"type": "string", "description": "输出时间的格式"},
+      "custom_format": {"type": "string", "description": "自定义时间格式，如%Y-%m-%d %H:%M:%S"}
+    },
+    "required": ["tool_name"]
+  },
+  "outputSchema": {
+    "type": "object",
+    "properties": {
+      "status": {"type": "string", "description": "操作状态：success/error"},
+      "message": {"type": "string", "description": "操作结果描述"},
+      "data": {
+        "type": "object",
+        "properties": {
+          "current_time": {"type": "string", "description": "当前时间字符串"},
+          "timestamp": {"type": "number", "description": "Unix时间戳"},
+          "timezone": {"type": "string", "description": "时区信息"},
+          "weekday": {"type": "string", "description": "星期几"},
+          "formatted_time": {"type": "string", "description": "格式化后的时间"}
+        }
+      },
+      "error": {"type": "string", "description": "错误信息"}
+    }
+  },
+  "configSchema": {
+    "default_timezone": "string",
+    "default_format": "string",
+    "default_language": "string"
+  },
+  "runtime": {
+    "instance": null,
+    "is_initialized": false,
+    "last_used": null,
+    "usage_count": 0
+  }
+}

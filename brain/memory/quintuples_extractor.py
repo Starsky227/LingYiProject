@@ -71,7 +71,7 @@ class Triple:
     subject: str
     predicate: str
     object: str
-    source: str = "用户"
+    source: str = "unknown"
     confidence: float = 0.5
     time_record: str = ""
 
@@ -85,7 +85,7 @@ class Quintuple:
     location: Optional[str] = None
     importance: float = 0.5  # 新增重要性字段
     with_: Optional[List[str]] = None  # 新增同行者字段，使用with_避免关键字冲突
-    source: str = "用户"
+    source: str = "unknown"
     confidence: float = 0.5
     time_record: str = ""
 
@@ -123,80 +123,6 @@ def _read_classifier_prompt() -> Optional[str]:
     except Exception as e:
         logger.error(f"[记忆] 读取提示词失败: {e}")
         return None
-
-
-def _get_real_timestamps_from_logs(messages: List[Dict[str, Any]]) -> List[Optional[str]]:
-    """
-    从日志文件中获取真实的对话时间戳
-    返回与messages对应的时间戳列表，如果找不到则为None
-    """
-    if not messages:
-        return []
-    
-    try:
-        # 获取今天的日志文件
-        logs_dir = os.path.join(_project_root(), "logs", "chat_logs")
-        today_filename = datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
-        log_file_path = os.path.join(logs_dir, today_filename)
-        
-        if not os.path.exists(log_file_path):
-            logger.warning(f"[记忆] 今日日志文件不存在: {log_file_path}")
-            return [None] * len(messages)
-        
-        # 读取日志文件
-        with open(log_file_path, "r", encoding="utf-8") as f:
-            log_lines = f.readlines()
-        
-        # 解析日志行，提取时间戳和内容
-        log_entries = []
-        for line in log_lines:
-            line = line.strip()
-            if not line:
-                continue
-            # 格式: HH:MM:SS <speaker> content
-            parts = line.split(" ", 2)
-            if len(parts) >= 3:
-                time_str = parts[0]
-                speaker = parts[1].strip("<>")
-                content = parts[2]
-                log_entries.append({
-                    "time": time_str,
-                    "speaker": speaker,
-                    "content": content
-                })
-        
-        # 匹配消息内容到日志条目
-        timestamps = []
-        for msg in messages:
-            content = (msg.get("content") or "").strip()
-            role = msg.get("role", "user")
-            
-            # 转换角色名称
-            if role == "user":
-                expected_speaker = config.ui.username if hasattr(config, 'ui') and hasattr(config.ui, 'username') else "用户"
-            elif role == "assistant":
-                expected_speaker = config.system.ai_name if hasattr(config, 'system') and hasattr(config.system, 'ai_name') else "AI"
-            else:
-                expected_speaker = role
-            
-            # 在日志中查找匹配的条目
-            found_timestamp = None
-            for entry in log_entries:
-                # 内容匹配（处理换行符替换）
-                log_content = entry["content"].replace(" ", " ")  # 日志中换行被替换为空格
-                if (entry["speaker"] == expected_speaker and 
-                    (content in log_content or log_content in content or 
-                     content.replace("\n", " ").replace("\r", " ") == log_content)):
-                    found_timestamp = entry["time"]
-                    break
-            
-            timestamps.append(found_timestamp)
-        
-        return timestamps
-        
-    except Exception as e:
-        logger.error(f"[记忆] 从日志获取时间戳失败: {e}")
-        return [None] * len(messages)
 
 
 def _flatten_messages(messages: List[Dict[str, Any]]) -> str:
@@ -331,14 +257,19 @@ def _call_model_with_openai(system_prompt: str, user_prompt: str) -> str:
 
 
 # ---- 异步记忆提取任务 ----
-def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResult:
+def _extract_memories_task(system_prompt: str, conversation: str, source: str = "unknown") -> MemoryResult:
     """
     实际的记忆提取逻辑（同步函数，会在 task_manager 的工作线程中执行）
+    
+    Args:
+        system_prompt: 系统提示词
+        conversation: 对话内容
+        source: 数据来源，默认为"unknown"
     """
     # 首先使用对话总结器处理对话内容
     logging.info("开始对话总结处理...")
     summarized_conversation = _summarize_dialogue(conversation)
-    logging.info(f"对话总结完成: {summarized_conversation[:100]}...")
+    logging.info(f"对话总结完成: {summarized_conversation}")
     
     # 将总结后的内容发送给记忆分类器
     user_prompt = f"输入：\n{summarized_conversation}\n输出："
@@ -362,8 +293,7 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                 subj = str(data.get("subject", "")).strip()
                 pred = str(data.get("predicate", "")).strip()
                 obj = str(data.get("object", "")).strip()
-                # Note: 'source' field no longer in prompt output, using default
-                source = "用户"
+                # Note: 'source' field no longer in prompt output, using parameter
                 current_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
                 if subj and pred and obj:
                     triples.append(
@@ -400,8 +330,7 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
                     if not with_processed:  # 如果列表为空，设为None
                         with_processed = None
                 
-                # Note: 'source' field no longer in prompt output, using default
-                source = "用户"
+                # Note: 'source' field no longer in prompt output, using parameter
                 current_time = datetime.now().strftime("%Y-%m-%dT%H:%M")
                 # time/location 可以为 null
                 if subj and action and obj:
@@ -457,7 +386,7 @@ def _extract_memories_task(system_prompt: str, conversation: str) -> MemoryResul
 
 
 # ---- 核心入口 ----
-def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = TaskPriority.LOW, max_messages: int = 6) -> str:
+def record_memories(messages: List[Dict[str, Any]], source: str = "unknown", priority: TaskPriority = TaskPriority.LOW, max_messages: int = 6) -> str:
     """
     在一轮对话结束后调用：
     - 自动提取最近的消息记录（默认6条，适应多角色互动场景）
@@ -467,9 +396,16 @@ def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = Tas
     
     Args:
         messages: 完整的消息列表
+        source: 数据来源，默认为"unknown"
         priority: 任务优先级
-        max_messages: 最大处理消息数量（默认6条，支持3用户+3AI或多角色场景）
+        max_messages: 最大处理消息数量（默认6条，支持多角色谈话场景）
     """
+    # 检查Neo4j是否可用，如果不可用则跳过记忆提取
+    from system.config import is_neo4j_available
+    if not is_neo4j_available():
+        logger.info("[记忆] Neo4j不可用，跳过记忆提取")
+        return ""
+    
     # 提取最近的消息记录
     recent_messages = _extract_recent_messages(messages, max_messages)
     
@@ -491,6 +427,7 @@ def record_memories(messages: List[Dict[str, Any]], priority: TaskPriority = Tas
         _extract_memories_task,
         system_prompt,
         conversation,
+        source,
         priority=priority
     )
     
@@ -604,13 +541,14 @@ def _extract_recent_messages(messages: List[Dict[str, Any]], max_messages: int =
     return recent_messages
 
 
-def record_recent_conversations_async(messages: List[Dict[str, Any]], max_messages: int = 6, priority: TaskPriority = TaskPriority.LOW) -> str:
+def record_recent_conversations_async(messages: List[Dict[str, Any]], source: str = "unknown", max_messages: int = 6, priority: TaskPriority = TaskPriority.LOW) -> str:
     """
     异步处理最近的消息并保存到 recent_memory.json
     注意：此函数现在直接调用 record_memories，推荐直接使用 record_memories
     
     Args:
         messages: 完整的消息列表
+        source: 数据来源，默认为"unknown"
         max_messages: 要处理的最大消息数量（默认6条）
         priority: 任务优先级
     
@@ -618,4 +556,4 @@ def record_recent_conversations_async(messages: List[Dict[str, Any]], max_messag
         任务 ID
     """
     # 直接调用 record_memories，功能已经集成
-    return record_memories(messages, priority=priority, max_messages=max_messages)
+    return record_memories(messages, source=source, priority=priority, max_messages=max_messages)

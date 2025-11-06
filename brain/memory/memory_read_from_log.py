@@ -209,7 +209,7 @@ def load_chat_logs_from_folder():
                     print(conversation_text)
                     
                     # 同步提取记忆
-                    memory_result = _extract_memories_task(system_prompt, conversation_text)
+                    memory_result = _extract_memories_task(system_prompt, conversation_text, f"logs/{filename}")
                     
                     if memory_result and memory_result.has_memory:
                         extracted_count = len(memory_result.triples) + len(memory_result.quintuples)
@@ -312,18 +312,8 @@ def main():
     main_success = load_chat_logs_from_folder()
     
     print("\n" + "=" * 80)
-    print("📈 测试总结:")
     print(f"  - 日志文件记忆提取: {'✅ 成功' if main_success else '❌ 失败'}")
     
-    if main_success:
-        print("🎉 日志文件记忆提取功能正常工作！")
-        print("💡 重点：从 logs_to_load 文件夹逐行读取聊天记录，每轮对话都生成记忆并保存到 recent_memory.json")
-        print("📂 处理完的文件自动移动到 logs/chat_logs 目录，避免重复导入")
-    else:
-        print("⚠️  日志文件记忆提取失败，请检查:")
-        print("  - 文件名格式是否为 chat_logs_YYYY_MM_DD.txt")
-        print("  - 文件内容格式是否为 HH:MM:SS <发言者> 内容")
-        print("  - logs_to_load 文件夹是否存在且包含 txt 文件")
 
 if __name__ == "__main__":
     main()
