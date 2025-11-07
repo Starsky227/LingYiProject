@@ -1,381 +1,387 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-后台意图分析器 - 基于博弈论的对话分析机制
-分析对话片段，提取潜在任务意图
-"""
+import os
+import json
+from litellm import OpenAI
+import requests
 
-import asyncio
-import time
-from typing import Dict, Any, List, Optional
-from system.config import config, logger
-from langchain_openai import ChatOpenAI
+from system.config import config
+from typing import Dict, List, Optional, Tuple
+from mcpserver.mcp_manager import get_mcp_manager
 
-class ConversationAnalyzer:
+# 获取项目根目录
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# API 配置
+API_KEY = config.api.api_key
+API_URL = config.api.base_url
+MODEL = config.api.model
+AI_NAME = config.system.ai_name
+USERNAME = config.ui.username
+DEBUG_MODE = config.system.debug
+
+# 初始化 OpenAI 客户端
+client = OpenAI(
+    api_key=API_KEY,
+    base_url=API_URL
+)
+
+# 读取意图分析提示词
+INTENT_ANALYSIS_PROMPT = ""
+prompt_path = os.path.join(BASE_DIR, "system", "prompts", "intent_analyze.txt")
+if os.path.exists(prompt_path):
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        INTENT_ANALYSIS_PROMPT = f.read().strip()
+
+# 读取对话分析提示词
+CONVERSATION_PROMPT = ""
+prompt_path = os.path.join(BASE_DIR, "system", "prompts", "intent_analyze.txt")
+if os.path.exists(prompt_path):
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        CONVERSATION_PROMPT = f.read().strip()
+
+# 读取任务规划提示词
+TASK_PLANNER_PROMPT = ""
+prompt_path = os.path.join(BASE_DIR, "system", "prompts", "task_planner.txt")
+if os.path.exists(prompt_path):
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        TASK_PLANNER_PROMPT = f.read().strip()
+
+def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
     """
-    对话分析器模块：分析语音对话轮次以推断潜在任务意图
-    输入是跨服务器的文本转录片段；输出是零个或多个标准化的任务查询
+    使用intend_analyze.txt提示词分析最后一条消息的意图
+    返回: (意图类型, 具体任务)
     """
-    def __init__(self):
-        self.llm = ChatOpenAI(
-            model=config.api.model,
-            base_url=config.api.base_url,
-            api_key=config.api.api_key,
-            temperature=0
+    if not INTENT_ANALYSIS_PROMPT:
+        return "unknown", "[错误] 意图分析提示词未加载，请检查 intent_analyze.txt 文件"
+
+    # 将信息分为最新消息和历史消息
+    new_message = messages[-1]
+    history_messages = messages[:-1] if len(messages) > 1 else []
+    
+    # 消息扁平化处理
+    flattened_text = ""
+    
+    # 处理历史消息
+    flattened_text += "[历史消息]：\n"
+    if history_messages:
+        for msg in history_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "").strip()
+            flattened_text += f"<{role}>{content}\n"
+    
+    # 处理当前消息
+    flattened_text += "[当前消息]：\n"
+    if new_message:
+        role = new_message.get("role", "unknown")
+        content = new_message.get("content", "").strip()
+        flattened_text += f"<{role}>{content}\n"
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] 意图分析接收到:\n{flattened_text}")
+    
+    try:
+        # 调用模型分析意图
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": INTENT_ANALYSIS_PROMPT},
+                {"role": "user", "content": flattened_text}
+            ],
+            stream=False,
+            temperature=0.3
+        )
+        
+        full_response = response.choices[0].message.content
+        if DEBUG_MODE:
+            print(f"[DEBUG] 模型原始响应: {repr(full_response)}")
+        
+        if not full_response:
+            return "unknown", "[错误]模型未返回响应"
+
+        # 清理markdown格式
+        json_text = full_response.strip()
+        if json_text.startswith("```"):
+            json_text = json_text.replace("```json", "").replace("```", "").strip()
+        
+        try:
+            # 解析JSON响应
+            intent_data = json.loads(json_text)
+            if DEBUG_MODE:
+                print(f"[DEBUG] 成功解析JSON: {intent_data}")
+            return (
+                intent_data.get("IntentType", "unknown"),
+                intent_data.get("TasksTodo", "[错误]模型未找到任务")
+            )
+        except json.JSONDecodeError as json_error:
+            if DEBUG_MODE:
+                print(f"[DEBUG] JSON解析失败: {json_error}")
+                print(f"[DEBUG] 尝试解析的文本: {repr(json_text)}")
+            
+            # 简单的文本提取作为备用
+            intent_type = tasks_todo = "unknown"
+            return intent_type, tasks_todo
+
+    except Exception as e:
+        print(f"[错误] 意图分析失败: {e}")
+        return "unknown", "分析失败"
+
+
+def plan_tasks(messages: List[Dict], tasks_todo: str) -> str:
+    """
+    使用task_planner.txt提示词规划任务步骤
+    返回：任务规划结果文本字符串
+    """
+    if not TASK_PLANNER_PROMPT:
+        return "[错误] 任务规划提示词未加载，请检查 task_planner.txt 文件"
+    
+    # 将信息分为最新消息和历史消息
+    new_message = messages[-1] if messages else None
+    history_messages = messages[:-1] if len(messages) > 1 else []
+    
+    # 消息扁平化处理
+    flattened_text = ""
+    
+    # 处理历史消息
+    flattened_text += "[历史消息]：\n"
+    if history_messages:
+        for msg in history_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "").strip()
+            flattened_text += f"<{role}>{content}\n"
+    
+    # 处理当前消息
+    flattened_text += "[当前消息]：\n"
+    if new_message:
+        role = new_message.get("role", "unknown")
+        content = new_message.get("content", "").strip()
+        flattened_text += f"<{role}>{content}\n"
+    
+    # 添加当前任务
+    flattened_text += f"[当前任务]：\n{tasks_todo}\n"
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 任务规划输入:\n{flattened_text}")
+    
+    try:
+        # 调用模型进行任务规划
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": TASK_PLANNER_PROMPT},
+                {"role": "user", "content": flattened_text}
+            ],
+            stream=False,
+            temperature=0.3
+        )
+        
+        full_response = response.choices[0].message.content
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务规划原始响应: {repr(full_response)}")
+        
+        if not full_response:
+            return "[错误] 模型未返回响应，请重试"
+        
+        # 直接返回模型的文本响应
+        task_plan_result = full_response.strip()
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务规划结果: {task_plan_result}")
+        
+        return task_plan_result
+    
+    except Exception as e:
+        print(f"[错误] 任务规划失败: {e}")
+        return f"[错误] 任务规划调用失败: {e}，请检查网络连接或重试"
+
+
+def analyze_intent_with_tools(messages: List[Dict]) -> Tuple[str, str, Dict]:
+    """
+    分析最后一条消息的意图并返回工具调用信息
+    返回: (意图, 解释, 工具调用信息)
+    """
+    # 获取最后一条消息
+    last_message = None
+    if messages:
+        last_message = messages[-1]
+    
+    # 获取除最后一条外的历史消息
+    history_messages = messages[:-1] if len(messages) > 1 else []
+    
+    # 消息扁平化处理
+    flattened_text = ""
+    
+    # 处理历史消息
+    if history_messages:
+        flattened_text += "【历史消息】：\n"
+        for msg in history_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "").strip()
+            if content:
+                flattened_text += f"<{role}>{content}\n"
+    
+    # 处理当前消息
+    if last_message:
+        flattened_text += "【当前消息】：\n"
+        role = last_message.get("role", "unknown")
+        content = last_message.get("content", "").strip()
+        if content:
+            flattened_text += f"<{role}>{content}\n"
+    
+    # 获取最后一条消息的内容（用于后续处理）
+    last_user_msg = last_message.get("content", "") if last_message else ""
+    
+    if not last_user_msg:
+        return "unknown", "无消息内容", {}
+
+    try:
+        # 准备提示词（替换对话内容和可用工具）
+        try:
+            # 从mcp_registry获取详细的服务信息
+            from mcpserver.mcp_registry import get_all_services_info, MCP_REGISTRY
+            
+            services_info = get_all_services_info()
+            available_tools_list = []
+            
+            # 构建详细的工具信息
+            for service_name, service_info in services_info.items():
+                service_desc = {
+                    "service_name": service_name,
+                    "description": service_info.get('description', ''),
+                    "display_name": service_info.get('display_name', service_name),
+                    "tools": []
+                }
+                
+                # 获取该服务的工具列表
+                tools = service_info.get('available_tools', [])
+                for tool in tools:
+                    tool_info = {
+                        "name": tool.get('name', ''),
+                        "description": tool.get('description', ''),
+                        "example": tool.get('example', ''),
+                        "input_schema": tool.get('input_schema', {})
+                    }
+                    service_desc["tools"].append(tool_info)
+                
+                available_tools_list.append(service_desc)
+            
+            # 格式化为可读的文本供AI理解
+            if available_tools_list:
+                available_tools_desc = "## 可用工具和服务\n\n"
+                for service in available_tools_list:
+                    available_tools_desc += f"### {service['service_name']}\n"
+                    available_tools_desc += f"描述: {service['description']}\n"
+                    
+                    if service['tools']:
+                        available_tools_desc += "可用工具:\n"
+                        for tool in service['tools']:
+                            available_tools_desc += f"- **{tool['name']}**: {tool['description']}\n"
+                            if tool['example']:
+                                available_tools_desc += f"  示例: {tool['example']}\n"
+                    available_tools_desc += "\n"
+            else:
+                available_tools_desc = "当前无可用工具"
+                
+            if DEBUG_MODE:
+                print(f"[DEBUG] 找到 {len(available_tools_list)} 个可用服务")
+                print(f"[DEBUG] 工具描述长度: {len(available_tools_desc)} 字符")
+                
+        except Exception as e:
+            if DEBUG_MODE:
+                print(f"[DEBUG] 获取可用工具失败: {e}")
+                import traceback
+                traceback.print_exc()
+            available_tools_desc = "获取工具信息失败"
+        
+        prompt = CONVERSATION_PROMPT.replace(
+            "{conversation}", flattened_text
+        ).replace(
+            "{available_tools}", available_tools_desc
         )
 
-    def _build_prompt(self, messages: List[Dict[str, str]]) -> str:
-        lines = []
-        for m in messages[-config.api.max_history_rounds:]:
-            role = m.get('role', 'user')
-            # 修复：使用content字段而不是text字段
-            content = m.get('content', '')
-            # 清理文本，移除可能导致格式化问题的字符
-            content = content.replace('{', '{{').replace('}', '}}')
-            lines.append(f"{role}: {content}")
-        conversation = "\n".join(lines)
+        # 构建分析请求
+        analysis_messages = [
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": flattened_text}
+        ]
+
+        # 调用模型分析意图
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=analysis_messages,
+            stream=False,
+            temperature=0.7
+        )
         
-        # 获取可用的MCP工具信息，注入到意图识别中
-        try:
-            from mcpserver.mcp_registry import get_all_services_info
-            services_info = get_all_services_info()
+        if response:
+            # 获取模型输出
+            full_response = response.choices[0].message.content
             
-            # 构建工具信息摘要
-            tools_summary = []
-            for name, info in services_info.items():
-                display_name = info.get("display_name", name)
-                description = info.get("description", "")
-                tools = [t.get("name") for t in info.get("available_tools", [])]
-                
-                if tools:
-                    tools_summary.append(f"- {display_name}: {description} (工具: {', '.join(tools)})")
-                else:
-                    tools_summary.append(f"- {display_name}: {description}")
+            # 解析意图分析结果
+            intent = "unknown"
+            explanation = ""
+            tool_call_info = {}
             
-            if tools_summary:
-                available_tools = "\n".join(tools_summary)
-                # 将工具信息注入到对话分析提示词中
-                return get_prompt("conversation_analyzer_prompt",
-                                conversation=conversation,
-                                available_tools=available_tools)
-        except Exception as e:
-            logger.debug(f"获取MCP工具信息失败: {e}")
-        
-        return get_prompt("conversation_analyzer_prompt", conversation=conversation)
-
-    def analyze(self, messages: List[Dict[str, str]]):
-        logger.info(f"[ConversationAnalyzer] 开始分析对话，消息数量: {len(messages)}")
-        prompt = self._build_prompt(messages)
-        logger.info(f"[ConversationAnalyzer] 构建提示词完成，长度: {len(prompt)}")
-
-        # 使用简化的非标准JSON解析
-        result = self._analyze_with_non_standard_json(prompt)
-        if result and result.get("tool_calls"):
-            return result
-
-        # 解析失败
-        logger.info("[ConversationAnalyzer] 未发现可执行任务")
-        return {"tasks": [], "reason": "未发现可执行任务", "raw": "", "tool_calls": []}
-
-    def _analyze_with_non_standard_json(self, prompt: str) -> Optional[Dict]:
-        """非标准JSON格式解析 - 解析中文括号格式"""
-        logger.info("[ConversationAnalyzer] 尝试非标准JSON格式解析")
-        try:
-            import concurrent.futures
-
-            # 添加超时机制
-            def run_llm_with_timeout():
-                try:
-                    return self.llm.invoke([
-                        {"role": "system", "content": "你是精确的任务意图提取器与MCP调用规划器。"},
-                        {"role": "user", "content": prompt},
-                    ])
-                except Exception as e:
-                    raise e
-
-            # 在线程中运行LLM调用，设置30秒超时
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(run_llm_with_timeout)
-                try:
-                    resp = future.result(timeout=30)  # 30秒超时
-                    text = resp.content.strip()
-                    logger.info(f"[ConversationAnalyzer] LLM响应完成，响应长度: {len(text)}")
-                    logger.info(f"[ConversationAnalyzer] LLM原始响应内容: {text}")
-
-                    # 解析非标准JSON格式
-                    tool_calls = self._parse_non_standard_json(text)
-                    
-                    if tool_calls:
-                        logger.info(f"[ConversationAnalyzer] 非标准JSON解析成功，发现 {len(tool_calls)} 个工具调用")
-                        return {
-                            "tasks": [],
-                            "reason": f"非标准JSON解析成功，发现 {len(tool_calls)} 个工具调用",
-                            "tool_calls": tool_calls
-                        }
-                    else:
-                        logger.info("[ConversationAnalyzer] 未发现工具调用")
-                        return None
-
-                except concurrent.futures.TimeoutError:
-                    logger.error("[ConversationAnalyzer] LLM调用超时（30秒）")
-                    return None
-
-        except Exception as e:
-            logger.error(f"[ConversationAnalyzer] 非标准JSON解析失败: {e}")
-            return None
-
-    def _parse_non_standard_json(self, text: str) -> List[Dict[str, Any]]:
-        """解析非标准JSON格式 - 处理中文括号"""
-        import re
-        
-        tool_calls = []
-        
-        # 查找所有非标准JSON块（使用中文括号）
-        pattern = r'｛([^｝]*)｝'
-        matches = re.findall(pattern, text, re.DOTALL)
-        
-        logger.info(f"[ConversationAnalyzer] 找到 {len(matches)} 个非标准JSON块")
-        
-        for match in matches:
             try:
-                # 将中文括号替换为标准JSON格式
-                json_str = "{" + match + "}"
+                response_text = full_response.strip()
                 
-                # 解析为字典
-                tool_call = {}
-                lines = json_str.split('\n')
-                
-                for line in lines:
-                    line = line.strip()
-                    if ':' in line and not line.startswith('{') and not line.startswith('}'):
-                        # 提取键值对
-                        if '"' in line:
-                            # 处理带引号的键值对
-                            key_match = re.search(r'"([^"]*)"\s*:\s*"([^"]*)"', line)
-                            if key_match:
-                                key = key_match.group(1)
-                                value = key_match.group(2)
-                                tool_call[key] = value
+                # 如果返回空对象，表示没有可执行任务
+                if response_text == "｛｝" or response_text == "{}":
+                    intent = "chat"
+                    explanation = "普通对话，无需工具调用"
+                else:
+                    # 处理非标准的中文大括号
+                    json_text = response_text.replace("｛", "{").replace("｝", "}")
+                    
+                    try:
+                        tool_call_data = json.loads(json_text)
+                        
+                        # 提取工具调用信息
+                        agent_type = tool_call_data.get("agentType", "")
+                        service_name = tool_call_data.get("service_name", "")
+                        tool_name = tool_call_data.get("tool_name", "")
+                        user_intent = tool_call_data.get("user_intent", "")
+                        
+                        if agent_type and (service_name or tool_name):
+                            if agent_type == "mcp":
+                                intent = f"mcp_call_{service_name}_{tool_name}"
+                                explanation = f"MCP工具调用: {service_name}.{tool_name}"
+                            elif agent_type == "agent":
+                                task_type = tool_call_data.get("task_type", "")
+                                intent = f"agent_call_{task_type}"
+                                explanation = f"Agent任务调用: {task_type}"
+                            else:
+                                intent = f"tool_call_{agent_type}"
+                                explanation = f"工具调用: {agent_type}"
+                            
+                            if user_intent:
+                                explanation += f" - {user_intent}"
+                            
+                            tool_call_info = tool_call_data
                         else:
-                            # 处理简单键值对
-                            parts = line.split(':', 1)
-                            if len(parts) == 2:
-                                key = parts[0].strip().strip('"')
-                                value = parts[1].strip().strip('"')
-                                tool_call[key] = value
+                            intent = "chat"
+                            explanation = "对话内容，未识别到明确的工具调用"
+                            
+                    except json.JSONDecodeError:
+                        if "agentType" in response_text:
+                            intent = "tool_call_detected"
+                            explanation = "检测到工具调用请求，但格式解析失败"
+                        else:
+                            intent = "chat"
+                            explanation = "普通对话内容"
                 
-                # 验证必要的字段
-                if tool_call.get("agentType") and tool_call.get("service_name") and tool_call.get("tool_name"):
-                    tool_calls.append(tool_call)
-                    logger.info(f"[ConversationAnalyzer] 解析到工具调用: {tool_call.get('tool_name', 'unknown')}")
-                
-            except Exception as e:
-                logger.warning(f"[ConversationAnalyzer] 解析非标准JSON块失败: {e}")
-                continue
-        
-        return tool_calls
+            except Exception as parse_error:
+                print(f"[警告] 意图解析出错: {parse_error}")
+                intent = "unknown"
+                explanation = "意图解析失败"
+            
+            print(f"用户意图识别为: {intent}")
+            print(f"解释: {explanation}")
+            if tool_call_info:
+                print(f"工具调用信息: {tool_call_info}")
+            
+            return intent, explanation, tool_call_info
 
-
-class BackgroundAnalyzer:
-    """后台分析器 - 管理异步意图分析"""
+    except Exception as e:
+        print(f"[错误] 意图分析失败: {e}")
     
-    def __init__(self):
-        self.analyzer = ConversationAnalyzer()
-        self.running_analyses = {}
-    
-    async def analyze_intent_async(self, messages: List[Dict[str, str]], session_id: str):
-        """异步意图分析 - 基于博弈论的背景分析机制"""
-        # 创建独立的意图分析会话
-        analysis_session_id = f"analysis_{session_id}_{int(time.time())}"
-        logger.info(f"[博弈论] 创建独立分析会话: {analysis_session_id}")
-        
-        try:
-            logger.info(f"[博弈论] 开始异步意图分析，消息数量: {len(messages)}")
-            loop = asyncio.get_running_loop()
-            # Offload sync LLM call to threadpool to avoid blocking event loop
-            logger.info(f"[博弈论] 在线程池中执行LLM分析...")
+    return "unknown", "分析失败", {}
 
-            # 添加异步超时机制
-            try:
-                analysis = await asyncio.wait_for(
-                    loop.run_in_executor(None, self.analyzer.analyze, messages),
-                    timeout=60.0  # 60秒超时
-                )
-                logger.info(f"[博弈论] LLM分析完成，结果类型: {type(analysis)}")
-            except asyncio.TimeoutError:
-                logger.error("[博弈论] 意图分析超时（60秒）")
-                return {"has_tasks": False, "reason": "意图分析超时", "tasks": [], "priority": "low"}
-
-        except Exception as e:
-            logger.error(f"[博弈论] 意图分析失败: {e}")
-            import traceback
-            logger.error(f"[博弈论] 详细错误信息: {traceback.format_exc()}")
-            return {"has_tasks": False, "reason": f"分析失败: {e}", "tasks": [], "priority": "low"}
-        
-        try:
-            import uuid as _uuid
-            tasks = analysis.get("tasks", []) if isinstance(analysis, dict) else []
-            tool_calls = analysis.get("tool_calls", []) if isinstance(analysis, dict) else []
-            
-            if not tasks and not tool_calls:
-                return {"has_tasks": False, "reason": "未发现可执行任务", "tasks": [], "priority": "low"}
-            
-            logger.info(f"[博弈论] 分析会话 {analysis_session_id} 发现 {len(tasks)} 个任务和 {len(tool_calls)} 个工具调用")
-            
-            # 处理工具调用 - 根据agentType分发到不同服务器
-            if tool_calls:
-                # 通知UI工具调用开始
-                await self._notify_ui_tool_calls(tool_calls, session_id)
-                await self._dispatch_tool_calls(tool_calls, session_id, analysis_session_id)
-            
-            # 返回分析结果
-            result = {
-                "has_tasks": True,
-                "reason": analysis.get("reason", "发现潜在任务"),
-                "tasks": tasks,
-                "tool_calls": tool_calls,
-                "priority": "medium"  # 可以根据任务数量或类型调整优先级
-            }
-            
-            # 记录任务详情
-            for task in tasks:
-                logger.info(f"发现任务: {task}")
-            for tool_call in tool_calls:
-                logger.info(f"发现工具调用: {tool_call}")
-            
-            return result
-                
-        except Exception as e:
-            logger.error(f"任务处理失败: {e}")
-            return {"has_tasks": False, "reason": f"处理失败: {e}", "tasks": [], "priority": "low"}
-
-    async def _notify_ui_tool_calls(self, tool_calls: List[Dict[str, Any]], session_id: str):
-        """批量通知UI工具调用开始 - 优化网络请求"""
-        try:
-            import httpx
-            
-            # 批量构建工具调用通知
-            tool_names = [tool_call.get("tool_name", "未知工具") for tool_call in tool_calls]
-            service_names = [tool_call.get("service_name", "未知服务") for tool_call in tool_calls]
-            
-            # 批量发送通知（减少HTTP请求次数）
-            notification_payload = {
-                "session_id": session_id,
-                "tool_calls": [
-                    {
-                        "tool_name": tool_call.get("tool_name", "未知工具"),
-                        "service_name": tool_call.get("service_name", "未知服务"),
-                        "status": "starting"
-                    }
-                    for tool_call in tool_calls
-                ],
-                "message": f"🔧 正在执行 {len(tool_calls)} 个工具: {', '.join(tool_names)}"
-            }
-            
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                await client.post(
-                    "http://localhost:8000/tool_notification",
-                    json=notification_payload
-                )
-                    
-        except Exception as e:
-            logger.error(f"批量通知UI工具调用失败: {e}")
-    
-    async def _dispatch_tool_calls(self, tool_calls: List[Dict[str, Any]], session_id: str, analysis_session_id: str = None):
-        """根据agentType将工具调用分发到相应的服务器"""
-        try:
-            import httpx
-            import uuid
-            
-            # 按agentType分组
-            mcp_calls = []
-            agent_calls = []
-            
-            for tool_call in tool_calls:
-                agent_type = tool_call.get("agentType", "")
-                if agent_type == "mcp":
-                    mcp_calls.append(tool_call)
-                elif agent_type == "agent":
-                    agent_calls.append(tool_call)
-            
-            # 分发MCP任务到MCP服务器
-            if mcp_calls:
-                await self._send_to_mcp_server(mcp_calls, session_id, analysis_session_id)
-            
-            # 分发Agent任务到agentserver
-            if agent_calls:
-                await self._send_to_agent_server(agent_calls, session_id, analysis_session_id)
-                
-        except Exception as e:
-            logger.error(f"工具调用分发失败: {e}")
-    
-    async def _send_to_mcp_server(self, mcp_calls: List[Dict[str, Any]], session_id: str, analysis_session_id: str = None):
-        """发送MCP任务到MCP服务器"""
-        try:
-            import httpx
-            import uuid
-            
-            # 构建MCP服务器请求
-            mcp_payload = {
-                "query": f"批量MCP工具调用 ({len(mcp_calls)} 个)",
-                "tool_calls": mcp_calls,
-                "session_id": session_id,
-                "request_id": str(uuid.uuid4()),
-                "callback_url": "http://localhost:8000/tool_result_callback"
-            }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "http://localhost:8003/schedule",
-                    json=mcp_payload
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(f"[博弈论] 分析会话 {analysis_session_id or 'unknown'} MCP任务调度成功: {result.get('task_id', 'unknown')}")
-                else:
-                    logger.error(f"[博弈论] MCP任务调度失败: {response.status_code} - {response.text}")
-                    
-        except Exception as e:
-            logger.error(f"[博弈论] 发送MCP任务失败: {e}")
-    
-    async def _send_to_agent_server(self, agent_calls: List[Dict[str, Any]], session_id: str, analysis_session_id: str = None):
-        """发送Agent任务到agentserver"""
-        try:
-            import httpx
-            import uuid
-            
-            # 构建agentserver请求
-            agent_payload = {
-                "messages": [
-                    {"role": "user", "content": f"执行Agent任务: {agent_call.get('instruction', '')}"}
-                    for agent_call in agent_calls
-                ],
-                "session_id": session_id
-            }
-            
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    "http://localhost:8002/analyze_and_execute",
-                    json=agent_payload
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    logger.info(f"[博弈论] 分析会话 {analysis_session_id or 'unknown'} Agent任务调度成功: {result.get('status', 'unknown')}")
-                else:
-                    logger.error(f"[博弈论] Agent任务调度失败: {response.status_code} - {response.text}")
-                    
-        except Exception as e:
-            logger.error(f"[博弈论] 发送Agent任务失败: {e}")
-
-
-# 全局分析器实例
-_background_analyzer = None
-
-def get_background_analyzer() -> BackgroundAnalyzer:
-    """获取全局后台分析器实例"""
-    global _background_analyzer
-    if _background_analyzer is None:
-        _background_analyzer = BackgroundAnalyzer()
-    return _background_analyzer

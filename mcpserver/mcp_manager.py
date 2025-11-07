@@ -34,6 +34,19 @@ print=lambda *a,**k:sys.stderr.write('[print] '+(' '.join(map(str,a)))+'\n')
 TContext = TypeVar("TContext")
 THandoffInput = TypeVar("THandoffInput")
 
+# 定义Handoff相关异常类
+class HandoffError(Exception):
+    """Handoff执行异常基类"""
+    pass
+
+class HandoffValidationError(HandoffError):
+    """Handoff验证异常"""
+    pass
+
+class ModelBehaviorError(HandoffError):
+    """模型行为异常"""
+    pass
+
 @dataclass
 class HandoffInputData:
     """Handoff输入数据结构"""

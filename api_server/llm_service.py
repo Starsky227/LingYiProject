@@ -17,10 +17,11 @@ PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from system.config import config
-from system.intent_analyzer import analyze_intent
 from brain.memory.quintuples_extractor import record_memories
 from brain.memory.relevant_memory_search import query_relevant_memories
+from mcpserver.mcp_manager import get_mcp_manager
+from system.config import config
+from system.background_analyzer import analyze_intent, plan_tasks
 
 # API 配置
 API_KEY = config.api.api_key
@@ -49,112 +50,101 @@ if os.path.exists(_personality_path):
         SYSTEM_PROMPT = None
 
 
-def write_chat_log(sender: str, text: str):
-    """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
-    try:
-        # 日志目录位于项目根的 logs/chat_logs
-        logs_dir = os.path.normpath(os.path.join(PROJECT_ROOT, "logs", "chat_logs"))
-        os.makedirs(logs_dir, exist_ok=True)
-        filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
-        path = os.path.join(logs_dir, filename)
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
-        # 将换行替换为空格以保持单行记录
-        safe_text = text.replace("\r", " ").replace("\n", " ")
-        line = f"{ts} <{sender}> {safe_text}\n"
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(line)
-        
-            
-    except Exception as e:
-        # 写日志失败不影响主流程，打印到控制台以便排查
-        print(f"[日志错误] 无法写入聊天日志: {e}")
 
-
-def get_recent_chat(messages: List[Dict], max_chars: int = 200, min_messages: int = 2) -> str:
+def get_recent_chat(messages: List[Dict], max_chars: int = 100, min_messages: int = 2) -> List[Dict]:
     """
     获取当前对话的最近上下文
     Args:
         messages: 当前对话消息列表 [{"role": "user/assistant", "content": "..."}]
-        max_chars: 最大字符数，默认200字
+        max_chars: 最大字符数，默认100字
         min_messages: 最少消息数，默认2条
         
     Returns:
-        格式化的最近对话上下文，格式：发言时间 <发言者> 发言内容
-        例：2025_11_4_17:28:06 <用户> 昨天有活动吗
+        最近的消息列表 [{"role": "...", "content": "..."}]
     """
     if not messages:
-        return ""
+        return []
     
     try:
-        current_time = datetime.datetime.now()
-        formatted_messages = []
-        
-        # 处理每条消息
-        for i, msg in enumerate(messages):
-            role = msg.get("role", "unknown")
+        # 过滤掉空消息
+        valid_messages = []
+        for msg in messages:
             content = msg.get("content", "").strip()
-            
-            if not content:
-                continue
-            
-            # 映射角色名称
-            if role == "user":
-                sender = USERNAME
-            elif role == "assistant":
-                sender = AI_NAME
-            else:
-                sender = role
-            
-            # 生成时间戳（模拟对话时间，最新消息使用当前时间，之前的消息依次往前推）
-            message_time = current_time - datetime.timedelta(minutes=(len(messages) - i - 1) * 2)
-            timestamp = message_time.strftime("%Y_%m_%d_%H:%M:%S")
-            
-            # 格式化消息（将换行替换为空格保持单行）
-            safe_content = content.replace("\r", " ").replace("\n", " ")
-            formatted_message = f"{timestamp} <{sender}> {safe_content}"
-            formatted_messages.append(formatted_message)
+            if content:
+                valid_messages.append(msg)
         
-        if not formatted_messages:
-            return ""
+        if not valid_messages:
+            return []
         
         # 选择合适的消息数量和字符长度
         selected_messages = []
         total_chars = 0
         
         # 特殊情况：如果只有1条消息，直接返回它
-        if len(formatted_messages) == 1:
-            return formatted_messages[0]
+        if len(valid_messages) == 1:
+            return valid_messages
         
         # 从最新的消息开始往前选择
-        for message in reversed(formatted_messages):
-            message_chars = len(message)
+        for msg in reversed(valid_messages):
+            content = msg.get("content", "")
+            message_chars = len(content)
             
             # 如果还没达到最少消息数，无论字符数多少都要添加
             if len(selected_messages) < min_messages:
-                selected_messages.insert(0, message)
+                selected_messages.insert(0, msg)
                 total_chars += message_chars
             else:
                 # 已达到最少消息数，检查是否超过字符限制
                 if total_chars + message_chars > max_chars:
                     break
-                selected_messages.insert(0, message)  # 插入到开头保持时间顺序
+                selected_messages.insert(0, msg)  # 插入到开头保持时间顺序
                 total_chars += message_chars
         
         # 确保至少有最少消息数（但不超过实际消息数量）
-        if len(selected_messages) < min_messages and len(formatted_messages) >= min_messages:
-            selected_messages = formatted_messages[-min_messages:]
-        elif len(selected_messages) == 0 and len(formatted_messages) > 0:
+        if len(selected_messages) < min_messages and len(valid_messages) >= min_messages:
+            selected_messages = valid_messages[-min_messages:]
+        elif len(selected_messages) == 0:
             # 兜底：如果没有选择任何消息，至少返回最后一条
-            selected_messages = [formatted_messages[-1]]
+            selected_messages = [valid_messages[-1]]
         
-        return "\n".join(selected_messages)
+        return selected_messages
         
     except Exception as e:
         print(f"[错误] 获取最近对话上下文失败: {e}")
+        return []
+
+
+def message_to_logs(message: Dict) -> str:
+    """
+    将消息转换为日志格式
+    Args:
+        message: 消息对象 {"role": "user/assistant", "content": "..."}
+        
+    Returns:
+        格式化的日志字符串，格式：时间 <发言者> 发言内容
+        例：13:27:02 <星空> 早上好，帮我看看现在几点了
+    """
+    if not message:
         return ""
-
-
-
+    
+    try:
+        role = message.get("role", "unknown")
+        content = message.get("content", "").strip()
+        
+        if not content:
+            return ""
+        
+        # 生成当前时间戳
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        # 将换行替换为空格以保持单行记录
+        safe_content = content.replace("\r", " ").replace("\n", " ")
+        
+        return f"{timestamp} <{role}> {safe_content}"
+        
+    except Exception as e:
+        print(f"[错误] 消息格式化失败: {e}")
+        return ""
 
 
 def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) -> str:
@@ -165,31 +155,74 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     Returns:
         完整的模型回复文本
     """
-    # 记录最新消息到日志（不限制发送者）
-    if messages and messages[-1].get("content"):
-        latest_msg = messages[-1]
-        content = latest_msg.get("content", "").strip()
-        sender = latest_msg.get("role", "unknown")
-        
-    # 如果是空白消息，直接返回，不做后续响应
-    if not content:
+    
+    # 使用get_recent_chat限制聊天记录长度，避免上下文过长
+    recent_messages = get_recent_chat(messages)
+    # 检查是否有有效消息
+    if not recent_messages or not recent_messages[-1].get("content", "").strip():
         print("[INFO] 检测到空白消息，跳过处理")
         return ""
-        
-    # DEBUG模式下打印发言信息
-    if DEBUG_MODE:
-        print(f"[DEBUG_LOG] <{sender}> {content}")
-    write_chat_log(sender, content)
     
     # 进行意图识别
-    intent, tasks_todo = analyze_intent(messages)
-    print(f"推测<{sender}>意图为：{intent}")
-    if tasks_todo and tasks_todo != "无具体任务":
-        print(f"具体任务：{tasks_todo}")
-    else:
-        # 没有消息或最新消息没有内容
-        print("[INFO] 没有有效消息，跳过处理")
-        return ""
+    intent_type, tasks_todo = analyze_intent(recent_messages)
+    print(f"[思考] 识别到意图类型: {intent_type}, 任务: {tasks_todo}")
+
+    # 进行任务分解
+    todo_list = plan_tasks(recent_messages, tasks_todo, tools_available)
+    print(f"[思考] 规划后续任务: \n{todo_list}")
+
+    # 获取可用工具信息
+    try:
+        # 从mcp_registry获取所有可用工具
+        from mcpserver.mcp_registry import get_all_services_info
+        
+        services_info = get_all_services_info()
+        tools_available_list = []
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 找到 {len(services_info)} 个可用服务")
+        
+        # 构建工具信息文本
+        for service_name, service_info in services_info.items():
+            service_desc = f"## {service_name}\n"
+            service_desc += f"描述: {service_info.get('description', '无描述')}\n"
+            
+            # 获取该服务的工具列表
+            tools = service_info.get('available_tools', [])
+            if tools:
+                service_desc += "可用工具:\n"
+                for tool in tools:
+                    tool_name = tool.get('name', '')
+                    tool_desc = tool.get('description', '')
+                    tool_example = tool.get('example', '')
+                    
+                    service_desc += f"- **{tool_name}**: {tool_desc}\n"
+                    if tool_example:
+                        service_desc += f"  示例: {tool_example}\n"
+            else:
+                service_desc += "暂无可用工具\n"
+            
+            service_desc += "\n"
+            tools_available_list.append(service_desc)
+        
+        # 组合成完整的工具描述文本
+        if tools_available_list:
+            tools_available = "# 可用工具和服务\n\n" + "".join(tools_available_list)
+        else:
+            tools_available = "当前无可用工具和服务"
+            
+        if DEBUG_MODE:
+            print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
+            print(f"[DEBUG] 工具预览: {tools_available}...")
+            
+    except Exception as e:
+        print(f"[Warning] 获取可用工具失败: {e}")
+        if DEBUG_MODE:
+            import traceback
+            traceback.print_exc()
+        tools_available = "获取工具信息失败"
+    
+    # 进行工具调用
 
     try:
         relevant_memories = ""
@@ -232,8 +265,8 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 #请基于这个意图来调整你的回复风格和内容重点。"""
 #            payload_messages.append({"role": "system", "content": intent_prompt})
         
-        # 添加对话历史
-        payload_messages.extend(messages)
+        # 添加对话历史（使用筛选后的最近消息）
+        payload_messages.extend(recent_messages)
         
         # 使用 OpenAI API 格式调用 Ollama（流式）
         stream = client.chat.completions.create(
@@ -250,13 +283,10 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
                 full_reply += content
                 on_response(content)
         
-        # 记录AI回复到日志
+        # 将完整对话记录为记忆（包含AI回复）
         if full_reply.strip():
-            write_chat_log(AI_NAME, full_reply.strip())
-            
-            # 将完整对话记录为记忆（包含AI回复）
-            # 创建包含AI回复的完整消息列表
-            updated_messages = messages + [{"role": "assistant", "content": full_reply.strip()}]
+            # 创建包含AI回复的完整消息列表（使用筛选后的消息以控制长度）
+            updated_messages = recent_messages + [{"role": "assistant", "content": full_reply.strip()}]
             try:
                 task_id = record_memories(updated_messages, source="api_server", max_messages=6)
                 if task_id:
@@ -288,15 +318,17 @@ def preload_model(timeout_sec: int = 30) -> bool:
     """
     print("模型加载中……", flush=True)
     
-    # 简单的模型测试，确保模型可用
-    test_prompt = "测试"
-    messages = [{"role": "user", "content": test_prompt}]
-    
     try:
-        # 调用模型以完成预热
-        reply = chat_with_model(messages, lambda x: None)
-        print("✅ 模型加载完成", flush=True)
-        return True
+        # 使用简单的同步调用进行预热，避免触发完整的聊天流程
+        test_response = call_model_sync("测试", "这是模型预热测试，请简单回复确认。")
+        
+        if test_response and not test_response.startswith("[错误]"):
+            print("✅ 模型加载完成", flush=True)
+            return True
+        else:
+            print(f"❌ 模型测试失败: {test_response}", flush=True)
+            return False
+            
     except Exception as e:
         print(f"❌ 模型加载失败: {e}", flush=True)
         return False
