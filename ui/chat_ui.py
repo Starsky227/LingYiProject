@@ -26,6 +26,25 @@ USERNAME = config.ui.username
 TEXT_SIZE = config.ui.text_size
 IMAGE_NAME = config.ui.image_name
 
+def write_chat_log(sender: str, text: str):
+    """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
+    try:
+        # 日志目录位于项目根的 logs/chat_logs
+        project_root = os.path.normpath(os.path.join(current_dir, ".."))
+        logs_dir = os.path.normpath(os.path.join(project_root, "logs", "chat_logs"))
+        os.makedirs(logs_dir, exist_ok=True)
+        filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
+        path = os.path.join(logs_dir, filename)
+        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        # 将换行替换为空格以保持单行记录
+        safe_text = text.replace("\r", " ").replace("\n", " ")
+        line = f"{ts} <{sender}> {safe_text}\n"
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception as e:
+        # 写日志失败不影响主流程，打印到控制台以便排查
+        print(f"[日志错误] 无法写入聊天日志: {e}")
+
 class ChatUI(QWidget):
     # 定义从工作线程到 GUI 线程传递数据的信号
     chunk_received = pyqtSignal(str)
@@ -204,6 +223,10 @@ class ChatUI(QWidget):
         user_input = self.input_field.toPlainText().strip()
         if not user_input:
             return
+        
+        # 记录用户消息到日志
+        write_chat_log(USERNAME, user_input)
+        
         # 在聊天框添加用户消息并换行
         self._append_text(f"{USERNAME}: {user_input}\n")
         # 清空输入框并重置高度
@@ -229,6 +252,11 @@ class ChatUI(QWidget):
 
         # 调用注入的 chat_with_model（可能会逐块调用 on_response）
         reply = self.chat_with_model(self.messages, on_response)
+        
+        # 记录AI回复到日志
+        if reply and reply.strip():
+            write_chat_log(AI_NAME, reply.strip())
+        
         # 将完整回复记录到消息列表并通知主线程完成
         assistant_timestamp = datetime.datetime.now().isoformat()
         self.messages.append({
