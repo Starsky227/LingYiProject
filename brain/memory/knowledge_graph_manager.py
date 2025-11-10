@@ -1281,3 +1281,213 @@ def upload_recent_memory_to_graph() -> Dict[str, Any]:
     """便捷函数：将 recent_memory.json 中的记忆上传到 Neo4j"""
     manager = get_knowledge_graph_manager()
     return manager.upload_recent_memory()
+
+def relevant_memories_by_keywords(keywords: List[str], max_results: int = 10) -> str:
+    """
+    直接使用关键词列表从Neo4j查询相关的记忆信息
+    
+    Args:
+        keywords: 已提取的关键词列表
+        max_results: 最大返回结果数
+        
+    Returns:
+        格式化的记忆信息字符串
+    """
+    try:
+        # 首先检查全局Neo4j可用性
+        from system.config import is_neo4j_available
+        if not is_neo4j_available():
+            return ""
+            
+        kg_manager = get_knowledge_graph_manager()
+        if not kg_manager.connected:
+            return ""
+        
+        if not keywords:
+            logger.debug("[记忆查询] 关键词列表为空")
+            return ""
+        
+        logger.debug(f"[记忆查询] 使用关键词: {keywords}")
+        
+        memories = []
+        
+        with kg_manager.driver.session() as session:
+            # 查询实体节点
+            for keyword in keywords[:5]:  # 限制关键词数量避免查询过多
+                # 查询包含关键词的实体
+                entity_query = """
+                MATCH (e:Entity)
+                WHERE toLower(e.name) CONTAINS $keyword
+                RETURN e.name as entity, 
+                       e.source as source,
+                       e.importance as importance,
+                       e.confidence as confidence,
+                       e.last_updated as last_updated
+                ORDER BY e.importance DESC, e.confidence DESC
+                LIMIT 3
+                """
+                
+                result = session.run(entity_query, keyword=keyword.lower())
+                for record in result:
+                    entity_info = {
+                        'type': 'entity',
+                        'name': record['entity'],
+                        'source': record['source'],
+                        'importance': record.get('importance', 0.5),
+                        'confidence': record.get('confidence', 0.5),
+                        'last_updated': record.get('last_updated', '')
+                    }
+                    memories.append(entity_info)
+            
+            # 查询相关的五元组关系
+            for keyword in keywords[:5]:
+                relation_query = """
+                MATCH (s:Entity)-[r]->(o:Entity)
+                WHERE (toLower(s.name) CONTAINS $keyword OR toLower(o.name) CONTAINS $keyword)
+                  AND r.type = 'quintuple'
+                RETURN s.name as subject,
+                       type(r) as relation_type,
+                       r.action as action,
+                       o.name as object,
+                       r.time as time,
+                       r.location as location,
+                       r.source as source,
+                       r.importance as importance,
+                       r.confidence as confidence,
+                       r.created_at as created_at
+                ORDER BY r.importance DESC, r.confidence DESC
+                LIMIT 3
+                """
+                
+                result = session.run(relation_query, keyword=keyword.lower())
+                for record in result:
+                    relation_info = {
+                        'type': 'relation',
+                        'subject': record['subject'],
+                        'relation_type': record['relation_type'],
+                        'action': record.get('action', ''),
+                        'object': record['object'],
+                        'time': record.get('time', ''),
+                        'location': record.get('location', ''),
+                        'source': record['source'],
+                        'importance': record.get('importance', 0.5),
+                        'confidence': record.get('confidence', 0.5),
+                        'created_at': record.get('created_at', '')
+                    }
+                    memories.append(relation_info)
+            
+            # 查询时间相关的记忆
+            for keyword in keywords[:3]:
+                time_query = """
+                MATCH (e:Entity)-[r:HAPPENED_AT]->(t:Time)
+                WHERE toLower(e.name) CONTAINS $keyword OR toLower(t.name) CONTAINS $keyword
+                RETURN e.name as entity,
+                       t.name as time_node,
+                       r.action_context as action,
+                       r.importance as importance,
+                       r.source as source
+                ORDER BY r.importance DESC
+                LIMIT 2
+                """
+                
+                result = session.run(time_query, keyword=keyword.lower())
+                for record in result:
+                    time_info = {
+                        'type': 'time_relation',
+                        'entity': record['entity'],
+                        'time_node': record['time_node'],
+                        'action': record.get('action', ''),
+                        'importance': record.get('importance', 0.5),
+                        'source': record['source']
+                    }
+                    memories.append(time_info)
+            
+            # 查询地点相关的记忆
+            for keyword in keywords[:3]:
+                location_query = """
+                MATCH (e:Entity)-[r:HAPPENED_IN]->(l:Location)
+                WHERE toLower(e.name) CONTAINS $keyword OR toLower(l.name) CONTAINS $keyword
+                RETURN e.name as entity,
+                       l.name as location,
+                       r.action_context as action,
+                       r.importance as importance,
+                       r.source as source
+                ORDER BY r.importance DESC
+                LIMIT 2
+                """
+                
+                result = session.run(location_query, keyword=keyword.lower())
+                for record in result:
+                    location_info = {
+                        'type': 'location_relation',
+                        'entity': record['entity'],
+                        'location': record['location'],
+                        'action': record.get('action', ''),
+                        'importance': record.get('importance', 0.5),
+                        'source': record['source']
+                    }
+                    memories.append(location_info)
+        
+        if not memories:
+            return ""
+        
+        # 按重要性和置信度排序
+        memories.sort(key=lambda x: (x.get('importance', 0.5), x.get('confidence', 0.5)), reverse=True)
+        
+        # 去重（基于内容）
+        unique_memories = []
+        seen_content = set()
+        for memory in memories:
+            if memory['type'] == 'entity':
+                content_key = f"entity_{memory['name']}"
+            elif memory['type'] == 'relation':
+                content_key = f"relation_{memory['subject']}_{memory['action']}_{memory['object']}"
+            elif memory['type'] == 'time_relation':
+                content_key = f"time_{memory['entity']}_{memory['time_node']}"
+            else:  # location_relation
+                content_key = f"location_{memory['entity']}_{memory['location']}"
+            
+            if content_key not in seen_content:
+                seen_content.add(content_key)
+                unique_memories.append(memory)
+        
+        # 限制结果数量
+        unique_memories = unique_memories[:max_results]
+        
+        # 格式化输出
+        formatted_memories = []
+        for memory in unique_memories:
+            if memory['type'] == 'entity':
+                formatted_memories.append(
+                    f"实体: {memory['name']} (重要性: {memory['importance']:.2f}, 来源: {memory.get('source', 'unknown')})"
+                )
+            elif memory['type'] == 'relation':
+                time_str = f" 时间: {memory['time']}" if memory['time'] else ""
+                location_str = f" 地点: {memory['location']}" if memory['location'] else ""
+                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
+                
+                formatted_memories.append(
+                    f"关系: {memory['subject']} -> {memory['object']}"
+                    f"{action_str}{time_str}{location_str} "
+                    f"(重要性: {memory['importance']:.2f})"
+                )
+            elif memory['type'] == 'time_relation':
+                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
+                formatted_memories.append(
+                    f"时间记忆: {memory['entity']} 在 {memory['time_node']}{action_str} "
+                    f"(重要性: {memory['importance']:.2f})"
+                )
+            elif memory['type'] == 'location_relation':
+                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
+                formatted_memories.append(
+                    f"地点记忆: {memory['entity']} 在 {memory['location']}{action_str} "
+                    f"(重要性: {memory['importance']:.2f})"
+                )
+        
+        result = "\n".join(formatted_memories)
+        logger.info(f"[记忆查询] 基于关键词 {keywords} 找到 {len(formatted_memories)} 条相关记忆")
+        return result
+        
+    except Exception as e:
+        logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
+        return ""

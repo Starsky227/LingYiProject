@@ -281,3 +281,15 @@ class MCPScheduler:
             await asyncio.gather(*self.worker_tasks, return_exceptions=True)
         
         logger.info("MCP调度器已关闭")
+
+
+# 全局调度器实例
+_MCP_SCHEDULER = None
+
+def get_mcp_scheduler():
+    """获取全局MCP调度器实例"""
+    global _MCP_SCHEDULER
+    if not _MCP_SCHEDULER:
+        from mcpserver.mcp_manager import get_mcp_manager
+        _MCP_SCHEDULER = MCPScheduler(get_mcp_manager())
+    return _MCP_SCHEDULER
