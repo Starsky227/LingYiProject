@@ -4,7 +4,7 @@ from litellm import OpenAI
 import requests
 
 from system.config import config
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from mcpserver.mcp_manager import get_mcp_manager
 
 # 获取项目根目录
@@ -24,59 +24,44 @@ client = OpenAI(
     base_url=API_URL
 )
 
-# 读取意图分析提示词
-INTENT_ANALYSIS_PROMPT = ""
-prompt_path = os.path.join(BASE_DIR, "system", "prompts", "intent_analyze.txt")
-if os.path.exists(prompt_path):
+def load_prompt_file(filename: str, description: str = "") -> str:
+    """
+    加载提示词文件的通用函数
+    Args:
+        filename: 文件名（如 "1_intent_analyze.txt"）
+        description: 文件描述（用于错误提示）
+    Returns:
+        文件内容字符串，失败时返回空字符串
+    """
+    prompt_path = os.path.join(BASE_DIR, "system", "prompts", filename)
+    if not os.path.exists(prompt_path):
+        error_msg = f"[错误] {description}提示词文件不存在: {prompt_path}"
+        print(error_msg)
+        return ""
+    
     with open(prompt_path, "r", encoding="utf-8") as f:
-        INTENT_ANALYSIS_PROMPT = f.read().strip()
+        content = f.read().strip()
+        if not content:
+            print(f"[警告] {description}提示词文件为空: {prompt_path}")
+        return content
 
-# 读取对话分析提示词
-CONVERSATION_PROMPT = ""
-prompt_path = os.path.join(BASE_DIR, "system", "prompts", "intent_analyze.txt")
-if os.path.exists(prompt_path):
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        CONVERSATION_PROMPT = f.read().strip()
+# 加载各类提示词文件
+INTENT_ANALYSIS_PROMPT = load_prompt_file("1_intent_analyze.txt", "意图分析")
+CONVERSATION_PROMPT = load_prompt_file("1_intent_analyze.txt", "作用未知")
+TOOL_CALL_PROMPT = load_prompt_file("2_tool_selection.txt", "工具调用")
+MEMORY_CONTROL_PROMPT = load_prompt_file("3_memory_control.txt", "记忆控制")
+TASK_REVIEW_PROMPT = load_prompt_file("4_task_review.txt", "任务审查")
 
-# 读取任务规划提示词
-TASK_PLANNER_PROMPT = ""
-prompt_path = os.path.join(BASE_DIR, "system", "prompts", "task_planner.txt")
-if os.path.exists(prompt_path):
-    with open(prompt_path, "r", encoding="utf-8") as f:
-        TASK_PLANNER_PROMPT = f.read().strip()
-
-def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
+def analyze_intent(message_to_proceed: str) -> Tuple[str, str]:
     """
     使用intend_analyze.txt提示词分析最后一条消息的意图
     返回: (意图类型, 具体任务)
     """
     if not INTENT_ANALYSIS_PROMPT:
-        return "unknown", "[错误] 意图分析提示词未加载，请检查 intent_analyze.txt 文件"
-
-    # 将信息分为最新消息和历史消息
-    new_message = messages[-1]
-    history_messages = messages[:-1] if len(messages) > 1 else []
-    
-    # 消息扁平化处理
-    flattened_text = ""
-    
-    # 处理历史消息
-    flattened_text += "[历史消息]：\n"
-    if history_messages:
-        for msg in history_messages:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "").strip()
-            flattened_text += f"<{role}>{content}\n"
-    
-    # 处理当前消息
-    flattened_text += "[当前消息]：\n"
-    if new_message:
-        role = new_message.get("role", "unknown")
-        content = new_message.get("content", "").strip()
-        flattened_text += f"<{role}>{content}\n"
+        return "unknown", "[错误] 意图分析提示词未加载，请检查 1_intent_analyze.txt 文件"
     
     if DEBUG_MODE:
-        print(f"[DEBUG] 意图分析接收到:\n{flattened_text}")
+        print(f"[DEBUG] 意图分析接收到:\n{message_to_proceed}")
     
     try:
         # 调用模型分析意图
@@ -84,7 +69,7 @@ def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
             model=MODEL,
             messages=[
                 {"role": "system", "content": INTENT_ANALYSIS_PROMPT},
-                {"role": "user", "content": flattened_text}
+                {"role": "user", "content": message_to_proceed}
             ],
             stream=False,
             temperature=0.3
@@ -125,48 +110,52 @@ def analyze_intent(messages: List[Dict]) -> Tuple[str, str]:
         return "unknown", "分析失败"
 
 
-def plan_tasks(messages: List[Dict], tasks_todo: str) -> str:
+def tool_call(message_to_proceed: str, todo_list: str, tools_available: str) -> Dict[str, Any]:
     """
-    使用task_planner.txt提示词规划任务步骤
-    返回：任务规划结果文本字符串
+    使用tool_selection.txt提示词分析是否需要工具调用
+    参数：
+        messages: 对话历史
+        todo_list： 任务列表
+        tools_available: 可用工具信息
+    返回：工具调用结果字典
+    [{
+        "tool_use": true/false,
+        "agentType": "",
+        "service_name": "",
+        "tool_name": "",
+        "param_name": ""
+        "decision_reason": ""
+    }]
     """
-    if not TASK_PLANNER_PROMPT:
-        return "[错误] 任务规划提示词未加载，请检查 task_planner.txt 文件"
-    
-    # 将信息分为最新消息和历史消息
-    new_message = messages[-1] if messages else None
-    history_messages = messages[:-1] if len(messages) > 1 else []
+    if not TOOL_CALL_PROMPT:
+        return {
+            "tool_use": False,
+            "agentType": "null",
+            "service_name": "null", 
+            "tool_name": "null",
+            "param_name": "null",
+            "decision_reason": "[错误] 工具调用提示词未加载，请检查 tool_selection.txt 文件"
+        }
     
     # 消息扁平化处理
     flattened_text = ""
+    flattened_text += message_to_proceed
     
-    # 处理历史消息
-    flattened_text += "[历史消息]：\n"
-    if history_messages:
-        for msg in history_messages:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "").strip()
-            flattened_text += f"<{role}>{content}\n"
+    # 添加任务列表
+    flattened_text += f"[任务列表]：\n{todo_list if todo_list else '无任务'}\n"
     
-    # 处理当前消息
-    flattened_text += "[当前消息]：\n"
-    if new_message:
-        role = new_message.get("role", "unknown")
-        content = new_message.get("content", "").strip()
-        flattened_text += f"<{role}>{content}\n"
-    
-    # 添加当前任务
-    flattened_text += f"[当前任务]：\n{tasks_todo}\n"
+    # 添加可用工具
+    flattened_text += f"{tools_available}\n"
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 任务规划输入:\n{flattened_text}")
+        print(f"[DEBUG] 工具调用分析输入:\n{flattened_text}")
     
     try:
-        # 调用模型进行任务规划
+        # 调用模型进行工具调用分析
         response = client.chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": TASK_PLANNER_PROMPT},
+                {"role": "system", "content": TOOL_CALL_PROMPT},
                 {"role": "user", "content": flattened_text}
             ],
             stream=False,
@@ -175,28 +164,270 @@ def plan_tasks(messages: List[Dict], tasks_todo: str) -> str:
         
         full_response = response.choices[0].message.content
         if DEBUG_MODE:
-            print(f"[DEBUG] 任务规划原始响应: {repr(full_response)}")
+            print(f"[DEBUG] 工具调用原始响应: {repr(full_response)}")
+
+    except Exception as e:
+        print(f"[错误] 工具调用分析失败: {e}")
+        return {"decision_reason": f"[错误] 模型未响应: {e}"}
+    
+    # 清理响应文本
+    json_text = full_response.strip()
+    if json_text.startswith("```"):
+        json_text = json_text.replace("```json", "").replace("```", "").strip()
+    
+    try:
+        # 解析JSON响应
+        tool_call_data = json.loads(json_text)
+        if DEBUG_MODE:
+            print(f"[DEBUG] 成功解析工具调用JSON: {tool_call_data}")
+        return tool_call_data
         
+    except json.JSONDecodeError as json_error:
+        # 返回解析失败的结果
+        return {"decision_reason": f"JSON解析失败: {json_error}"}
+    
+    
+def memory_control(message_to_proceed: str, todo_list: str) -> Dict[str, Any]:
+    """
+    使用memory_control.txt提示词分析需要提取和记忆的关键词
+    参数：
+        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        todo_list： 任务列表
+    返回：
+    {
+        "from_memory": ["A", "B", "C"],
+        "to_memory": ["需要记录的内容A","需要记录的内容B"]
+    }
+    """
+    
+    # 消息扁平化处理
+    flattened_text = ""
+    flattened_text += message_to_proceed
+    
+    # 添加任务列表
+    flattened_text += f"[任务列表]：\n{todo_list}\n"
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 记忆控制分析输入:\n{flattened_text}")
+    
+    try:
+        # 调用模型进行记忆控制分析
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": MEMORY_CONTROL_PROMPT},
+                {"role": "user", "content": flattened_text}
+            ],
+            stream=False,
+            temperature=0.3
+        )
+        
+        full_response = response.choices[0].message.content
+        if DEBUG_MODE:
+            print(f"[DEBUG] 记忆控制原始响应: {repr(full_response)}")
+
         if not full_response:
-            return "[错误] 模型未返回响应，请重试"
+            return {
+                "from_memory": [],
+                "to_memory": [],
+                "error": "[错误] 模型未返回响应"
+            }
+
+    except Exception as e:
+        print(f"[错误] 记忆控制分析失败: {e}")
+        return {
+            "from_memory": [],
+            "to_memory": [],
+            "error": f"[错误] 模型调用失败: {e}"
+        }
+    
+    # 清理响应文本
+    json_text = full_response.strip()
+    if json_text.startswith("```"):
+        json_text = json_text.replace("```json", "").replace("```", "").strip()
+    
+    try:
+        # 解析JSON响应
+        memory_data = json.loads(json_text)
+        if DEBUG_MODE:
+            print(f"[DEBUG] 成功解析记忆控制JSON: {memory_data}")
         
-        # 直接返回模型的文本响应
-        task_plan_result = full_response.strip()
+        # 确保返回的数据格式正确
+        result = {
+            "from_memory": [],
+            "to_memory": []
+        }
+        
+        # 处理from_memory字段
+        if "from_memory" in memory_data:
+            from_memory = memory_data["from_memory"]
+            if isinstance(from_memory, (list, set)):
+                result["from_memory"] = list(from_memory)
+            elif isinstance(from_memory, str):
+                # 如果是字符串，尝试分割
+                result["from_memory"] = [from_memory] if from_memory else []
+        
+        # 处理to_memory字段
+        if "to_memory" in memory_data:
+            to_memory = memory_data["to_memory"]
+            if isinstance(to_memory, (list, set)):
+                result["to_memory"] = list(to_memory)
+            elif isinstance(to_memory, str):
+                # 如果是字符串，尝试分割
+                result["to_memory"] = [to_memory] if to_memory else []
         
         if DEBUG_MODE:
-            print(f"[DEBUG] 任务规划结果: {task_plan_result}")
+            print(f"[DEBUG] 记忆控制结果 - 从记忆搜索: {result['from_memory']}")
+            print(f"[DEBUG] 记忆控制结果 - 记入记忆: {result['to_memory']}")
         
-        return task_plan_result
+        return result
+        
+    except json.JSONDecodeError as json_error:
+        if DEBUG_MODE:
+            print(f"[DEBUG] 记忆控制JSON解析失败: {json_error}")
+            print(f"[DEBUG] 尝试解析的文本: {repr(json_text)}")
+        
+        # 返回解析失败的结果
+        return {
+            "from_memory": [],
+            "to_memory": [],
+            "error": f"JSON解析失败: {json_error}"
+        }
+
+
+def task_completion_check(message_to_proceed: str, todo_list: str, tool_call_results: List[Dict], relevant_memories: str, memories_recorded: List[str]) -> Dict[str, Any]:
+    """
+    使用4_task_review提示词检查任务是否完成
+    参数：
+        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        todo_list: 任务列表
+        tool_call_results: 工具调用结果列表
+        relevant_memories: 相关记忆内容
+        memories_recorded: 已存入记忆的内容列表
+    返回：
+    {
+        "mission_completed": true/false,
+        "todo_list": "更新后的任务列表",
+        "decision_reason": "推理理由"
+    }
+    """
+    if not TASK_REVIEW_PROMPT:
+        return {
+            "mission_completed": False,
+            "todo_list": todo_list,
+            "decision_reason": "[错误] 任务审查提示词未加载，请检查 4_task_review 文件"
+        }
     
+    # 构建输入文本
+    flattened_text = ""
+    
+    # 添加消息内容
+    flattened_text += message_to_proceed
+    
+    # 添加任务列表
+    flattened_text += f"[任务列表]：\n{todo_list if todo_list else '无任务'}\n"
+    
+    # 添加工具输出
+    flattened_text += "[工具输出]：\n"
+    if tool_call_results:
+        for i, tool_result in enumerate(tool_call_results):
+            agent_type = tool_result.get("agent_type", "unknown")
+            result = tool_result.get("result", "")
+            call_index = tool_result.get("call_index", i + 1)
+            flattened_text += f"工具调用 {call_index} ({agent_type})：{result}\n"
+    else:
+        flattened_text += "无工具调用\n"
+    
+    # 添加相关记忆
+    flattened_text += f"[相关记忆]：\n{relevant_memories if relevant_memories else '无相关记忆'}\n"
+    
+    # 添加记忆存储
+    flattened_text += "[记忆存储]：\n"
+    if memories_recorded:
+        for memory in memories_recorded:
+            flattened_text += f"- {memory}\n"
+    else:
+        flattened_text += "无新存入记忆\n"
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 任务审查分析输入:\n{flattened_text}")
+    
+    try:
+        # 调用模型进行任务完成检查
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": TASK_REVIEW_PROMPT},
+                {"role": "user", "content": flattened_text}
+            ],
+            stream=False,
+            temperature=0.3
+        )
+        
+        full_response = response.choices[0].message.content
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务审查原始响应: {repr(full_response)}")
+
+        if not full_response:
+            return {
+                "mission_completed": False,
+                "todo_list": todo_list,
+                "decision_reason": "[错误] 模型未返回响应"
+            }
+
     except Exception as e:
-        print(f"[错误] 任务规划失败: {e}")
-        return f"[错误] 任务规划调用失败: {e}，请检查网络连接或重试"
+        print(f"[错误] 任务审查分析失败: {e}")
+        return {
+            "mission_completed": False,
+            "todo_list": todo_list,
+            "decision_reason": f"[错误] 模型调用失败: {e}"
+        }
+    
+    # 清理响应文本
+    json_text = full_response.strip()
+    if json_text.startswith("```"):
+        json_text = json_text.replace("```json", "").replace("```", "").strip()
+    
+    try:
+        # 解析JSON响应
+        review_data = json.loads(json_text)
+        if DEBUG_MODE:
+            print(f"[DEBUG] 成功解析任务审查JSON: {review_data}")
+        
+        # 确保返回的数据格式正确
+        result = {
+            "mission_completed": review_data.get("mission_completed", False),
+            "todo_list": review_data.get("todo_list", todo_list),
+            "decision_reason": review_data.get("decision_reason", "未提供理由")
+        }
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务审查结果 - 任务完成: {result['mission_completed']}")
+            print(f"[DEBUG] 任务审查结果 - 更新任务: {result['todo_list']}")
+            print(f"[DEBUG] 任务审查结果 - 决策理由: {result['decision_reason']}")
+        
+        return result
+        
+    except json.JSONDecodeError as json_error:
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务审查JSON解析失败: {json_error}")
+            print(f"[DEBUG] 尝试解析的文本: {repr(json_text)}")
+        
+        # 返回解析失败的结果
+        return {
+            "mission_completed": False,
+            "todo_list": todo_list,
+            "decision_reason": f"JSON解析失败: {json_error}"
+        }
 
 
 def analyze_intent_with_tools(messages: List[Dict]) -> Tuple[str, str, Dict]:
     """
     分析最后一条消息的意图并返回工具调用信息
     返回: (意图, 解释, 工具调用信息)
+    参数：
+        messages: 对话历史
+        todo_list： 任务列表
     """
     # 获取最后一条消息
     last_message = None

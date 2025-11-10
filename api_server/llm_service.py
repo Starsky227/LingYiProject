@@ -18,10 +18,12 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from brain.memory.quintuples_extractor import record_memories
+from brain.memory.knowledge_graph_manager import relevant_memories_by_keywords
 from brain.memory.relevant_memory_search import query_relevant_memories
 from mcpserver.mcp_manager import get_mcp_manager
-from system.config import config
-from system.background_analyzer import analyze_intent, plan_tasks
+from mcpserver.mcp_scheduler import get_mcp_scheduler
+from system.config import config, is_neo4j_available
+from system.background_analyzer import analyze_intent, plan_tasks, tool_call, memory_control, task_completion_check
 
 # API 配置
 API_KEY = config.api.api_key
@@ -114,6 +116,65 @@ def get_recent_chat(messages: List[Dict], max_chars: int = 100, min_messages: in
         return []
 
 
+def extract_keywords_from_text(text: str) -> List[str]:
+    """
+    从文本中提取关键词
+    Args:
+        text: 输入文本
+    Returns:
+        关键词列表
+    """
+    if not text or not text.strip():
+        return []
+    
+    try:
+        import re
+        # 去除标点符号，保留中英文、数字和空格
+        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', text)
+        # 分词（按空格和标点分割）
+        words = re.split(r'\s+', clean_text)
+        
+        # 定义停用词（常用词汇）
+        stop_words = {
+            # 中文停用词
+            '的', '是', '在', '有', '和', '了', '我', '你', '他', '她', '它', '这', '那', '一个', '什么', '怎么', '为什么', 
+            '可以', '能够', '应该', '需要', '想要', '希望', '觉得', '认为', '知道', '看到', '听到', '说', '做', '去',
+            '来', '会', '要', '把', '被', '给', '让', '使', '对', '向', '从', '到', '于', '为了', '因为', '所以',
+            '但是', '不过', '然而', '而且', '或者', '还是', '就是', '也是', '不是', '没有', '不会', '不能',
+            # 英文停用词
+            'the', 'is', 'are', 'was', 'were', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
+            'of', 'with', 'by', 'from', 'as', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
+            'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'this', 'that', 'these',
+            'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your',
+            'his', 'her', 'its', 'our', 'their', 'what', 'when', 'where', 'why', 'how', 'who', 'which'
+        }
+        
+        # 过滤关键词
+        keywords = []
+        for word in words:
+            word = word.strip().lower()
+            # 过滤条件：长度大于1，不是停用词，不是纯数字
+            if (len(word) > 1 and 
+                word not in stop_words and 
+                not word.isdigit() and
+                word.isalnum()):  # 只保留字母数字组合
+                keywords.append(word)
+        
+        # 去重并保持原始大小写（取第一次出现的形式）
+        seen = set()
+        unique_keywords = []
+        for word in keywords:
+            if word not in seen:
+                seen.add(word)
+                unique_keywords.append(word)
+        
+        return unique_keywords[:10]  # 最多返回10个关键词
+        
+    except Exception as e:
+        print(f"[错误] 关键词提取失败: {e}")
+        return []
+
+
 def message_to_logs(message: Dict) -> str:
     """
     将消息转换为日志格式
@@ -155,6 +216,12 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     Returns:
         完整的模型回复文本
     """
+    # 循坏外必要的记录
+    mission_completed = False
+    todo_list = ""
+    tool_call_results = []
+    relevant_memories = ""
+    memories_recorded = []
     
     # 使用get_recent_chat限制聊天记录长度，避免上下文过长
     recent_messages = get_recent_chat(messages)
@@ -163,13 +230,34 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print("[INFO] 检测到空白消息，跳过处理")
         return ""
     
-    # 进行意图识别
-    intent_type, tasks_todo = analyze_intent(recent_messages)
-    print(f"[思考] 识别到意图类型: {intent_type}, 任务: {tasks_todo}")
-
-    # 进行任务分解
-    todo_list = plan_tasks(recent_messages, tasks_todo, tools_available)
-    print(f"[思考] 规划后续任务: \n{todo_list}")
+    # 将信息分为最新消息和历史消息
+    new_message = messages[-1] if messages else None
+    history_messages = messages[:-1] if len(messages) > 1 else []
+    
+    # 消息扁平化处理
+    message_to_proceed = ""
+    
+    # 处理历史消息
+    message_to_proceed += "[历史消息]：\n"
+    if history_messages:
+        for msg in history_messages:
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "").strip()
+            message_to_proceed += f"<{role}>{content}\n"
+    
+    # 处理当前消息
+    message_to_proceed += "[当前消息]：\n"
+    if new_message:
+        role = new_message.get("role", "unknown")
+        content = new_message.get("content", "").strip()
+        message_to_proceed += f"<{role}>{content}\n"
+    else:
+        print("[INFO] 检测到空白消息，跳过处理")
+        return ""
+    
+    # ======1.进行意图识别======
+    intent_type, todo_list = analyze_intent(message_to_proceed)
+    print(f"[思考] 识别到意图类型: {intent_type},\n[思考] 规划后续任务: {todo_list}")
 
     # 获取可用工具信息
     try:
@@ -207,9 +295,9 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         
         # 组合成完整的工具描述文本
         if tools_available_list:
-            tools_available = "# 可用工具和服务\n\n" + "".join(tools_available_list)
+            tools_available = "[可用的mcp_agent]:\n" + "".join(tools_available_list)
         else:
-            tools_available = "当前无可用工具和服务"
+            tools_available = "[可用的mcp_agent]:\n无可用工具"
             
         if DEBUG_MODE:
             print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
@@ -222,23 +310,118 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             traceback.print_exc()
         tools_available = "获取工具信息失败"
     
-    # 进行工具调用
+    while mission_completed is False:
+        # ======2.进行工具调用======
+        tool_result = tool_call(message_to_proceed, todo_list, tools_available)
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 完整工具调用结果: {tool_result}")
+        
+        # 处理工具调用结果（新的JSON格式：包含agent_call数组）
+        tool_use = tool_result.get("tool_use", False)
+        
+        if tool_use:
+            agent_calls = tool_result.get("agent_call", [])
+            if DEBUG_MODE:
+                print(f"[DEBUG] 找到 {len(agent_calls)} 个工具调用请求")
+            
+            # 使用调度器执行工具调用，简化代码逻辑
+            scheduler = get_mcp_scheduler()
+            
+            # 遍历所有工具调用请求
+            for i, agent_call in enumerate(agent_calls):
+                agent_type = agent_call.get("agentType", "null")
+                print(f"[工具执行] 处理第 {i+1} 个工具调用: {agent_type}")
+                
+                try:
+                    if agent_type == "mcp_agent":
+                        # 使用调度器的单个工具调用方法
+                        import asyncio
+                        result = asyncio.run(scheduler._execute_single_tool_call(agent_call))
+                        
+                        if result.get("success", False):
+                            tool_call_result = result.get("result", "工具调用成功")
+                            print(f"[工具执行] MCP工具调用成功")
+                            if DEBUG_MODE:
+                                print(f"[DEBUG] 工具执行结果: {tool_call_result}")
+                        else:
+                            tool_call_result = result.get("error", "工具调用失败")
+                            print(f"[工具执行] MCP工具调用失败: {tool_call_result}")
+                    
+                    elif agent_type == "api_agent":
+                        # 预留给其他类型的Agent调用
+                        task_type = agent_call.get("task_type", "unknown")
+                        tool_call_result = f"Api Agent任务调用暂未实现 - 任务类型: {task_type}"
+                        print(f"[工具执行] Api Agent任务调用暂未实现: {task_type}")
+                    
+                    else:
+                        tool_call_result = f"未知的代理类型: {agent_type}"
+                        print(f"[工具执行] 错误: 未知的代理类型 {agent_type}")
+                
+                except Exception as e:
+                    tool_call_result = f"工具调用异常: {str(e)}"
+                    print(f"[工具执行] 工具调用异常: {e}")
+                
+                # 将结果添加到结果列表
+                tool_call_results.append({
+                    "agent_type": agent_type,
+                    "result": tool_call_result,
+                    "call_index": i + 1
+                })
+
+        # ======3.记忆调用======（neo4j启用时才有效）
+        if is_neo4j_available():
+            memory_control_result = memory_control(message_to_proceed, todo_list)
+            
+            # 提取记忆控制结果
+            from_memory = memory_control_result.get("from_memory", [])
+            to_memory = memory_control_result.get("to_memory", [])
+
+            # 从用户最后一条消息中提取关键词
+            user_keywords = []
+            user_keywords = extract_keywords_from_text(new_message.get("content", "").strip())
+            if DEBUG_MODE:
+                print(f"[DEBUG] 从用户消息中提取的关键词: {user_keywords}")
+                print(f"[DEBUG] AI分析的记忆搜索关键词: {from_memory}")
+                print(f"[DEBUG] 需要记录的记忆: {to_memory}")
+
+            # 合并用户关键词和AI分析的关键词
+            search_from_memory = []
+            if user_keywords:
+                search_from_memory.extend(user_keywords)
+            if from_memory:
+                search_from_memory.extend(from_memory)
+            # 去重
+            search_from_memory = list(set(search_from_memory))
+            # 查询相关记忆
+            relevant_memories = relevant_memories_by_keywords(search_from_memory)
+            if DEBUG_MODE:
+                print(f"[DEBUG] 最终的记忆搜索关键词组: {search_from_memory}")
+                print(f"[DEBUG] 查询到的相关记忆内容: {(relevant_memories)}")
+        else: 
+            relevant_memories = "GRAG记忆系统未连接"
+        
+        # ======4.工作审查======
+        task_review = task_completion_check(message_to_proceed, todo_list, tool_call_results, relevant_memories, memories_recorded)
+        
+        # 根据审查结果决定是否继续循环
+        mission_completed = task_review.get("mission_completed", False)
+        todo_list = task_review.get("todo_list", todo_list)  # 更新任务列表
+        decision_reason = task_review.get("decision_reason", "")
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 任务审查结果: 完成={mission_completed}, 理由={decision_reason}")
+            if not mission_completed:
+                print(f"[DEBUG] 更新后的任务列表: {todo_list}")
+        
+        if mission_completed:
+            print(f"[思考] 任务审查完成: {decision_reason}")
+            break
+        else:
+            print(f"[思考] 任务继续执行: {decision_reason}")
+            # 继续循环，使用更新后的任务列表
 
     try:
-        relevant_memories = ""
-        if messages and messages[-1].get("content"):
-            latest_message = messages[-1].get("content", "").strip()
-            latest_role = messages[-1].get("role", "unknown")
-            if latest_message:
-                # 提取最近的上下文（最近3条消息的内容）
-                recent_context = []
-                for msg in messages[-3:]:
-                    if msg.get("content"):
-                        recent_context.append(msg["content"])
-                
-                relevant_memories = query_relevant_memories(latest_message, recent_context)
-                if relevant_memories:
-                    print(f"[记忆] 基于 {latest_role} 的消息查询到相关记忆")
         
         # 组织要发送的消息：system prompt -> memory context -> intent 提示 -> 对话历史
         payload_messages = []
@@ -256,6 +439,19 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 请基于这些记忆信息和当前对话来提供更准确、个性化的回复。如果记忆信息与当前对话内容相关，可以自然地引用它们。"""
             payload_messages.append({"role": "system", "content": memory_context})
             print(f"[记忆] 找到 {len(relevant_memories.split('\\n')) - 1} 条相关记忆")
+        
+        # 添加工具调用结果上下文
+        if tool_call_results:
+            tool_context = "以下是刚才执行的工具调用结果，请根据这些结果来回答用户的问题：\n\n"
+            for tool_result in tool_call_results:
+                agent_type = tool_result.get("agent_type", "unknown")
+                result = tool_result.get("result", "")
+                call_index = tool_result.get("call_index", 0)
+                
+                tool_context += f"工具调用 {call_index} ({agent_type}):\n{result}\n\n"
+            
+            payload_messages.append({"role": "system", "content": tool_context})
+            print(f"[工具结果] 添加了 {len(tool_call_results)} 个工具调用结果到上下文")
         
         # 添加意图分析结果
 #        if intent and intent != "unknown":
