@@ -1,9 +1,15 @@
 import os
 import json
+import logging
 from litellm import OpenAI
 import requests
 
 from system.config import config
+
+# 设置 LiteLLM 日志级别，减少调试输出
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 from typing import Dict, List, Optional, Tuple, Any
 from mcpserver.mcp_manager import get_mcp_manager
 
@@ -51,6 +57,7 @@ CONVERSATION_PROMPT = load_prompt_file("1_intent_analyze.txt", "作用未知")
 TOOL_CALL_PROMPT = load_prompt_file("2_tool_selection.txt", "工具调用")
 MEMORY_CONTROL_PROMPT = load_prompt_file("3_memory_control.txt", "记忆控制")
 TASK_REVIEW_PROMPT = load_prompt_file("4_task_review.txt", "任务审查")
+FINAL_OUTPUT_PROMPT = load_prompt_file("5_final_output.txt", "最终输出")
 
 def analyze_intent(message_to_proceed: str) -> Tuple[str, str]:
     """
@@ -127,15 +134,6 @@ def tool_call(message_to_proceed: str, todo_list: str, tools_available: str) -> 
         "decision_reason": ""
     }]
     """
-    if not TOOL_CALL_PROMPT:
-        return {
-            "tool_use": False,
-            "agentType": "null",
-            "service_name": "null", 
-            "tool_name": "null",
-            "param_name": "null",
-            "decision_reason": "[错误] 工具调用提示词未加载，请检查 tool_selection.txt 文件"
-        }
     
     # 消息扁平化处理
     flattened_text = ""
@@ -148,7 +146,7 @@ def tool_call(message_to_proceed: str, todo_list: str, tools_available: str) -> 
     flattened_text += f"{tools_available}\n"
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 工具调用分析输入:\n{flattened_text}")
+        print(f"[DEBUG] 工具调用接收到:\n{flattened_text}")
     
     try:
         # 调用模型进行工具调用分析
@@ -311,12 +309,6 @@ def task_completion_check(message_to_proceed: str, todo_list: str, tool_call_res
         "decision_reason": "推理理由"
     }
     """
-    if not TASK_REVIEW_PROMPT:
-        return {
-            "mission_completed": False,
-            "todo_list": todo_list,
-            "decision_reason": "[错误] 任务审查提示词未加载，请检查 4_task_review 文件"
-        }
     
     # 构建输入文本
     flattened_text = ""
@@ -350,7 +342,7 @@ def task_completion_check(message_to_proceed: str, todo_list: str, tool_call_res
         flattened_text += "无新存入记忆\n"
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 任务审查分析输入:\n{flattened_text}")
+        print(f"[DEBUG] 任务审查接收到:\n{flattened_text}")
     
     try:
         # 调用模型进行任务完成检查
@@ -615,4 +607,73 @@ def analyze_intent_with_tools(messages: List[Dict]) -> Tuple[str, str, Dict]:
         print(f"[错误] 意图分析失败: {e}")
     
     return "unknown", "分析失败", {}
+
+
+def final_output(message_to_proceed: str, tool_results_text: str, relevant_memories: str, memories_recorded: List[str]) -> str:
+    """
+    使用5_final_output.txt提示词生成最终回答
+    参数：
+        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        tool_results_text: 工具调用结果的纯文本格式
+        relevant_memories: 相关记忆内容
+        memories_recorded: 已存入记忆的内容列表
+    返回：
+        最终的AI回答文本
+    """
+    if not FINAL_OUTPUT_PROMPT:
+        return "[错误] 最终输出提示词未加载，请检查 5_final_output.txt 文件"
+    
+    # 替换提示词中的占位符
+    prompt = FINAL_OUTPUT_PROMPT.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME)
+    
+    # 构建输入文本
+    flattened_text = ""
+    
+    # 添加消息内容
+    flattened_text += message_to_proceed
+    
+    # 添加工具输出
+    flattened_text += f"[工具输出]：\n{tool_results_text if tool_results_text else '无工具调用'}\n"
+    
+    # 添加相关记忆
+    flattened_text += f"[相关记忆]：\n{relevant_memories if relevant_memories else '无记忆提取'}\n"
+    
+    # 添加记忆存储
+    flattened_text += "[记忆存储]：\n"
+    if memories_recorded:
+        for memory in memories_recorded:
+            flattened_text += f"- {memory}\n"
+    else:
+        flattened_text += "无新存入记忆\n"
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 最终输出分析输入:\n{flattened_text}")
+    
+    try:
+        # 调用模型生成最终回答
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": flattened_text}
+            ],
+            stream=False,
+            temperature=0.7
+        )
+        
+        full_response = response.choices[0].message.content
+        if DEBUG_MODE:
+            print(f"[DEBUG] 最终输出原始响应: {repr(full_response)}")
+
+        if not full_response:
+            return "[错误] 模型未返回响应"
+
+        # 返回最终回答
+        final_answer = full_response.strip()
+        
+        return final_answer
+
+    except Exception as e:
+        print(f"[错误] 最终输出生成失败: {e}")
+        return f"[错误] 最终回答生成失败: {e}"
 

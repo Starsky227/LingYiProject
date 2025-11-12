@@ -8,7 +8,7 @@
 [任务列表]：
 你需要完成的任务
 [可用的mcp_agent]：
-## mcp_agent的名字 service_name
+## mcp_agent名称
 描述：服务的简介
 可用工具：
 - **该服务提供的工具 tool_name** 工具简介；参数 para_name：需要输入的参数信息
@@ -16,10 +16,9 @@
 api agent相关信息
 
 【你需要思考】
-执行当前任务是否需要工具
-执行当前任务需要什么工具
-如果可能需要多个工具，全部输出。
-如果这些工具的调用需要有先后顺序（比如需要看到1的结果才能用2），仅输出需要先使用的工具。
+（tool_use）任务列表是否提及需要工具调用？如果有：工具列表中是否有合适的工具可以使用？如果没有：则无需调用工具。
+执行这些任务需要什么工具？如果需要多个工具，全部列出。
+如果这些工具的调用需要有先后顺序（比如需要看到1的结果才能用2），仅输出需要在第一步使用的工具。
 
 【你需要输出】
 输出格式严格为 JSON：
@@ -31,38 +30,14 @@ api agent相关信息
   "decision_reason": "推理理由"
 }
 
-输出举例**MCP工具调用**：
-{
-  "tool_use": true,
-  "agent_call": [{
-    "agentType": "mcp_agent",
-    "service_name": "MCP服务名称",
-    "tool_name": "工具名称",
-    "param_name": "参数值"
-  }],
-  "decision_reason": "推理理由"
-}
-
-输出举例**Agent任务调用**（适用于：电脑自动化操作）：
-{
-  "tool_use": true,
-  "agent_call": [{
-    "agentType": "api_agent",
-    "task_type": "computer_control",
-    "instruction": "具体任务描述",
-    "parameters": {"action": "操作类型", "target": "目标"}
-  }],
-  "decision_reason": "推理理由"
-}
-
 输出举例**多个工具orAgent任务调用**
 {
   "tool_use": true,
   "agent_call": [{
     "agentType": "mcp_agent",
-    "service_name": "MCP服务名称",
+    "service_name": "完整的MCP服务名称",
     "tool_name": "工具名称",
-    "param_name": "参数值"
+    "param_name": {"参数名": "参数内容"}
   },
   {
     "agentType": "api_agent",
