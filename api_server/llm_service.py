@@ -17,13 +17,11 @@ PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from brain.memory.quintuples_extractor import record_memories
 from brain.memory.knowledge_graph_manager import relevant_memories_by_keywords
-from brain.memory.relevant_memory_search import query_relevant_memories
 from mcpserver.mcp_manager import get_mcp_manager
 from mcpserver.mcp_scheduler import get_mcp_scheduler
 from system.config import config, is_neo4j_available
-from system.background_analyzer import analyze_intent, plan_tasks, tool_call, memory_control, task_completion_check
+from system.background_analyzer import analyze_intent, tool_call, memory_control, task_completion_check, final_output
 
 # API 配置
 API_KEY = config.api.api_key
@@ -221,7 +219,8 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     todo_list = ""
     tool_call_results = []
     relevant_memories = ""
-    memories_recorded = []
+    work_history = ""
+    work_count = 0
     
     # 使用get_recent_chat限制聊天记录长度，避免上下文过长
     recent_messages = get_recent_chat(messages)
@@ -299,9 +298,9 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         else:
             tools_available = "[可用的mcp_agent]:\n无可用工具"
             
-        if DEBUG_MODE:
-            print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
-            print(f"[DEBUG] 工具预览: {tools_available}...")
+        #if DEBUG_MODE:
+        #    print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
+        #    print(f"[DEBUG] 工具预览: {tools_available}...")
             
     except Exception as e:
         print(f"[Warning] 获取可用工具失败: {e}")
@@ -325,29 +324,46 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             if DEBUG_MODE:
                 print(f"[DEBUG] 找到 {len(agent_calls)} 个工具调用请求")
             
-            # 使用调度器执行工具调用，简化代码逻辑
-            scheduler = get_mcp_scheduler()
+            # 直接使用MCP管理器，避免调度器的异步初始化问题
+            mcp_manager = get_mcp_manager()
             
             # 遍历所有工具调用请求
             for i, agent_call in enumerate(agent_calls):
                 agent_type = agent_call.get("agentType", "null")
                 print(f"[工具执行] 处理第 {i+1} 个工具调用: {agent_type}")
                 
+
+                
                 try:
                     if agent_type == "mcp_agent":
-                        # 使用调度器的单个工具调用方法
-                        import asyncio
-                        result = asyncio.run(scheduler._execute_single_tool_call(agent_call))
-                        
-                        if result.get("success", False):
-                            tool_call_result = result.get("result", "工具调用成功")
-                            print(f"[工具执行] MCP工具调用成功")
-                            if DEBUG_MODE:
-                                print(f"[DEBUG] 工具执行结果: {tool_call_result}")
+                        # 直接使用MCP管理器进行工具调用
+                        service_name = agent_call.get("service_name", "")
+                        tool_name = agent_call.get("tool_name", "")
+                        args = {}
+                        if service_name and tool_name:
+                            param_name = agent_call.get("param_name")
+                            if param_name is not None and param_name != "null":
+                                if isinstance(param_name, dict):
+                                    args = param_name
+                            print(f"[工具执行] 正在调用MCP工具: {service_name}.{tool_name}:{args}")
+                            
+                            import asyncio
+                            try:
+                                tool_call_result = asyncio.run(mcp_manager.unified_call(service_name, tool_name, args))
+                                print(f"[工具执行] MCP工具调用成功")
+                                if DEBUG_MODE:
+                                    print(f"[DEBUG] 工具执行结果: {tool_call_result}")
+                            except Exception as exec_error:
+                                tool_call_result = f"工具执行失败: {exec_error}"
+                                print(f"[工具执行] MCP工具调用失败: {exec_error}")
                         else:
-                            tool_call_result = result.get("error", "工具调用失败")
-                            print(f"[工具执行] MCP工具调用失败: {tool_call_result}")
-                    
+                            tool_call_result = "工具执行失败: MCP工具参数不完整"
+                            print(f"[工具执行] 错误: 服务名或工具名缺失")
+                        # 记录到 mcp 调用到工作日志 work history
+                        work_count += 1
+                        work_log_entry = f"{work_count}. 调用的具体工具{service_name}.{tool_name}:{args}，调用的结果{tool_call_result}。"
+                        work_history += work_log_entry + "\n"
+
                     elif agent_type == "api_agent":
                         # 预留给其他类型的Agent调用
                         task_type = agent_call.get("task_type", "unknown")
@@ -368,6 +384,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
                     "result": tool_call_result,
                     "call_index": i + 1
                 })
+
 
         # ======3.记忆调用======（neo4j启用时才有效）
         if is_neo4j_available():
@@ -402,7 +419,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             relevant_memories = "GRAG记忆系统未连接"
         
         # ======4.工作审查======
-        task_review = task_completion_check(message_to_proceed, todo_list, tool_call_results, relevant_memories, memories_recorded)
+        task_review = task_completion_check(message_to_proceed, todo_list, tool_call_results, relevant_memories, work_history)
         
         # 根据审查结果决定是否继续循环
         mission_completed = task_review.get("mission_completed", False)
@@ -421,85 +438,21 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             print(f"[思考] 任务继续执行: {decision_reason}")
             # 继续循环，使用更新后的任务列表
 
-    try:
-        
-        # 组织要发送的消息：system prompt -> memory context -> intent 提示 -> 对话历史
-        payload_messages = []
-        
-        # 添加系统提示词
-        if SYSTEM_PROMPT:
-            payload_messages.append({"role": "system", "content": SYSTEM_PROMPT})
-        
-        # 添加记忆上下文
-        if relevant_memories:
-            memory_context = f"""你可以参考以下相关的历史记忆信息来回复：
+    # ======5.最终回答======
+    # 将tool_call_results转换为纯文本格式，供final_output使用
+    tool_results_text = ""
+    if tool_call_results:
+        tool_results_text = "工具执行结果：\n"
+        for tool_result in tool_call_results:
+            agent_type = tool_result.get("agent_type", "unknown")
+            result = tool_result.get("result", "")
+            tool_results_text += f"- {agent_type}: {result}\n"
+    else:
+        tool_results_text = "无工具执行结果"
+    
+    final_answer = final_output(message_to_proceed, tool_results_text, relevant_memories, work_history)
 
-{relevant_memories}
-
-请基于这些记忆信息和当前对话来提供更准确、个性化的回复。如果记忆信息与当前对话内容相关，可以自然地引用它们。"""
-            payload_messages.append({"role": "system", "content": memory_context})
-            print(f"[记忆] 找到 {len(relevant_memories.split('\\n')) - 1} 条相关记忆")
-        
-        # 添加工具调用结果上下文
-        if tool_call_results:
-            tool_context = "以下是刚才执行的工具调用结果，请根据这些结果来回答用户的问题：\n\n"
-            for tool_result in tool_call_results:
-                agent_type = tool_result.get("agent_type", "unknown")
-                result = tool_result.get("result", "")
-                call_index = tool_result.get("call_index", 0)
-                
-                tool_context += f"工具调用 {call_index} ({agent_type}):\n{result}\n\n"
-            
-            payload_messages.append({"role": "system", "content": tool_context})
-            print(f"[工具结果] 添加了 {len(tool_call_results)} 个工具调用结果到上下文")
-        
-        # 添加意图分析结果
-#        if intent and intent != "unknown":
-#            intent_prompt = f"""当前对话意图分析：
-#- 意图类型：{intent}
-#- 具体任务：{tasks_todo}
-#请基于这个意图来调整你的回复风格和内容重点。"""
-#            payload_messages.append({"role": "system", "content": intent_prompt})
-        
-        # 添加对话历史（使用筛选后的最近消息）
-        payload_messages.extend(recent_messages)
-        
-        # 使用 OpenAI API 格式调用 Ollama（流式）
-        stream = client.chat.completions.create(
-            model=MODEL,
-            messages=payload_messages,
-            stream=True,
-            temperature=0.7,
-        )
-        
-        full_reply = ""
-        for chunk in stream:
-            if chunk.choices[0].delta.content is not None:
-                content = chunk.choices[0].delta.content
-                full_reply += content
-                on_response(content)
-        
-        # 将完整对话记录为记忆（包含AI回复）
-        if full_reply.strip():
-            # 创建包含AI回复的完整消息列表（使用筛选后的消息以控制长度）
-            updated_messages = recent_messages + [{"role": "assistant", "content": full_reply.strip()}]
-            try:
-                task_id = record_memories(updated_messages, source="api_server", max_messages=6)
-                if task_id:
-                    print(f"[记忆] 已提交记忆提取任务: {task_id}")
-            except Exception as e:
-                print(f"[记忆错误] 记忆提取失败: {e}")
-        
-        return full_reply
-        
-    except Exception as e:
-        error_msg = f"通信异常: {str(e)}"
-        print(f"[错误] {error_msg}")
-        try:
-            on_response(f"\n[错误] {error_msg}\n")
-        except:
-            pass
-        return ""
+    return final_answer
 
 
 def preload_model(timeout_sec: int = 30) -> bool:
