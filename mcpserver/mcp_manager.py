@@ -1,21 +1,23 @@
 import asyncio
-import logging
 import inspect
-from typing import Dict, Optional, List, Any, Callable, Awaitable, Generic, TypeVar, Union, cast
-from contextlib import AsyncExitStack
-import sys
-from pydantic import BaseModel, TypeAdapter
-from dataclasses import dataclass
-import json
-from datetime import datetime
 import importlib,os,inspect # 自动注册相关
-from pathlib import Path
+import json
+import logging
+import sys
 
-from aiohttp import ClientSession
-from mcp.client.stdio import stdio_client, StdioServerParameters
-from mcpserver.mcp_registry import MCP_REGISTRY # MCP服务注册表
+from contextlib import AsyncExitStack
+from dataclasses import dataclass
+from datetime import datetime
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+from pydantic import BaseModel, TypeAdapter
+from typing import Dict, Optional, List, Any, Callable, Awaitable, Generic, TypeVar, Union, cast
+from pathlib import Path
+# 延迟导入MCP_REGISTRY，避免循环导入死锁
+# from mcpserver.mcp_registry import MCP_REGISTRY # MCP服务注册表
 
 from system.config import config, logger
+AI_NAME = config.system.ai_name
 
 # 配置日志
 logging.basicConfig(
@@ -34,17 +36,20 @@ print=lambda *a,**k:sys.stderr.write('[print] '+(' '.join(map(str,a)))+'\n')
 TContext = TypeVar("TContext")
 THandoffInput = TypeVar("THandoffInput")
 
-# 定义Handoff相关异常类
 class HandoffError(Exception):
-    """Handoff执行异常基类"""
-    pass
-
-class HandoffValidationError(HandoffError):
-    """Handoff验证异常"""
+    """Handoff基础异常类"""
     pass
 
 class ModelBehaviorError(HandoffError):
     """模型行为异常"""
+    pass
+
+class HandoffValidationError(HandoffError):
+    """Handoff数据验证异常"""
+    pass
+
+class HandoffConnectionError(HandoffError):
+    """Handoff连接异常"""
     pass
 
 @dataclass
@@ -251,6 +256,7 @@ class MCPManager:
             Optional[ClientSession]: 成功返回会话对象，失败返回None
         """
         # 直接返回None，或根据MCP_REGISTRY判断服务是否存在
+        from mcpserver.mcp_registry import MCP_REGISTRY # 延迟导入
         if service_name not in MCP_REGISTRY:
             logger.warning(f"MCP服务 {service_name} 不存在")
             return None
@@ -347,43 +353,48 @@ class MCPManager:
 
     async def unified_call(self, service_name: str, tool_name: str, args: dict):
         """简化的统一调用接口 - 只支持MCP服务
-        
+
         Args:
-            service_name: 服务名称
+            service_name: 服务名称（现在统一使用displayName）
             tool_name: 工具名称
             args: 工具参数
-            
+
         Returns:
             调用结果
         """
         try:
             # 只支持MCP服务调用（通过MCP_REGISTRY）
-            if service_name in MCP_REGISTRY:
-                agent = MCP_REGISTRY[service_name]
-                if hasattr(agent, tool_name):
-                    method = getattr(agent, tool_name)
-                    if callable(method):
-                        # 过滤掉元数据字段，只保留实际参数
-                        filtered_args = {k: v for k, v in args.items() 
-                                       if k not in ['tool_name', 'service_name', 'agentType']}
-                        
-                        logger.info(f"MCP调用: {service_name}.{tool_name} with filtered_args: {filtered_args}")
-                        
-                        # 调用方法
-                        if asyncio.iscoroutinefunction(method):
-                            result = await method(**filtered_args)
-                        else:
-                            result = method(**filtered_args)
-                        
-                        logger.info(f"MCP调用结果: {result}")
-                        return result
+            from mcpserver.mcp_registry import MCP_REGISTRY # 延迟导入
+            
+            # 直接查找服务（现在注册名称和调用名称已经统一）
+            agent = MCP_REGISTRY.get(service_name)
+            
+            if agent:
+                # 对于MCP类型的agent，统一使用handle_handoff方法
+                if hasattr(agent, 'handle_handoff'):
+                    # 构建handoff请求数据
+                    handoff_data = {
+                        "tool_name": tool_name,
+                        **args
+                    }
+
+                    logger.info(f"MCP调用: {service_name}.{tool_name} with args: {args}")
+
+                    # 调用handle_handoff方法
+                    if asyncio.iscoroutinefunction(agent.handle_handoff):
+                        result = await agent.handle_handoff(handoff_data)
+                    else:
+                        result = agent.handle_handoff(handoff_data)
+
+                    logger.info(f"MCP调用结果: {result}")
+                    return result
                 else:
-                    logger.error(f"MCP服务 {service_name} 没有工具 {tool_name}")
-                    return f"工具 {tool_name} 不存在于服务 {service_name}"
+                    logger.error(f"MCP服务 {service_name} 没有handle_handoff方法")
+                    return f"服务 {service_name} 不支持标准MCP调用"
             else:
                 logger.error(f"MCP服务 {service_name} 未注册")
                 return f"服务 {service_name} 未注册"
-            
+
         except Exception as e:
             logger.error(f"MCP调用失败 {service_name}.{tool_name}: {str(e)}")
             return f"调用失败: {str(e)}"
@@ -546,8 +557,12 @@ class MCPManager:
             logger.error(f"清理MCP服务连接时出错: {str(e)}")
             import traceback;traceback.print_exc(file=sys.stderr)
 
-    def get_mcp(self, name): return MCP_REGISTRY.get(name) # 获取MCP服务
-    def list_mcps(self): return list(MCP_REGISTRY.keys()) # 列出所有MCP服务 
+    def get_mcp(self, name):
+        from mcpserver.mcp_registry import MCP_REGISTRY # 延迟导入
+        return MCP_REGISTRY.get(name) # 获取MCP服务
+    def list_mcps(self):
+        from mcpserver.mcp_registry import MCP_REGISTRY # 延迟导入
+        return list(MCP_REGISTRY.keys()) # 列出所有MCP服务 
 
     def auto_register_services(self):
         """自动注册所有MCP服务和handoff"""

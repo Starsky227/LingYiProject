@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-来自娜迦Agent项目
 MCP服务器 - 独立的MCP工具调度服务
 基于博弈论的MCPServer设计，提供MCP工具调用的统一调度和管理
 """
@@ -39,6 +38,12 @@ async def lifespan(app: FastAPI):
         from mcpserver.mcp_manager import get_mcp_manager
         Modules.mcp_manager = get_mcp_manager()
         logger.info("MCP管理器初始化完成")
+
+        # 手动触发MCP服务注册，避免循环导入死锁
+        from mcpserver.mcp_registry import auto_register_mcp
+        auto_register_mcp()
+        logger.info("MCP服务自动注册完成")
+
     except Exception as e:
         logger.warning(f"MCP管理器初始化失败: {e}")
         Modules.mcp_manager = None
@@ -233,4 +238,9 @@ async def cancel_task(task_id: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8003)  # MCP服务器端口
+    try:
+        from system.config import get_server_port
+        port = get_server_port("mcp_server")
+    except ImportError:
+        port = 8003  # 回退默认值
+    uvicorn.run(app, host="0.0.0.0", port=port)

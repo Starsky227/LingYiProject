@@ -155,7 +155,8 @@ class MCPScheduler:
                 callback_url = task.callback_url
                 if not callback_url.startswith('http'):
                     # 如果是相对路径，构建完整URL
-                    callback_url = f"http://localhost:8001/tool_result_callback"
+                    from system.config import get_server_port
+                    callback_url = f"http://localhost:{get_server_port('api_server')}/tool_result_callback"
                 
                 async with session.post(callback_url, json=payload) as response:
                     if response.status == 200:
@@ -281,15 +282,3 @@ class MCPScheduler:
             await asyncio.gather(*self.worker_tasks, return_exceptions=True)
         
         logger.info("MCP调度器已关闭")
-
-
-# 全局调度器实例
-_MCP_SCHEDULER = None
-
-def get_mcp_scheduler():
-    """获取全局MCP调度器实例"""
-    global _MCP_SCHEDULER
-    if not _MCP_SCHEDULER:
-        from mcpserver.mcp_manager import get_mcp_manager
-        _MCP_SCHEDULER = MCPScheduler(get_mcp_manager())
-    return _MCP_SCHEDULER
