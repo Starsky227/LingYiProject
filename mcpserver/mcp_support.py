@@ -57,12 +57,10 @@ def scan_and_register_mcp_agents(mcp_dir: str = 'mcpserver') -> list:
                 continue
                 
             agent_type = manifest.get('agentType')
-            agent_name = manifest.get('name')
             
-            if not agent_name:
-                sys.stderr.write(f"manifest缺少name字段: {manifest_file}\n")
-                continue
-            
+            # 智能推导服务名称：优先使用name，其次displayName，最后使用目录名
+            agent_name = manifest.get('displayName')
+
             # 根据agentType进行分类处理
             if agent_type == 'mcp':
                 # MCP类型：注册到MCP_REGISTRY
