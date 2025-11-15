@@ -1,66 +1,20 @@
 {
-  "name": "系统时间读取",
   "displayName": "系统时间读取",
   "version": "1.0.0",
   "author": "LingYi AI Assistant",
   "agentType": "mcp",
-  "description": "读取当前系统时间",
+  "description": "读取当前系统时间，返回详细的时间信息",
   "entryPoint": {
     "module": "mcpserver.agent_date_time.datetime_agent",
-    "class": "DateTimeAgent",
-    "function": "create_datetime_agent"
-  },
-  "factory": {
-    "validate_config": "validate_agent_config",
-    "get_dependencies": "get_agent_dependencies"
-  },
-  "communication": {
-    "protocol": "stdio",
-    "timeout": 5000
+    "class": "DateTimeAgent"
   },
   "capabilities": {
     "invocationCommands": [
       {
         "command": "获取当前时间",
-        "description": "获取当前系统时间",
+        "description": "获取当前系统时间，包含时间戳、年月日、星期等详细信息",
         "example": "{\"tool_name\":\"获取当前时间\"}"
       }
     ]
-  },
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "tool_name": {"type": "string", "description": "工具名称：获取当前时间"}
-    },
-    "required": ["tool_name"]
-  },
-  "outputSchema": {
-    "type": "object",
-    "properties": {
-      "status": {"type": "string", "description": "操作状态：success/error"},
-      "message": {"type": "string", "description": "操作结果描述"},
-      "data": {
-        "type": "object",
-        "properties": {
-          "current_time": {"type": "string", "description": "当前时间字符串"},
-          "timestamp": {"type": "number", "description": "Unix时间戳"},
-          "weekday": {"type": "string", "description": "星期几"},
-          "year": {"type": "number", "description": "年"},
-          "month": {"type": "number", "description": "月"},
-          "day": {"type": "number", "description": "日"},
-          "hour": {"type": "number", "description": "时"},
-          "minute": {"type": "number", "description": "分"},
-          "second": {"type": "number", "description": "秒"}
-        }
-      },
-      "error": {"type": "string", "description": "错误信息"}
-    }
-  },
-  "configSchema": {},
-  "runtime": {
-    "instance": null,
-    "is_initialized": false,
-    "last_used": null,
-    "usage_count": 0
   }
 }

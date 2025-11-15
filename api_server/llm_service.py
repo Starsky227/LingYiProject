@@ -195,6 +195,151 @@ def handle_message_reply_task(task_number: int, current_task_content: str, messa
     return updated_work_history, message_replied
 
 
+def handle_tool_call_task_execution(task_number: int, current_task_content: str, todo_list: str, tools_available: str, work_history: str) -> str:
+    """
+    处理工具调用任务执行
+    Args:
+        task_number: 当前任务编号
+        current_task_content: 任务内容描述
+        todo_list: 任务列表
+        tools_available: 可用工具信息
+        work_history: 工作历史
+    Returns:
+        更新后的工作历史
+    """
+    print(f"[执行] 处理工具调用任务: {current_task_content}")
+    tool_result = tool_call(todo_list, tools_available)
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] 完整工具调用结果: {tool_result}")
+    
+    # 处理工具调用结果（新的JSON格式：直接返回单个工具调用对象）
+    if tool_result.get("server_type"):
+        if DEBUG_MODE:
+            print(f"[DEBUG] 检测到工具调用请求: {tool_result.get('server_type')}")
+        
+        # 直接使用MCP管理器，避免调度器的异步初始化问题
+        mcp_manager = get_mcp_manager()
+        
+        # 处理单个工具调用
+        agent_call = tool_result
+        server_type = agent_call.get("server_type", "null")
+        print(f"[工具执行] 处理工具调用: {server_type}")
+
+        try:
+            tool_call_result = ""  # 初始化结果变量
+            if server_type == "mcp_server":
+                # 直接使用MCP管理器进行工具调用
+                service_name = agent_call.get("service_name", "")
+                tool_name = agent_call.get("tool_name", "")
+                
+                # 检查service_name是否已注册
+                stats = get_service_statistics()
+                registered_services = stats.get('registered_services', [])
+                if service_name not in registered_services:
+                    tool_call_result = f"service name未注册，service name需要在[{', '.join(registered_services)}]里选择"
+                    print(f"[工具执行] 错误: {tool_call_result}")
+                elif not service_name or not tool_name:
+                    tool_call_result = "工具执行失败: MCP工具参数不完整"
+                    print(f"[工具执行] 错误: 服务名或工具名缺失")
+                else:
+                    args = {}
+                    param_name = agent_call.get("param_name")
+                    if param_name is not None and param_name != "null":
+                        if isinstance(param_name, dict):
+                            args = param_name
+                    print(f"[工具执行] 正在调用MCP工具: {service_name}.{tool_name}")
+
+                    try:
+                        # 使用路由机制调用，将args作为独立参数传递而不是打包在字典中
+                        tool_call_result = asyncio.run(mcp_manager.unified_call(service_name, tool_name, args))
+                        print(f"[工具执行] MCP工具调用成功")
+                        if DEBUG_MODE:
+                            print(f"[DEBUG] 工具执行结果: {tool_call_result}")
+                    except Exception as exec_error:
+                        tool_call_result = f"工具执行失败: {exec_error}"
+                        print(f"[工具执行] MCP工具调用失败: {exec_error}")
+                # 记录到 mcp 调用到工作日志 work history
+                args_str = f":{args}" if args else ""
+                work_log_entry = f"{task_number}. 调用工具{service_name}.{tool_name}{args_str}，调用结果：{tool_call_result}。"
+                work_history += work_log_entry + "\n"
+
+            elif server_type == "agent_server":
+                # 预留给其他类型的Agent调用
+                task_type = agent_call.get("task_type", "unknown")
+                tool_call_result = f"Agent Server任务调用暂未实现 - 任务类型: {task_type}"
+                print(f"[工具执行] Agent Server任务调用暂未实现: {task_type}")
+                work_history += f"{task_number}. [工具调用] 错误！Agent Server服务暂未实装，无法使用。\n"
+            
+            elif server_type == "none":
+                work_history += f"{task_number}. [工具调用] 错误！没有可以完成此任务的工具。\n"
+            else:
+                tool_call_result = f"未知的服务器类型: {server_type}"
+                print(f"[工具执行] 错误: 未知的服务器类型 {server_type}")
+                work_history += f"{task_number}. [工具调用] 错误！未知的服务器类型，无法使用。\n"
+            
+        except Exception as e:
+            tool_call_result = f"工具调用异常: {str(e)}"
+            print(f"[工具执行] 工具调用异常: {e}")
+            work_history += f"{task_number}. [工具调用] 错误！{tool_call_result}\n"
+    
+    return work_history
+
+
+def initialize_tools_available() -> str:
+    """
+    初始化可用工具信息
+    Returns:
+        工具描述文本字符串
+    """
+    tools_available = ""
+    try:
+        # 从mcp_registry获取所有可用工具
+        services_info = get_all_services_info()
+        tools_available_list = []
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 找到 {len(services_info)} 个可用服务")
+        
+        # 构建工具信息文本
+        for service_name, service_info in services_info.items():
+            service_desc = f"## {service_name}\n"
+            service_desc += f"描述: {service_info.get('description', '无描述')}\n"
+            
+            # 获取该服务的工具列表
+            tools = service_info.get('available_tools', [])
+            if tools:
+                service_desc += "可用工具:\n"
+                for tool in tools:
+                    tool_name = tool.get('name', '')
+                    tool_desc = tool.get('description', '')
+                    tool_example = tool.get('example', '')
+                    
+                    service_desc += f"- **{tool_name}**: {tool_desc}\n"
+                    if tool_example:
+                        service_desc += f"  示例: {tool_example}\n"
+            else:
+                service_desc += "暂无可用工具\n"
+            
+            service_desc += "\n"
+            tools_available_list.append(service_desc)
+        
+        # 组合成完整的工具描述文本
+        if tools_available_list:
+            tools_available += "[可用的mcp server]:\n" + "".join(tools_available_list)
+        else:
+            tools_available += "[可用的mcp server]:\n无可用工具\n"
+            
+    except Exception as e:
+        print(f"[Warning] 获取可用工具失败: {e}")
+        if DEBUG_MODE:
+            traceback.print_exc()
+        tools_available = "获取工具信息失败"
+
+    tools_available += "[可用的agent server]:\n无可用工具\n"
+    return tools_available
+
+
 def message_to_logs(message: Dict) -> str:
     """
     将消息转换为日志格式
@@ -287,7 +432,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print(f"[记忆查询（尚未实装）] 提取的关键词: {keywords}")
         relevant_memories = "neo4j链接错误，无法查询记忆。"
     else:
-        relevant_memories = "neo4j未连接，无法查询记忆。"
+        relevant_memories = "neo4j记忆库未连接，无法查询记忆。"
 
 
     # ======进行意图识别======
@@ -370,136 +515,14 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             work_history += f"{task_number}. [历史记录] 错误！历史记录功能未实装\n"
 
         elif current_task_type == "工具调用":
-            print(f"[执行] 处理工具调用任务: {current_task_content}")
             if tools_available == "":
                 # 初始化可用工具信息
-                try:
-                    # 从mcp_registry获取所有可用工具
-                    
-                    services_info = get_all_services_info()
-                    tools_available_list = []
-                    tools_title = "[工具列表]: \n"
-                    
-                    if DEBUG_MODE:
-                        print(f"[DEBUG] 找到 {len(services_info)} 个可用服务")
-                    
-                    # 构建工具信息文本
-                    for service_name, service_info in services_info.items():
-                        service_desc = f"## {service_name}\n"
-                        service_desc += f"描述: {service_info.get('description', '无描述')}\n"
-                        tools_title += f"{service_name}, "
-                        
-                        # 获取该服务的工具列表
-                        tools = service_info.get('available_tools', [])
-                        if tools:
-                            service_desc += "可用工具:\n"
-                            for tool in tools:
-                                tool_name = tool.get('name', '')
-                                tool_desc = tool.get('description', '')
-                                tool_example = tool.get('example', '')
-                                
-                                service_desc += f"- **{tool_name}**: {tool_desc}\n"
-                                if tool_example:
-                                    service_desc += f"  示例: {tool_example}\n"
-                        else:
-                            service_desc += "暂无可用工具\n"
-                        
-                        service_desc += "\n"
-                        tools_available_list.append(service_desc)
-                    
-                    # 组合成完整的工具描述文本
-                    if tools_available_list:
-                        tools_available = "[可用的mcp_server]:\n" + "".join(tools_available_list)
-                    else:
-                        tools_available = "[可用的mcp_server]:\n无可用工具"
-                        
-                    #if DEBUG_MODE:
-                    #    print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
-                    #    print(f"[DEBUG] 工具预览: {tools_available}...")
-                        
-                except Exception as e:
-                    print(f"[Warning] 获取可用工具失败: {e}")
-                    if DEBUG_MODE:
-                        traceback.print_exc()
-                    tools_available = "获取工具信息失败"
-            # ======执行工具调用======
-            tool_result = tool_call(todo_list, tools_available)
+                tools_available = initialize_tools_available()
             
-            if DEBUG_MODE:
-                print(f"[DEBUG] 完整工具调用结果: {tool_result}")
-            
-            # 处理工具调用结果（新的JSON格式：直接返回单个工具调用对象）
-            if tool_result.get("server_type"):
-                if DEBUG_MODE:
-                    print(f"[DEBUG] 检测到工具调用请求: {tool_result.get('server_type')}")
-                
-                # 直接使用MCP管理器，避免调度器的异步初始化问题
-                mcp_manager = get_mcp_manager()
-                
-                # 处理单个工具调用
-                agent_call = tool_result
-                i = 0
-                server_type = agent_call.get("server_type", "null")
-                print(f"[工具执行] 处理工具调用: {server_type}")
-
-                try:
-                    tool_call_result = ""  # 初始化结果变量
-                    if server_type == "mcp_server":
-                        # 直接使用MCP管理器进行工具调用
-                        service_name = agent_call.get("service_name", "")
-                        tool_name = agent_call.get("tool_name", "")
-                        
-                        # 检查service_name是否已注册
-                        stats = get_service_statistics()
-                        registered_services = stats.get('registered_services', [])
-                        if service_name not in registered_services:
-                            tool_call_result = f"service name未注册，service name需要在[{', '.join(registered_services)}]里选择"
-                            print(f"[工具执行] 错误: {tool_call_result}")
-                        elif not service_name or not tool_name:
-                            tool_call_result = "工具执行失败: MCP工具参数不完整"
-                            print(f"[工具执行] 错误: 服务名或工具名缺失")
-                        else:
-                            args = {}
-                            param_name = agent_call.get("param_name")
-                            if param_name is not None and param_name != "null":
-                                if isinstance(param_name, dict):
-                                    args = param_name
-                            print(f"[工具执行] 正在调用MCP工具: {service_name}.{tool_name}")
-
-                            try:
-                                # 使用路由机制调用，将args作为独立参数传递而不是打包在字典中
-                                tool_call_result = asyncio.run(mcp_manager.unified_call(service_name, tool_name, args))
-                                print(f"[工具执行] MCP工具调用成功")
-                                if DEBUG_MODE:
-                                    print(f"[DEBUG] 工具执行结果: {tool_call_result}")
-                            except Exception as exec_error:
-                                tool_call_result = f"工具执行失败: {exec_error}"
-                                print(f"[工具执行] MCP工具调用失败: {exec_error}")
-                        # 记录到 mcp 调用到工作日志 work history
-                        args_str = f":{args}" if args else ""
-                        work_log_entry = f"{task_number}. 调用工具{service_name}.{tool_name}{args_str}，调用结果：{tool_call_result}。"
-                        work_history += work_log_entry + "\n"
-
-                    elif server_type == "agent_server":
-                        # 预留给其他类型的Agent调用
-                        task_type = agent_call.get("task_type", "unknown")
-                        tool_call_result = f"Agent Server任务调用暂未实现 - 任务类型: {task_type}"
-                        print(f"[工具执行] Agent Server任务调用暂未实现: {task_type}")
-                        work_history += f"{task_number}. [工具调用] 错误！Agent Server服务暂未实装，无法使用。\n"
-                    
-                    elif server_type == "none":
-                        work_history += f"{task_number}. [工具调用] 错误！没有可以完成此任务的工具。\n"
-                    else:
-                        tool_call_result = f"未知的服务器类型: {server_type}"
-                        print(f"[工具执行] 错误: 未知的服务器类型 {server_type}")
-                        work_history += f"{task_number}. [工具调用] 错误！未知的服务器类型，无法使用。\n"
-                    
-                except Exception as e:
-                    tool_call_result = f"工具调用异常: {str(e)}"
-                    print(f"[工具执行] 工具调用异常: {e}")
-                    work_history += f"{task_number}. [工具调用] 错误！{tool_call_result}\n"
-                
-                # 结果已经记录在work_history中，无需额外存储
+            # 执行工具调用
+            work_history = handle_tool_call_task_execution(
+                task_number, current_task_content, todo_list, tools_available, work_history
+            )
 
             
         elif current_task_type == "数据查询":
@@ -538,7 +561,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print(f"[审核] 进行任务完成检查，当前任务进度{task_number}")
         check_result = task_completion_check(message_to_proceed, todo_list, relevant_memories, work_history)
         mission_continue = check_result.get("mission_continue", True)
-        new_todo_list = check_result.get("todo_list", "")
+        new_todo_list = check_result.get("TodoList", "")
         
         # 处理任务列表更新逻辑
         if new_todo_list and new_todo_list.strip():
@@ -607,181 +630,40 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 
     return full_response
 
-    # 获取可用工具信息
-    try:
-        # 从mcp_registry获取所有可用工具
+
+    # ======3.记忆调用======（neo4j启用时才有效）
+    if is_neo4j_available():
+        memory_control_result = memory_control(message_to_proceed, todo_list)
         
-        services_info = get_all_services_info()
-        tools_available_list = []
-        tools_title = "[工具列表]: \n"
-        
+        # 提取记忆控制结果
+        from_memory = memory_control_result.get("from_memory", [])
+        to_memory = memory_control_result.get("to_memory", [])
+
+        # 从用户最后一条消息中提取关键词
+        user_keywords = []
+        user_keywords = extract_keywords_from_text(new_message.get("content", "").strip())
         if DEBUG_MODE:
-            print(f"[DEBUG] 找到 {len(services_info)} 个可用服务")
-        
-        # 构建工具信息文本
-        for service_name, service_info in services_info.items():
-            service_desc = f"## {service_name}\n"
-            service_desc += f"描述: {service_info.get('description', '无描述')}\n"
-            tools_title += f"{service_name}, "
-            
-            # 获取该服务的工具列表
-            tools = service_info.get('available_tools', [])
-            if tools:
-                service_desc += "可用工具:\n"
-                for tool in tools:
-                    tool_name = tool.get('name', '')
-                    tool_desc = tool.get('description', '')
-                    tool_example = tool.get('example', '')
-                    
-                    service_desc += f"- **{tool_name}**: {tool_desc}\n"
-                    if tool_example:
-                        service_desc += f"  示例: {tool_example}\n"
-            else:
-                service_desc += "暂无可用工具\n"
-            
-            service_desc += "\n"
-            tools_available_list.append(service_desc)
-        
-        # 组合成完整的工具描述文本
-        if tools_available_list:
-            tools_available = "[可用的mcp_server]:\n" + "".join(tools_available_list)
-        else:
-            tools_available = "[可用的mcp_server]:\n无可用工具"
-            
-        #if DEBUG_MODE:
-        #    print(f"[DEBUG] 工具描述文本长度: {len(tools_available)} 字符")
-        #    print(f"[DEBUG] 工具预览: {tools_available}...")
-            
-    except Exception as e:
-        print(f"[Warning] 获取可用工具失败: {e}")
+            print(f"[DEBUG] 从用户消息中提取的关键词: {user_keywords}")
+            print(f"[DEBUG] AI分析的记忆搜索关键词: {from_memory}")
+            print(f"[DEBUG] 需要记录的记忆: {to_memory}")
+
+        # 合并用户关键词和AI分析的关键词
+        search_from_memory = []
+        if user_keywords:
+            search_from_memory.extend(user_keywords)
+        if from_memory:
+            search_from_memory.extend(from_memory)
+        # 去重
+        search_from_memory = list(set(search_from_memory))
+        # 查询相关记忆
+        relevant_memories = relevant_memories_by_keywords(search_from_memory)
         if DEBUG_MODE:
-            traceback.print_exc()
-        tools_available = "获取工具信息失败"
+            print(f"[DEBUG] 最终的记忆搜索关键词组: {search_from_memory}")
+            print(f"[DEBUG] 查询到的相关记忆内容: {(relevant_memories)}")
+    else: 
+        relevant_memories = "GRAG记忆系统未连接"
     
-    while mission_continue:
-        # ======2.进行工具调用======
-        tool_result = tool_call(todo_list, tools_available)
         
-        if DEBUG_MODE:
-            print(f"[DEBUG] 完整工具调用结果: {tool_result}")
-        
-        # 处理工具调用结果（新的JSON格式：直接返回单个工具调用对象）
-        if tool_result.get("server_type"):
-            if DEBUG_MODE:
-                print(f"[DEBUG] 检测到工具调用请求: {tool_result.get('server_type')}")
-            
-            # 直接使用MCP管理器，避免调度器的异步初始化问题
-            mcp_manager = get_mcp_manager()
-            
-            # 处理单个工具调用
-            agent_call = tool_result
-            i = 0
-            server_type = agent_call.get("server_type", "null")
-            print(f"[工具执行] 处理工具调用: {server_type}")
-                
-            try:
-                tool_call_result = ""  # 初始化结果变量
-                if server_type == "mcp_server":
-                        # 直接使用MCP管理器进行工具调用
-                        service_name = agent_call.get("service_name", "")
-                        tool_name = agent_call.get("tool_name", "")
-                        args = {}
-                        if service_name and tool_name:
-                            param_name = agent_call.get("param_name")
-                            if param_name is not None and param_name != "null":
-                                if isinstance(param_name, dict):
-                                    args = param_name
-                            print(f"[工具执行] 正在调用MCP工具: {service_name}.{tool_name}:{args}")
-                            
-                            try:
-                                tool_call_result = asyncio.run(mcp_manager.unified_call(service_name, tool_name, args))
-                                print(f"[工具执行] MCP工具调用成功")
-                                if DEBUG_MODE:
-                                    print(f"[DEBUG] 工具执行结果: {tool_call_result}")
-                            except Exception as exec_error:
-                                tool_call_result = f"工具执行失败: {exec_error}"
-                                print(f"[工具执行] MCP工具调用失败: {exec_error}")
-                        else:
-                            tool_call_result = "工具执行失败: MCP工具参数不完整"
-                            print(f"[工具执行] 错误: 服务名或工具名缺失")
-                        # 记录到 mcp 调用到工作日志 work history
-                        work_log_entry = f"{task_number}. 调用工具{service_name}.{tool_name}:{args}，调用结果：{tool_call_result}。"
-                        work_history += work_log_entry + "\n"
-
-                elif server_type == "agent_server":
-                    # 预留给其他类型的Agent调用
-                    task_type = agent_call.get("task_type", "unknown")
-                    tool_call_result = f"Agent Server任务调用暂未实现 - 任务类型: {task_type}"
-                    print(f"[工具执行] Agent Server任务调用暂未实现: {task_type}")
-                
-                else:
-                    tool_call_result = f"未知的服务器类型: {server_type}"
-                    print(f"[工具执行] 错误: 未知的服务器类型 {server_type}")
-            
-            except Exception as e:
-                tool_call_result = f"工具调用异常: {str(e)}"
-                print(f"[工具执行] 工具调用异常: {e}")
-            
-            # 结果已经记录在work_history中，无需额外存储
-
-
-        # ======3.记忆调用======（neo4j启用时才有效）
-        if is_neo4j_available():
-            memory_control_result = memory_control(message_to_proceed, todo_list)
-            
-            # 提取记忆控制结果
-            from_memory = memory_control_result.get("from_memory", [])
-            to_memory = memory_control_result.get("to_memory", [])
-
-            # 从用户最后一条消息中提取关键词
-            user_keywords = []
-            user_keywords = extract_keywords_from_text(new_message.get("content", "").strip())
-            if DEBUG_MODE:
-                print(f"[DEBUG] 从用户消息中提取的关键词: {user_keywords}")
-                print(f"[DEBUG] AI分析的记忆搜索关键词: {from_memory}")
-                print(f"[DEBUG] 需要记录的记忆: {to_memory}")
-
-            # 合并用户关键词和AI分析的关键词
-            search_from_memory = []
-            if user_keywords:
-                search_from_memory.extend(user_keywords)
-            if from_memory:
-                search_from_memory.extend(from_memory)
-            # 去重
-            search_from_memory = list(set(search_from_memory))
-            # 查询相关记忆
-            relevant_memories = relevant_memories_by_keywords(search_from_memory)
-            if DEBUG_MODE:
-                print(f"[DEBUG] 最终的记忆搜索关键词组: {search_from_memory}")
-                print(f"[DEBUG] 查询到的相关记忆内容: {(relevant_memories)}")
-        else: 
-            relevant_memories = "GRAG记忆系统未连接"
-        
-        # ======4.工作审查======
-        task_review = task_completion_check(message_to_proceed, todo_list, relevant_memories, work_history)
-        
-        # 根据审查结果决定是否继续循环
-        mission_continue = task_review.get("mission_continue", False)
-        todo_list = task_review.get("todo_list", todo_list)  # 更新任务列表
-        decision_reason = task_review.get("decision_reason", "")
-        
-        if DEBUG_MODE:
-            print(f"[DEBUG] 任务审查结果: 完成={not mission_continue}, 理由={decision_reason}")
-            if mission_continue:
-                print(f"[DEBUG] 更新后的任务列表: {todo_list}")
-        
-        if not mission_continue:
-            print(f"[思考] 任务审查完成: {decision_reason}")
-            break
-        else:
-            print(f"[思考] 任务继续执行: {decision_reason}")
-            # 继续循环，使用更新后的任务列表
-
-    # ======5.最终回答======
-    # 工具调用结果已经记录在work_history中，直接使用
-    final_answer = final_output(message_to_proceed, relevant_memories, work_history)
-
-    return final_answer
 
 
 def preload_model(timeout_sec: int = 30) -> bool:

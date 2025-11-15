@@ -503,9 +503,16 @@ def task_completion_check(message_to_proceed: str, todo_list: str, relevant_memo
         review_data = {}
     
     # 确保返回的数据格式正确
+    mission_continue = review_data.get("mission_continue", False)
+    todo_list = review_data.get("TodoList", "")
+    
+    # 如果任务完成（mission_continue=false），清空TodoList
+    if not mission_continue:
+        todo_list = ""
+    
     result = {
-        "mission_continue": review_data.get("mission_continue", False),
-        "TodoList": review_data.get("TodoList", "")
+        "mission_continue": mission_continue,
+        "TodoList": todo_list
     }
     
     if DEBUG_MODE:

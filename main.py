@@ -95,9 +95,12 @@ class ServiceManager:
     def _start_mcp_server(self):
         """启动MCP服务器"""
         try:
-            # from mcpserver.mcp_manager import start_mcp_server
             print("🔄 MCP服务器: 正在启动...")
-            # start_mcp_server()
+            # 初始化MCP管理器，这会触发工具注册
+            from mcpserver.mcp_manager import get_mcp_manager
+            mcp_manager = get_mcp_manager()
+            mcp_manager.auto_register_services()
+            print("✅ MCP服务器: MCP工具注册完成")
         except Exception as e:
             print(f"❌ MCP服务器启动失败: {e}")
     
@@ -183,6 +186,23 @@ class ServiceManager:
 # =============== 启动器部分 ===============
 def main():
     print("🧠 启动本地 Gemma3 聊天程序中...")
+    
+    # 首先注册MCP工具
+    print("🔧 正在注册MCP工具...")
+    try:
+        from mcpserver.mcp_manager import get_mcp_manager
+        from mcpserver.mcp_registry import auto_register_mcp
+        
+        # 确保工具已注册
+        auto_register_mcp()
+        
+        # 初始化MCP管理器
+        mcp_manager = get_mcp_manager()
+        mcp_manager.auto_register_services()
+        
+        print("✅ MCP工具注册完成")
+    except Exception as e:
+        print(f"⚠️  MCP工具注册失败: {e}")
     
     # 启动后台服务管理器
     service_mgr = ServiceManager()

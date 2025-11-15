@@ -101,6 +101,39 @@ class DateTimeAgent:
                 "error": str(e)
             }
 
+    async def handle_handoff(self, data: Dict[str, Any]) -> str:
+        """
+        标准MCP handoff接口
+        
+        Args:
+            data: handoff数据，包含tool_name和其他参数
+            
+        Returns:
+            JSON字符串格式的处理结果
+        """
+        try:
+            # 调用process_request处理请求
+            result = self.process_request(data)
+            # 返回JSON字符串
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            error_result = {
+                "status": "error",
+                "message": f"Handoff处理失败: {str(e)}",
+                "error": str(e)
+            }
+            return json.dumps(error_result, ensure_ascii=False)
+
+    async def 获取当前时间(self) -> str:
+        """
+        直接工具调用方法 - 供MCP管理器直接调用
+        
+        Returns:
+            JSON字符串格式的时间结果
+        """
+        result = self.get_current_time()
+        return json.dumps(result, ensure_ascii=False)
+
 
 def create_datetime_agent(config: Dict[str, Any] = None) -> DateTimeAgent:
     """
