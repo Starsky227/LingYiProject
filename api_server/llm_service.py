@@ -174,7 +174,7 @@ def extract_keywords_from_text(text: str) -> List[str]:
         return []
 
 
-def handle_message_reply_task(task_number: int, current_task_content: str, message_to_proceed: str, todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None]) -> tuple[str, str]:
+def handle_message_reply_task(task_number: int, message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None]) -> tuple[str, str]:
     """
     处理消息回复任务
     Args:
@@ -188,14 +188,13 @@ def handle_message_reply_task(task_number: int, current_task_content: str, messa
     Returns:
         tuple[更新后的工作历史, 生成的回复内容]
     """
-    print(f"[执行] 处理消息回复任务: {current_task_content}")
     message_replied = generate_response(message_to_proceed, todo_list, relevant_memories, work_history, on_response)
     # 记录工作日志
     updated_work_history = work_history + f"{task_number}. [消息回复] {message_replied}\n"
     return updated_work_history, message_replied
 
 
-def handle_tool_call_task_execution(task_number: int, current_task_content: str, todo_list: str, tools_available: str, work_history: str) -> str:
+def handle_tool_call_task_execution(task_number: int, todo_list: str, tools_available: str, work_history: str) -> str:
     """
     处理工具调用任务执行
     Args:
@@ -207,7 +206,6 @@ def handle_tool_call_task_execution(task_number: int, current_task_content: str,
     Returns:
         更新后的工作历史
     """
-    print(f"[执行] 处理工具调用任务: {current_task_content}")
     tool_result = tool_call(todo_list, tools_available)
     
     if DEBUG_MODE:
@@ -303,7 +301,7 @@ def initialize_tools_available() -> str:
         
         # 构建工具信息文本
         for service_name, service_info in services_info.items():
-            service_desc = f"## {service_name}\n"
+            service_desc = f"## 服务名称：{service_name}\n"
             service_desc += f"描述: {service_info.get('description', '无描述')}\n"
             
             # 获取该服务的工具列表
@@ -315,7 +313,7 @@ def initialize_tools_available() -> str:
                     tool_desc = tool.get('description', '')
                     tool_example = tool.get('example', '')
                     
-                    service_desc += f"- **{tool_name}**: {tool_desc}\n"
+                    service_desc += f"- **工具名称：{tool_name}**: {tool_desc}\n"
                     if tool_example:
                         service_desc += f"  示例: {tool_example}\n"
             else:
@@ -388,7 +386,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     tools_available = ""    # 开始为空值，首次加载（不管有没有内容都会写入标题[工具列表]，以此来避免重复加载
     relevant_memories = ""
     work_history = ""
-    full_response = ""
+    full_response = []
     
     # 使用get_recent_chat限制聊天记录长度，避免上下文过长
     recent_messages = get_recent_chat(messages)
@@ -397,39 +395,34 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print("[INFO] 检测到空白消息，跳过处理")
         return ""
     
-    # 将信息分为最新消息和历史消息
-    new_message = messages[-1] if messages else None
-    history_messages = messages[:-1] if len(messages) > 1 else []
+    # 消息格式化处理 - 直接使用recent_messages中的时间戳
+    message_to_proceed = []
     
-    # 消息扁平化处理
-    message_to_proceed = ""
-    
-    # 处理历史消息
-    message_to_proceed += "[历史消息]：\n"
-    if history_messages:
-        for msg in history_messages:
-            role = msg.get("role", "unknown")
-            content = msg.get("content", "").strip()
-            message_to_proceed += f"<{role}>{content}\n"
-    
-    # 处理当前消息
-    message_to_proceed += "[当前消息]：\n"
-    if new_message:
-        role = new_message.get("role", "unknown")
-        content = new_message.get("content", "").strip()
-        message_to_proceed += f"<{role}>{content}\n"
-    else:
-        print("[INFO] 检测到空白消息，跳过处理")
-        return ""
-    
+    # 处理所有recent_messages
+    for msg in recent_messages:
+        role = msg.get("role", "unknown")
+        if role != "assistant":
+            role = "user"
+        name = msg.get("role", "unknown")
+        if name == "assistant":
+            name = AI_NAME
+        content = msg.get("content", "").strip()
+
+        timestamp = msg.get("timestamp")
+        formatted_content = f"[{timestamp}] <{name}> {content}"
+        message_to_proceed.append({"role": role, "content": formatted_content})
+
     # ======首先查询记忆======
     # 从用户最后一条消息中提取关键词
     keywords = []
-    user_keywords = extract_keywords_from_text(new_message.get("content", "").strip())
+    user_keywords = []
+    last_message = recent_messages[-1] if recent_messages else None
+    if last_message:
+        user_keywords = extract_keywords_from_text(last_message.get("content", "").strip())
     assistant_keywords = extract_keywords(message_to_proceed)
     keywords = list(set(user_keywords + assistant_keywords))
     if is_neo4j_available():
-        print(f"[记忆查询（尚未实装）] 提取的关键词: {keywords}")
+        print(f"[记忆查询] 提取的关键词: {keywords}")
         relevant_memories = "neo4j链接错误，无法查询记忆。"
     else:
         relevant_memories = "neo4j记忆库未连接，无法查询记忆。"
@@ -478,12 +471,18 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 
         # ======依照列表工作======
         if current_task_type == "消息回复":
+            print(f"[执行] 处理消息回复任务: {current_task_content}")
             work_history, message_replied = handle_message_reply_task(
-                task_number, current_task_content, message_to_proceed, 
+                task_number, message_to_proceed, 
                 todo_list, relevant_memories, work_history, on_response
             )
-            full_response += message_replied + "\n"
+            # 将message replied添加到full_response中，作为后续任务的上下文
+            current_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
+            formatted_reply = f"[{current_timestamp}] <{AI_NAME}> {message_replied}"
+            full_response.append({"role": "assistant", "content": formatted_reply})
 
+
+    # =========================================================================================================todo
         elif current_task_type == "记忆调整":
             print(f"[执行] 处理记忆调整任务: {current_task_content}")
             if is_neo4j_available():
@@ -520,13 +519,15 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
                 tools_available = initialize_tools_available()
             
             # 执行工具调用
+            print(f"[执行] 处理工具调用任务: {current_task_content}")
             work_history = handle_tool_call_task_execution(
-                task_number, current_task_content, todo_list, tools_available, work_history
+                task_number, todo_list, tools_available, work_history
             )
 
             
         elif current_task_type == "数据查询":
             print(f"[执行] 处理数据查询任务: {current_task_content}")
+            work_history += f"{task_number}. [数据查询] 错误！数据查询功能未实装\n"
             # TODO: 实现数据查询逻辑
             # 可能包括：
             # - 从数据库查询信息
@@ -535,6 +536,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             
         elif current_task_type == "文件操作":
             print(f"[执行] 处理文件操作任务: {current_task_content}")
+            work_history += f"{task_number}. [文件操作] 错误！文件操作功能未实装\n"
             # TODO: 实现文件操作逻辑
             # 可能包括：
             # - 读取文件
@@ -544,7 +546,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         else:
             print(f"[执行] 未识别的任务类型 '{current_task_type}'，执行默认流程")
             # 执行原有的工具调用流程作为默认处理
-            break  # 跳出循环，执行下面的工具调用逻辑
+            work_history += f"{task_number}. [{current_task_type}] 错误！任务类型输入错误，需要从列表中选择具体任务\n"
 
         # ======标记工作完成======
         # 在todo_list中标记当前任务为已完成

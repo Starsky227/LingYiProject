@@ -130,116 +130,111 @@ def fix_json_string_values(json_text: str) -> str:
     return result
 
 
-def extract_keywords(message_to_proceed: str) -> List[str]:
+def extract_keywords(message_to_proceed: List[Dict]) -> List[str]:
     """
     使用0_extract_keywords.txt提示词从消息中提取关键词
     参数：
-        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        message_to_proceed: 处理过的消息列表（包含历史消息和当前消息）
     返回：
         关键词列表
     """
     if DEBUG_MODE:
-        print(f"[DEBUG] 关键词提取接收到:\n{message_to_proceed}")
+        print(f"[DEBUG] 关键词提取接收到: ")
+        for msg in enumerate(message_to_proceed):            
+            print(f"    {msg.get("content", "")}")
     
-    try:
-        # 调用模型进行关键词提取
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": EXTRACT_KEYWORDS_PROMPT},
-                {"role": "user", "content": message_to_proceed}
-            ],
-            stream=False,
-            temperature=0.3
-        )
+    # 构建包含系统提示词的完整消息列表
+    messages = [{"role": "system", "content": EXTRACT_KEYWORDS_PROMPT}] + message_to_proceed
         
-        full_response = response.choices[0].message.content
+    # 调用模型进行关键词提取
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        stream=False,
+        temperature=0.3
+    )
+    
+    full_response = response.choices[0].message.content
+    if DEBUG_MODE:
+        print(f"[DEBUG] 关键词提取原始响应: {repr(full_response)}")
+    
+    if not full_response:
+        return []
+    
+    # 使用统一的JSON解析函数
+    keywords_data = text_to_json(full_response)
+    
+    if isinstance(keywords_data, list):
+        # 如果直接是列表格式
+        valid_keywords = [kw for kw in keywords_data if kw and isinstance(kw, str) and kw.strip()]
         if DEBUG_MODE:
-            print(f"[DEBUG] 关键词提取原始响应: {repr(full_response)}")
-        
-        if not full_response:
-            return []
-        
-        # 使用统一的JSON解析函数
-        keywords_data = text_to_json(full_response)
-        
-        if isinstance(keywords_data, list):
-            # 如果直接是列表格式
-            valid_keywords = [kw for kw in keywords_data if kw and isinstance(kw, str) and kw.strip()]
+            print(f"[DEBUG] 提取到的关键词: {valid_keywords}")
+        return valid_keywords
+    elif isinstance(keywords_data, dict) and "keywords" in keywords_data:
+        # 如果是包含keywords字段的字典格式
+        keywords = keywords_data["keywords"]
+        if isinstance(keywords, list):
+            valid_keywords = [kw for kw in keywords if kw and isinstance(kw, str) and kw.strip()]
             if DEBUG_MODE:
                 print(f"[DEBUG] 提取到的关键词: {valid_keywords}")
             return valid_keywords
-        elif isinstance(keywords_data, dict) and "keywords" in keywords_data:
-            # 如果是包含keywords字段的字典格式
-            keywords = keywords_data["keywords"]
-            if isinstance(keywords, list):
-                valid_keywords = [kw for kw in keywords if kw and isinstance(kw, str) and kw.strip()]
-                if DEBUG_MODE:
-                    print(f"[DEBUG] 提取到的关键词: {valid_keywords}")
-                return valid_keywords
-        
-        print(f"[错误] 响应格式不正确: {keywords_data}")
-        return []
     
-    except Exception as e:
-        print(f"[错误] 关键词提取失败: {e}")
-        return []
+    print(f"[错误] 响应格式不正确: {keywords_data}")
+    return []
 
 
-def analyze_intent(message_to_proceed: str, relevant_memories: str) -> Tuple[str, str]:
+def analyze_intent(message_to_proceed: List[Dict], relevant_memories: str) -> Tuple[str, str]:
     """
     使用intend_analyze.txt提示词分析最后一条消息的意图
     输入：消息记录
     返回: todoList
     """
-    # 构建输入文本
-    flattened_text = ""
-    flattened_text += message_to_proceed
-    flattened_text += f"[相关记忆]：\n{relevant_memories}\n"
+    
+    # 初步整理所有收到的文件
+    input_messages = [{"role": "system", "content": f"[相关记忆]：\n{relevant_memories}"}] + message_to_proceed
+
     if DEBUG_MODE:
-        print(f"[DEBUG] 意图分析接收到:\n{message_to_proceed}")
-    
-    try:
-        # 调用模型分析意图
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": INTENT_ANALYSIS_PROMPT},
-                {"role": "user", "content": message_to_proceed}
-            ],
-            stream=False,
-            temperature=0.3
-        )
+        print(f"[DEBUG] 意图分析接收到: ")
+        for msg in enumerate(input_messages):            
+            print(f"    {msg.get("content", "")}")
+
+    # 构建包含系统提示词的完整消息列表
+    messages = [{"role": "system", "content": INTENT_ANALYSIS_PROMPT}] + input_messages
         
-        full_response = response.choices[0].message.content
+    # 调用模型进行关键词提取
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        stream=False,
+        temperature=0.3
+    )
 
-        if DEBUG_MODE:
-            print(f"[DEBUG] 意图分析模型回应: {full_response}")
-    
-        if not full_response:
-            return "unknown", "[错误]模型未返回响应"
+    full_response = response.choices[0].message.content
 
-        # 提取为json格式
-        if full_response.strip().startswith("```"):
-            intent_data = text_to_json(full_response.strip())
-            return (
-                intent_data.get("IntentType", "unknown"),
-                intent_data.get("TasksTodo", "[错误]模型未找到任务")
-            )
-        else:
-            print(f"[错误] 意图分析模型回应: {full_response}")
-            return ("unknown", "[错误] 模型回复格式错误")
+    if DEBUG_MODE:
+        print(f"[DEBUG] 意图分析模型回应: {full_response}")
 
-    except Exception as e:
-        print(f"[错误] 意图分析失败: {e}")
-        return "unknown", "分析失败"
+    if not full_response:
+        return "unknown", "[错误]模型未返回响应"
+
+    # 提取为json格式
+    if full_response.strip().startswith("```"):
+        intent_data = text_to_json(full_response.strip())
+        return (
+            intent_data.get("IntentType", "unknown"),
+            intent_data.get("TasksTodo", "[错误]模型未找到任务")
+        )
+    else:
+        print(f"[错误] 意图分析模型回应: {full_response}")
+        return ("unknown", "[错误] 模型回复格式错误")
 
 
-def generate_response(message_to_proceed: str, todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None] = None) -> str:
+
+def generate_response(message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None] = None) -> str:
     """
     使用2_generate_response.txt提示词生成AI回复
     参数：
-        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        message_to_proceed: 处理过的消息列表（包含历史消息和当前消息）
         todo_list: 任务列表
         relevant_memories: 相关记忆内容
         work_history: 工作历史记录
@@ -247,27 +242,25 @@ def generate_response(message_to_proceed: str, todo_list: str, relevant_memories
     返回：
         完整的AI回答文本
     """
-    # 替换提示词中的占位符
-    prompt = GENERATE_RESPONSE_PROMPT.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME)
-    
-    # 构建输入文本
-    flattened_text = ""
-    flattened_text += message_to_proceed
-    flattened_text += f"[任务列表]：\n{todo_list if todo_list else '无任务'}\n"
-    flattened_text += f"[相关记忆]：\n{relevant_memories if relevant_memories else '无记忆提取'}\n"
-    flattened_text += f"[工作记录]：\n{work_history if work_history else '无工作记录'}\n"
+    # 初步整理所有收到的文件
+    input_messages = [{"role": "system", "content": f"[任务列表]：\n{todo_list}"}] + [{"role": "system", "content": f"[工作记录]：\n{work_history}"}] + [{"role": "system", "content": f"[相关记忆]：\n{relevant_memories}"}] + message_to_proceed
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 生成回复接收到:\n{flattened_text}")
-    
+        print(f"[DEBUG] 意图分析接收到: ")
+        for msg in enumerate(input_messages):            
+            print(f"    {msg.get("content", "")}")
+
+    # 替换提示词中的占位符
+    prompt = GENERATE_RESPONSE_PROMPT.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME)
+
+    # 构建包含系统提示词的完整消息列表
+    messages = [{"role": "system", "content": prompt}] + input_messages
+
     try:
         # 使用流式输出
         response = client.chat.completions.create(
             model=MODEL,
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": flattened_text}
-            ],
+            messages=messages,
             stream=True,
             temperature=0.7
         )
@@ -281,7 +274,7 @@ def generate_response(message_to_proceed: str, todo_list: str, relevant_memories
                 on_response(chunk_text)
         
         if DEBUG_MODE:
-            print(f"[DEBUG] 生成回复完整响应: {repr(full_response)}")
+            print(f"[DEBUG] 生成回复完整响应: {full_response}")
         
         return full_response
 
@@ -310,23 +303,21 @@ def tool_call(todo_list: str, tools_available: str) -> Dict[str, Any]:
         "parameters": {} // 仅当server_type为agent_server时
     }
     """
-    
-    # 消息扁平化处理
-    flattened_text = ""
-    flattened_text += f"[任务列表]：\n{todo_list if todo_list else '无任务'}\n"
-    flattened_text += f"{tools_available}\n"
+    input_messages = [{"role": "system", "content": f"[任务列表]：\n{todo_list}"}] + [{"role": "system", "content": tools_available}]    
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 工具调用接收到:\n{flattened_text}")
+        print(f"[DEBUG] 意图分析接收到: ")
+        for msg in enumerate(input_messages):            
+            print(f"    {msg.get("content", "")}")
+
+    # 构建包含系统提示词的完整消息列表
+    messages = [{"role": "system", "content": TOOL_CALL_PROMPT}] + input_messages
     
     try:
         # 调用模型进行工具调用分析
         response = client.chat.completions.create(
             model=MODEL,
-            messages=[
-                {"role": "system", "content": TOOL_CALL_PROMPT},
-                {"role": "user", "content": flattened_text}
-            ],
+            messages=messages,
             stream=False,
             temperature=0.3
         )
@@ -346,11 +337,11 @@ def tool_call(todo_list: str, tools_available: str) -> Dict[str, Any]:
     return tool_call_data
     
     
-def memory_control(message_to_proceed: str, todo_list: str) -> Dict[str, Any]:
+def memory_control(message_to_proceed: List[Dict], todo_list: str) -> Dict[str, Any]:
     """
     使用memory_control.txt提示词分析需要提取和记忆的关键词
     参数：
-        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        message_to_proceed: 处理过的消息列表（包含历史消息和当前消息）
         todo_list： 任务列表
     返回：
     {
@@ -359,9 +350,10 @@ def memory_control(message_to_proceed: str, todo_list: str) -> Dict[str, Any]:
     }
     """
     
-    # 消息扁平化处理
+    # 将消息列表转换为字符串格式并进行扁平化处理
+    message_text = "\n".join([msg.get("content", "") for msg in message_to_proceed if msg.get("content", "").strip()])
     flattened_text = ""
-    flattened_text += message_to_proceed
+    flattened_text += message_text
     
     # 添加任务列表
     flattened_text += f"[任务列表]：\n{todo_list}\n"
@@ -441,11 +433,11 @@ def memory_control(message_to_proceed: str, todo_list: str) -> Dict[str, Any]:
 
 
 
-def task_completion_check(message_to_proceed: str, todo_list: str, relevant_memories: str, work_history: str) -> Dict[str, Any]:
+def task_completion_check(message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str) -> Dict[str, Any]:
     """
     使用3_completion_check.txt提示词检查任务是否完成
     参数：
-        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        message_to_proceed: 处理过的消息列表（包含历史消息和当前消息）
         todo_list: 任务列表
         relevant_memories: 相关记忆内容
         work_history: 工作历史记录
@@ -456,9 +448,10 @@ def task_completion_check(message_to_proceed: str, todo_list: str, relevant_memo
     }
     """
     
-    # 构建输入文本
+    # 将消息列表转换为字符串格式并构建输入文本
+    message_text = "\n".join([msg.get("content", "") for msg in message_to_proceed if msg.get("content", "").strip()])
     flattened_text = ""
-    flattened_text += message_to_proceed
+    flattened_text += message_text
     flattened_text += f"[任务列表]：\n{todo_list if todo_list else '无任务'}\n"
     flattened_text += f"[相关记忆]：\n{relevant_memories if relevant_memories else '无相关记忆'}\n"
     flattened_text += f"[工作记录]：\n{work_history}"
@@ -522,11 +515,11 @@ def task_completion_check(message_to_proceed: str, todo_list: str, relevant_memo
     return result
 
 
-def final_output(message_to_proceed: str, tool_results_text: str, relevant_memories: str, work_history: str) -> str:
+def final_output(message_to_proceed: List[Dict], tool_results_text: str, relevant_memories: str, work_history: str) -> str:
     """
     使用5_final_output.txt提示词生成最终回答
     参数：
-        message_to_proceed: 处理过的消息文本（包含历史消息和当前消息）
+        message_to_proceed: 处理过的消息列表（包含历史消息和当前消息）
         tool_results_text: 工具调用结果的纯文本格式
         relevant_memories: 相关记忆内容
         memories_recorded: 已存入记忆的内容列表
@@ -539,11 +532,14 @@ def final_output(message_to_proceed: str, tool_results_text: str, relevant_memor
     # 替换提示词中的占位符
     prompt = GENERATE_RESPONSE_PROMPT.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME)
     
+    # 将消息列表转换为字符串格式
+    message_text = "\n".join([msg.get("content", "") for msg in message_to_proceed if msg.get("content", "").strip()])
+    
     # 构建输入文本
     flattened_text = ""
     
     # 添加消息内容
-    flattened_text += message_to_proceed
+    flattened_text += message_text
     
     # 添加工具输出
     flattened_text += f"[工具输出]：\n{tool_results_text if tool_results_text else '无工具调用'}\n"

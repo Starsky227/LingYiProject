@@ -234,7 +234,7 @@ class ChatUI(QWidget):
         self._adjust_input_height()
 
         # 将用户消息加入消息列表并显示占位（等待模型返回）
-        user_timestamp = datetime.datetime.now().isoformat()
+        user_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
         self.messages.append({
             "role": USERNAME, 
             "content": user_input,
@@ -258,7 +258,7 @@ class ChatUI(QWidget):
             write_chat_log(AI_NAME, reply.strip())
         
         # 将完整回复记录到消息列表并通知主线程完成
-        assistant_timestamp = datetime.datetime.now().isoformat()
+        assistant_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
         self.messages.append({
             "role": "assistant", 
             "content": reply,
