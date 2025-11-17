@@ -1,6 +1,6 @@
 {
     "system":{
-        "version": "0.1.1",
+        "version": "0.2.0",
         "ai_name": "铃依",
         "debug": true,
         "log_level": "INFO"
@@ -8,7 +8,7 @@
     "api":{
         "api_key": "ollama",
         "base_url": "http://localhost:11434/v1",
-        "model": "gemma3:4b"
+        "model": "qwen3-vl:8b"
     },
     "api_server": {
         "enabled": true,
