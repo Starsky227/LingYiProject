@@ -25,13 +25,13 @@ AI_NAME = config.system.ai_name
 USERNAME = config.ui.username
 TEXT_SIZE = config.ui.text_size
 IMAGE_NAME = config.ui.image_name
+LOGS_DIR = config.system.log_dir
 
 def write_chat_log(sender: str, text: str):
-    """将单条对话追加到 logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
+    """将单条对话追加到 brain/memory/logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
     try:
-        # 日志目录位于项目根的 logs/chat_logs
-        project_root = os.path.normpath(os.path.join(current_dir, ".."))
-        logs_dir = os.path.normpath(os.path.join(project_root, "logs", "chat_logs"))
+        # 使用配置中的日志目录
+        logs_dir = os.path.join(LOGS_DIR, "chat_logs")
         os.makedirs(logs_dir, exist_ok=True)
         filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
         path = os.path.join(logs_dir, filename)

@@ -20,10 +20,12 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from brain.memory.knowledge_graph_manager import relevant_memories_by_keywords
+from brain.memory.quintuples_extractor import record_messages_to_memories
 from mcpserver.mcp_manager import get_mcp_manager
 from mcpserver.mcp_registry import get_all_services_info, get_service_statistics
 from system.config import config, is_neo4j_available
 from system.background_analyzer import analyze_intent, extract_keywords, generate_response, tool_call, memory_control, task_completion_check, final_output
+
 
 # API 配置
 API_KEY = config.api.api_key
@@ -53,7 +55,7 @@ if os.path.exists(_personality_path):
 
 
 
-def get_recent_chat(messages: List[Dict], max_chars: int = 100, min_messages: int = 2) -> List[Dict]:
+def get_recent_messages(messages: List[Dict], max_chars: int = 100, min_messages: int = 2) -> List[Dict]:
     """
     获取当前对话的最近上下文
     Args:
@@ -116,7 +118,7 @@ def get_recent_chat(messages: List[Dict], max_chars: int = 100, min_messages: in
         return []
 
 
-def extract_keywords_from_text(text: str) -> List[str]:
+def _extract_keywords_from_text(text: str) -> List[str]:
     """
     从文本中提取关键词
     Args:
@@ -174,7 +176,7 @@ def extract_keywords_from_text(text: str) -> List[str]:
         return []
 
 
-def handle_message_reply_task(task_number: int, message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None]) -> tuple[str, str]:
+def _handle_message_reply_task(task_number: int, message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None]) -> tuple[str, str]:
     """
     处理消息回复任务
     Args:
@@ -194,7 +196,7 @@ def handle_message_reply_task(task_number: int, message_to_proceed: List[Dict], 
     return updated_work_history, message_replied
 
 
-def handle_tool_call_task_execution(task_number: int, todo_list: str, tools_available: str, work_history: str) -> str:
+def _handle_tool_call_task_execution(task_number: int, todo_list: str, tools_available: str, work_history: str) -> str:
     """
     处理工具调用任务执行
     Args:
@@ -284,7 +286,7 @@ def handle_tool_call_task_execution(task_number: int, todo_list: str, tools_avai
     return work_history
 
 
-def initialize_tools_available() -> str:
+def _initialize_tools_available() -> str:
     """
     初始化可用工具信息
     Returns:
@@ -338,46 +340,20 @@ def initialize_tools_available() -> str:
     return tools_available
 
 
-def message_to_logs(message: Dict) -> str:
-    """
-    将消息转换为日志格式
-    Args:
-        message: 消息对象 {"role": "user/assistant", "content": "..."}
-        
-    Returns:
-        格式化的日志字符串，格式：时间 <发言者> 发言内容
-        例：13:27:02 <星空> 早上好，帮我看看现在几点了
-    """
-    if not message:
-        return ""
-    
-    try:
-        role = message.get("role", "unknown")
-        content = message.get("content", "").strip()
-        
-        if not content:
-            return ""
-        
-        # 生成当前时间戳
-        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
-        
-        # 将换行替换为空格以保持单行记录
-        safe_content = content.replace("\r", " ").replace("\n", " ")
-        
-        return f"{timestamp} <{role}> {safe_content}"
-        
-    except Exception as e:
-        print(f"[错误] 消息格式化失败: {e}")
-        return ""
-
-
 def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) -> str:
     """
-    Args:
-        messages: 对话历史 [{"role": "...", "content": "..."}]
+    这里是和AI的私聊模块。
+
+    输入:
+        messages: 对话历史 [{"role": USERNAME/assistant, "content": content无格式， "timestamp": ISO格式时间戳YYYY_MM_DDTHH:MM:SS.XX}]
         on_response: 接收模型流式输出的回调函数
-    Returns:
+    
+    输出:
         完整的模型回复文本
+    
+    特殊说明:
+        内容会在这里进行整合，将时间戳等加入文本。之后的content格式会变成[YYYY_MM_DDTHH:MM:SS.XX] <USERNAME> content。
+        故get_recent_messages只能在当前环境使用，否则时间戳和用户名会被加入文本计数。
     """
     # 循坏外必要的记录
     mission_continue = True
@@ -389,7 +365,8 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
     full_response = []
     
     # 使用get_recent_chat限制聊天记录长度，避免上下文过长
-    recent_messages = get_recent_chat(messages)
+    recent_messages = get_recent_messages(messages)
+
     # 检查是否有有效消息
     if not recent_messages or not recent_messages[-1].get("content", "").strip():
         print("[INFO] 检测到空白消息，跳过处理")
@@ -412,13 +389,16 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         formatted_content = f"[{timestamp}] <{name}> {content}"
         message_to_proceed.append({"role": role, "content": formatted_content})
 
+    # 在这里对用户的发言内容进行记忆
+    input_memory_id = record_messages_to_memories(message_to_proceed, USERNAME)
+
     # ======首先查询记忆======
     # 从用户最后一条消息中提取关键词
     keywords = []
     user_keywords = []
     last_message = recent_messages[-1] if recent_messages else None
     if last_message:
-        user_keywords = extract_keywords_from_text(last_message.get("content", "").strip())
+        user_keywords = _extract_keywords_from_text(last_message.get("content", "").strip())
     assistant_keywords = extract_keywords(message_to_proceed)
     keywords = list(set(user_keywords + assistant_keywords))
     if is_neo4j_available():
@@ -472,7 +452,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         # ======依照列表工作======
         if current_task_type == "消息回复":
             print(f"[执行] 处理消息回复任务: {current_task_content}")
-            work_history, message_replied = handle_message_reply_task(
+            work_history, message_replied = _handle_message_reply_task(
                 task_number, message_to_proceed, 
                 todo_list, relevant_memories, work_history, on_response
             )
@@ -516,11 +496,11 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         elif current_task_type == "工具调用":
             if tools_available == "":
                 # 初始化可用工具信息
-                tools_available = initialize_tools_available()
+                tools_available = _initialize_tools_available()
             
             # 执行工具调用
             print(f"[执行] 处理工具调用任务: {current_task_content}")
-            work_history = handle_tool_call_task_execution(
+            work_history = _handle_tool_call_task_execution(
                 task_number, todo_list, tools_available, work_history
             )
 
@@ -614,7 +594,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             print(f"[执行] 最后任务类型不是消息回复，追加消息回复任务")
             task_number += 1
             todo_list += f"\n{task_number}. 消息回复（请总结并回复用户）"
-            work_history, message_replied = handle_message_reply_task(
+            work_history, message_replied = _handle_message_reply_task(
                 task_number, "请总结并回复用户", message_to_proceed, 
                 todo_list, relevant_memories, work_history, on_response
             )
@@ -624,7 +604,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print(f"[执行] 工作历史为空，追加消息回复任务")
         task_number += 1
         todo_list += f"\n{task_number}. 消息回复（请总结并回复用户）"
-        work_history, message_replied = handle_message_reply_task(
+        work_history, message_replied = _handle_message_reply_task(
             task_number, "请总结并回复用户", message_to_proceed, 
             todo_list, relevant_memories, work_history, on_response
         )
@@ -643,7 +623,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 
         # 从用户最后一条消息中提取关键词
         user_keywords = []
-        user_keywords = extract_keywords_from_text(new_message.get("content", "").strip())
+        user_keywords = _extract_keywords_from_text(new_message.get("content", "").strip())
         if DEBUG_MODE:
             print(f"[DEBUG] 从用户消息中提取的关键词: {user_keywords}")
             print(f"[DEBUG] AI分析的记忆搜索关键词: {from_memory}")

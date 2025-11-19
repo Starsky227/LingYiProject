@@ -92,7 +92,7 @@ graph TD
 ### `write_chat_log(sender, text)`
 聊天记录函数
 - **功能**: 将对话记录到日志文件
-- **路径**: `logs/chat_logs/chat_logs_YYYY_MM_DD.txt`
+- **路径**: `brain/memory/logs/chat_logs/chat_logs_YYYY_MM_DD.txt`
 
 ### `call_model_sync(prompt, system_prompt)`
 同步模型调用函数
@@ -125,7 +125,7 @@ graph TD
 ## 日志系统
 
 ### 聊天日志
-- **位置**: `logs/chat_logs/`
+- **位置**: `brain/memory/logs/chat_logs/`
 - **格式**: `HH:MM:SS <发送者> 消息内容`
 - **文件名**: `chat_logs_YYYY_MM_DD.txt`
 
