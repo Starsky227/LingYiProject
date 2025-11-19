@@ -64,7 +64,7 @@ class SystemConfig(BaseModel):
     version: str = Field(default="0.0.1", description="系统版本号")
     ai_name: str = Field(default="铃依", description="AI助手名称")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
-    log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "logs", description="日志目录")
+    log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "brain" / "memory" / "logs", description="日志目录")
     debug: bool = Field(default=True, description="是否启用调试模式")
     log_level: str = Field(default="INFO", description="日志级别")
 

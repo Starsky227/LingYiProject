@@ -62,7 +62,7 @@ MEMORY_CONTROL_PROMPT = load_prompt_file("3_memory_control.txt", "记忆控制")
 COMPLETION_CHECK_PROMPT = load_prompt_file("3_completion_check.txt", "任务完成检查")
 
 
-def text_to_json(text: str) -> Dict[str, Any]:
+def _parse_json(text: str) -> Dict[str, Any]:
     """
     将文本转换为JSON对象，智能处理字符串值中的控制字符
     """
@@ -75,18 +75,15 @@ def text_to_json(text: str) -> Dict[str, Any]:
             return json.loads(cleaned_text)
         except json.JSONDecodeError:
             # 如果直接解析失败，尝试智能修复字符串值中的控制字符
-            fixed_text = fix_json_string_values(cleaned_text)
+            fixed_text = _fix_json_string_values(cleaned_text)
             return json.loads(fixed_text)
             
     except json.JSONDecodeError as json_error:
-        if DEBUG_MODE:
-            print(f"[DEBUG] JSON解析失败: {json_error}")
-            print(f"[DEBUG] 原始文本: {repr(text)}")
         print(f"[错误] JSON解析失败: {json_error}")
         return {}
 
 
-def fix_json_string_values(json_text: str) -> str:
+def _fix_json_string_values(json_text: str) -> str:
     """
     智能修复JSON中字符串值的控制字符问题
     只转义字符串值内的控制字符，不影响JSON结构
@@ -162,7 +159,7 @@ def extract_keywords(message_to_proceed: List[Dict]) -> List[str]:
         return []
     
     # 使用统一的JSON解析函数
-    keywords_data = text_to_json(full_response)
+    keywords_data = _parse_json(full_response)
     
     if isinstance(keywords_data, list):
         # 如果直接是列表格式
@@ -219,7 +216,7 @@ def analyze_intent(message_to_proceed: List[Dict], relevant_memories: str) -> Tu
 
     # 提取为json格式
     if full_response.strip().startswith("```"):
-        intent_data = text_to_json(full_response.strip())
+        intent_data = _parse_json(full_response.strip())
         return (
             intent_data.get("IntentType", "unknown"),
             intent_data.get("TasksTodo", "[错误]模型未找到任务")
@@ -331,7 +328,7 @@ def tool_call(todo_list: str, tools_available: str) -> Dict[str, Any]:
         return {"decision_reason": f"[错误] 模型未响应: {e}"}
     
     # 提取为json格式
-    tool_call_data = text_to_json(full_response.strip())
+    tool_call_data = _parse_json(full_response.strip())
     if DEBUG_MODE:
         print(f"[DEBUG] 成功解析工具调用JSON: {tool_call_data}")
     return tool_call_data
@@ -394,7 +391,7 @@ def memory_control(message_to_proceed: List[Dict], todo_list: str) -> Dict[str, 
     
     # 提取为json格式
     if full_response.strip().startswith("```"):
-        memory_data = text_to_json(full_response.strip())
+        memory_data = _parse_json(full_response.strip())
         if DEBUG_MODE:
             print(f"[DEBUG] 成功解析工具调用JSON: {memory_data}")
     else:
@@ -490,7 +487,7 @@ def task_completion_check(message_to_proceed: List[Dict], todo_list: str, releva
     
     # 提取为json格式
     if full_response.strip().startswith("```"):
-        review_data = text_to_json(full_response.strip())
+        review_data = _parse_json(full_response.strip())
     else:
         print(f"[错误] 任务审查模型回应: {full_response}")
         review_data = {}

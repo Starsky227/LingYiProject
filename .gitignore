@@ -6,7 +6,7 @@ __pycache__/
 .Python
 
 # 聊天日志
-logs/chat_logs/
+brain/memory/logs/chat_logs/
 chat_logs/
 *.log
 
