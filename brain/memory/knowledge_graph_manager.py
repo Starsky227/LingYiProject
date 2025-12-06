@@ -9,6 +9,7 @@
 """
 
 import os
+import re
 import sys
 import json
 import logging
@@ -103,192 +104,280 @@ class KnowledgeGraphManager:
             return self._connect()
         return True
     
-    def _parse_and_create_hierarchical_time(self, session, time_str: str, source: str, time_record: str) -> Optional[str]:
+    def create_time_node(self, session, time_str: str) -> Optional[str]:
         """
-        解析时间字符串并创建层次化的时间节点
-        支持多种格式:
-        - "2025年11月3日12点" -> Year:2025 -> Month:11月 -> Day:3日 -> Hour:12点
-        - "2025年11月3日" -> Year:2025 -> Month:11月 -> Day:3日  
-        - "2025年11月" -> Year:2025 -> Month:11月
-        - "2025年" -> Year:2025
-        返回最具体的时间节点名称（用于连接事件）
-        """
-        import re
+        创建时间节点并建立层次关系
+        自动根据时间完整性确定类型：没有年份为recurring，有年份为static
+        标准格式：XXXX年XX月XX日XX点XX分XX秒XX
         
+        Args:
+            session: Neo4j session
+            time_str: 时间字符串
+            
+        Returns:
+            Optional[str]: 创建的最具体时间节点名称，失败返回None
+        """
         if not time_str:
             return None
-            
+        print(f"Creating time node for: {time_str}")
+
         try:
             # 解析时间组件
             year_match = re.search(r'(\d{4})年', time_str)
             month_match = re.search(r'(\d{1,2})月', time_str)
             day_match = re.search(r'(\d{1,2})日', time_str)
             hour_match = re.search(r'(\d{1,2})点', time_str)
+            sub_hour_match = re.search(r'点(.+)', time_str)
             
+            # 自动确定时间类型：没有年份为recurring，有年份为static
             if not year_match:
-                # 如果连年份都没有，创建通用时间节点
-                session.run("""
-                    MERGE (t:Time {name: $time})
-                    SET t.source = $source,
-                        t.last_updated = $time_record
-                """, 
-                    time=time_str,
-                    source=source,
-                    time_record=time_record
-                )
-                return time_str
+                time_type = 'recurring'
+            else:
+                time_type = 'static'
+
+            # 如果有年份，创建年份节点
+            if year_match:
+                year = year_match.group(1)
+                year_name = f"{year}年"
+                most_specific_node = year_name
                 
-            # 提取时间组件
-            year = year_match.group(1)
-            year_name = f"{year}年"
-            most_specific_node = year_name
-            
-            # 创建年份节点
-            session.run("""
-                MERGE (y:Time:Year {name: $year_name})
-                SET y.year = $year,
-                    y.time_type = 'year',
-                    y.source = $source,
-                    y.last_updated = $time_record
-            """, 
-                year_name=year_name,
-                year=int(year),
-                source=source,
-                time_record=time_record
-            )
-            
-            # 如果有月份
-            if month_match:
-                month = month_match.group(1)
-                # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11, 12
-                month = str(int(month))
-                month_name = f"{month}月"
-                most_specific_node = month_name
-                
-                # 创建月份节点
+                # 创建年份节点
+                year_time_str = time_str  # 使用原始时间字符串
                 session.run("""
-                    MERGE (m:Time:Month {name: $month_name})
-                    SET m.month = $month,
-                        m.year = $year,
-                        m.time_type = 'month',
-                        m.source = $source,
-                        m.last_updated = $time_record
+                    MERGE (y:Time:Year {name: $year_name})
+                    SET y.node_type = 'Time',
+                        y.name = $year_name,
+                        y.time = $year_time_str,
+                        y.type = $time_type
                 """, 
-                    month_name=month_name,
-                    month=int(month),
-                    year=int(year),
-                    source=source,
-                    time_record=time_record
-                )
-                
-                # 创建层次关系: Month -> Year
-                session.run("""
-                    MATCH (m:Time:Month {name: $month_name})
-                    MATCH (y:Time:Year {name: $year_name})
-                    MERGE (m)-[r:BELONGS_TO]->(y)
-                    SET r.created_at = $time_record,
-                        r.hierarchy_type = 'month_to_year'
-                """, 
-                    month_name=month_name,
                     year_name=year_name,
-                    time_record=time_record
+                    year_time_str=year_time_str,
+                    time_type=time_type
                 )
+            
+            if month_match:
+            # 如果有月份
+                if month_match:
+                    month = month_match.group(1)
+                    month = str(int(month))
+                    month_name = f"{month}月"
+                    most_specific_node = month_name
+                    
+                    # 创建月份节点
+                    month_time_str = time_str  # 使用原始时间字符串
+                    session.run("""
+                        MERGE (m:Time:Month {name: $month_name})
+                        SET m.node_type = 'Time',
+                            m.name = $month_name,
+                            m.time = $month_time_str,
+                            m.type = $time_type
+                    """, 
+                        month_name=month_name,
+                        month_time_str=month_time_str,
+                        time_type=time_type
+                    )
+                    
+                    # 创建月份到年份的层次关系（年份节点在同一函数中已创建）
+                    if year_match:
+                        # 直接创建层次关系，无需检查存在性（年份节点刚刚创建）
+                        session.run("""
+                            MATCH (m:Time:Month {name: $month_name})
+                            MATCH (y:Time:Year {name: $year_name})
+                            MERGE (m)-[r:BELONGS_TO]->(y)
+                            SET r.hierarchy_type = 'month_to_year'
+                        """, 
+                            month_name=month_name,
+                            year_name=year_name
+                        )
                 
                 # 如果有日期
                 if day_match:
                     day = day_match.group(1)
-                    # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11等
                     day = str(int(day))
                     day_name = f"{day}日"
                     most_specific_node = day_name
                     
                     # 创建日期节点
+                    day_time_str = time_str  # 使用原始时间字符串
                     session.run("""
                         MERGE (d:Time:Day {name: $day_name})
-                        SET d.day = $day,
-                            d.month = $month,
-                            d.year = $year,
-                            d.time_type = 'day',
-                            d.source = $source,
-                            d.last_updated = $time_record
+                        SET d.node_type = 'Time',
+                            d.name = $day_name,
+                            d.time = $day_time_str,
+                            d.type = $time_type
                     """, 
                         day_name=day_name,
-                        day=int(day),
-                        month=int(month),
-                        year=int(year),
-                        source=source,
-                        time_record=time_record
+                        day_time_str=day_time_str,
+                        time_type=time_type
                     )
                     
-                    # 创建层次关系: Day -> Month
-                    session.run("""
-                        MATCH (d:Time:Day {name: $day_name})
-                        MATCH (m:Time:Month {name: $month_name})
-                        MERGE (d)-[r:BELONGS_TO]->(m)
-                        SET r.created_at = $time_record,
-                            r.hierarchy_type = 'day_to_month'
-                    """, 
-                        day_name=day_name,
-                        month_name=month_name,
-                        time_record=time_record
-                    )
-                    
-                    # 如果有小时
-                    if hour_match:
-                        hour = hour_match.group(1)
-                        # 去除前导零：02 -> 2, 03 -> 3, 但保留 10, 11等
-                        hour = str(int(hour))
-                        hour_name = f"{hour}点"
-                        most_specific_node = hour_name
-                        
-                        # 创建小时节点
+                    # 创建日期到月份的层次关系（月份节点在同一函数中已创建）
+                    if month_match:
+                        # 直接创建层次关系，无需检查存在性（月份节点刚刚创建）
                         session.run("""
-                            MERGE (h:Time:Hour {name: $hour_name})
-                            SET h.hour = $hour,
-                                h.day = $day,
-                                h.month = $month,
-                                h.year = $year,
-                                h.time_type = 'hour',
-                                h.source = $source,
-                                h.last_updated = $time_record
+                            MATCH (d:Time:Day {name: $day_name})
+                            MATCH (m:Time:Month {name: $month_name})
+                            MERGE (d)-[r:BELONGS_TO]->(m)
+                            SET r.hierarchy_type = 'day_to_month'
                         """, 
-                            hour_name=hour_name,
-                            hour=int(hour),
-                            day=int(day),
-                            month=int(month),
-                            year=int(year),
-                            source=source,
-                            time_record=time_record
+                            day_name=day_name,
+                            month_name=month_name
+                        )
+                
+                # 如果没有具体日期，尝试解析"第X个星期X"格式
+                elif not day_match:
+                    # 匹配"第X个星期X"、"第X周星期X"等格式
+                    week_pattern = re.search(r'第(\d{1,2})[个周]?星期([一二三四五六七日天1234567])', time_str)
+                    if week_pattern:
+                        week_number = week_pattern.group(1)
+                        weekday = week_pattern.group(2)
+                        
+                        # 将数字转换为中文
+                        weekday_map = {'1': '一', '2': '二', '3': '三', '4': '四', 
+                                     '5': '五', '6': '六', '7': '七', '天': '日'}
+                        weekday = weekday_map.get(weekday, weekday)
+                        
+                        day_name = f"第{week_number}周星期{weekday}"
+                        most_specific_node = day_name
+                        
+                        # 创建周日期节点
+                        day_time_str = time_str  # 使用原始时间字符串
+                        session.run("""
+                            MERGE (d:Time:WeekDay {name: $day_name})
+                            SET d.node_type = 'Time',
+                                d.name = $day_name,
+                                d.time = $day_time_str,
+                                d.type = $time_type,
+                                d.week_number = $week_number,
+                                d.weekday = $weekday
+                        """, 
+                            day_name=day_name,
+                            day_time_str=day_time_str,
+                            time_type=time_type,
+                            week_number=week_number,
+                            weekday=weekday
                         )
                         
-                        # 创建层次关系: Hour -> Day
+                        # 创建WeekDay到月份的层次关系（月份节点在同一函数中已创建）
+                        if month_match:
+                            # 直接创建层次关系，无需检查存在性（月份节点刚刚创建）
+                            session.run("""
+                                MATCH (d:Time:WeekDay {name: $day_name})
+                                MATCH (m:Time:Month {name: $month_name})
+                                MERGE (d)-[r:BELONGS_TO]->(m)
+                                SET r.hierarchy_type = 'weekday_to_month'
+                            """, 
+                                day_name=day_name,
+                                month_name=month_name
+                            )
+            
+            # 如果有小时（在月份处理之后）
+            if hour_match:
+                hour = hour_match.group(1)
+                hour = str(int(hour))
+                hour_name = f"{hour}点"
+                most_specific_node = hour_name
+                
+                # 创建小时节点
+                hour_time_str = time_str  # 使用原始时间字符串
+                session.run("""
+                    MERGE (h:Time:Hour {name: $hour_name})
+                    SET h.node_type = 'Time',
+                        h.name = $hour_name,
+                        h.time = $hour_time_str,
+                        h.type = $time_type
+                """, 
+                    hour_name=hour_name,
+                    hour_time_str=hour_time_str,
+                    time_type=time_type
+                )
+                
+                # 创建小时到日期的层次关系（日期节点在同一函数中已创建）
+                if day_match:
+                    day_name_for_check = f"{day_match.group(1)}日"
+                    # 直接创建层次关系，无需检查存在性（日期节点刚刚创建）
+                    session.run("""
+                        MATCH (h:Time:Hour {name: $hour_name})
+                        MATCH (d:Time:Day {name: $day_name})
+                        MERGE (h)-[r:BELONGS_TO]->(d)
+                        SET r.hierarchy_type = 'hour_to_day'
+                    """, 
+                        hour_name=hour_name,
+                        day_name=day_name_for_check
+                    )
+                elif not day_match:
+                    # 如果没有具体日期但有周日期，检查WeekDay节点
+                    week_pattern = re.search(r'第(\d{1,2})[个周]?星期([一二三四五六七日天1234567])', time_str)
+                    if week_pattern:
+                        week_number = week_pattern.group(1)
+                        weekday = week_pattern.group(2)
+                        weekday_map = {'1': '一', '2': '二', '3': '三', '4': '四', 
+                                     '5': '五', '6': '六', '7': '七', '天': '日'}
+                        weekday = weekday_map.get(weekday, weekday)
+                        weekday_name = f"第{week_number}周星期{weekday}"
+                        
+                        # 直接创建层次关系，WeekDay节点已在同一函数中创建
                         session.run("""
                             MATCH (h:Time:Hour {name: $hour_name})
-                            MATCH (d:Time:Day {name: $day_name})
+                            MATCH (d:Time:WeekDay {name: $day_name})
                             MERGE (h)-[r:BELONGS_TO]->(d)
-                            SET r.created_at = $time_record,
-                                r.hierarchy_type = 'hour_to_day'
+                            SET r.hierarchy_type = 'hour_to_weekday'
                         """, 
                             hour_name=hour_name,
-                            day_name=day_name,
-                            time_record=time_record
+                            day_name=weekday_name
                         )
+                    
+            # 如果有子小时单位，创建独立的SubHour节点
+            if sub_hour_match:
+                # 提取小时后的所有时间单位
+                sub_hour_content = sub_hour_match.group(1).strip()
+                sub_hour = sub_hour_content
+                sub_hour_name = sub_hour
+                most_specific_node = sub_hour_name
+                    
+                # 创建SubHour节点
+                sub_hour_time_str = time_str  # 使用原始时间字符串
+                session.run("""
+                    MERGE (sh:Time:SubHour {name: $sub_hour_name})
+                    SET sh.node_type = 'Time',
+                        sh.name = $sub_hour_name,
+                        sh.time = $sub_hour_time_str,
+                        sh.type = $time_type
+                """, 
+                    sub_hour_name=sub_hour_name,
+                    sub_hour_time_str=sub_hour_time_str,
+                    time_type=time_type
+                )
+                
+                # 创建SubHour到Hour的层次关系（Hour节点在同一函数中已创建）
+                if hour_match:
+                    hour_name_for_check = f"{hour_match.group(1)}点"
+                    # 直接创建层次关系，无需检查存在性（Hour节点刚刚创建）
+                    session.run("""
+                        MATCH (sh:Time:SubHour {name: $sub_hour_name})
+                        MATCH (h:Time:Hour {name: $hour_name})
+                        MERGE (sh)-[r:BELONGS_TO]->(h)
+                        SET r.hierarchy_type = 'subhour_to_hour'
+                    """, 
+                        sub_hour_name=sub_hour_name,
+                        hour_name=hour_name_for_check
+                    )
             
-            logger.debug(f"Created hierarchical time, most specific node: {most_specific_node}")
-            return most_specific_node  # 返回最具体的时间节点用于连接事件
+            logger.debug(f"Created hierarchical time node, most specific node: {most_specific_node}")
+            return most_specific_node
             
         except Exception as e:
-            logger.error(f"Failed to parse hierarchical time '{time_str}': {e}")
+            logger.error(f"Failed to create time node '{time_str}': {e}")
             # 回退到创建通用时间节点
             try:
                 session.run("""
                     MERGE (t:Time {name: $time})
-                    SET t.source = $source,
-                        t.last_updated = $time_record
+                    SET t.node_type = 'Time',
+                        t.name = $time,
+                        t.time = $time,
+                        t.type = 'static'
                 """, 
-                    time=time_str,
-                    source=source,
-                    time_record=time_record
+                    time=time_str
                 )
                 return time_str
             except Exception as fallback_e:
@@ -300,7 +389,6 @@ class KnowledgeGraphManager:
         检测五元组之间的交叉引用并创建关系
         例如：A告诉B关于某个事件 -> 直接链接到该事件的五元组
         """
-        import re
         
         try:
             # 为每个五元组创建一个事件标识符
@@ -471,7 +559,7 @@ class KnowledgeGraphManager:
                 SET s.source = $source,
                     s.confidence = $confidence,
                     s.last_updated = $time_record
-            """, 
+            """,
                 subject=triple.subject,
                 source=triple.source,
                 confidence=triple.confidence,
@@ -484,7 +572,7 @@ class KnowledgeGraphManager:
                 SET o.source = $source,
                     o.confidence = $confidence,
                     o.last_updated = $time_record
-            """, 
+            """,
                 object=triple.object,
                 source=triple.source,
                 confidence=triple.confidence,
@@ -506,7 +594,7 @@ class KnowledgeGraphManager:
                     r.confidence = $confidence,
                     r.created_at = $time_record,
                     r.type = 'triple'
-            """, 
+            """,
                 subject=triple.subject,
                 object=triple.object,
                 predicate=triple.predicate,
@@ -557,8 +645,8 @@ class KnowledgeGraphManager:
             # 如果有时间信息，创建层次化时间节点
             specific_time_node = None
             if quintuple.time:
-                specific_time_node = self._parse_and_create_hierarchical_time(
-                    session, quintuple.time, quintuple.source, quintuple.time_record
+                specific_time_node = self.create_time_node(
+                    session, quintuple.time
                 )
             
             # 如果有地点信息，创建地点节点
@@ -795,6 +883,156 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to get statistics: {e}")
             return {"error": str(e)}
     
+    def delete_node_or_relation(self, element_id: str) -> Dict[str, Any]:
+        """
+        根据Neo4j元素ID删除节点或关系
+        
+        Args:
+            element_id: Neo4j元素ID（节点ID或关系ID）
+            
+        Returns:
+            Dict[str, Any]: 包含操作结果的字典
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot delete element: No Neo4j connection")
+            return {
+                "success": False,
+                "error": "No Neo4j connection",
+                "element_id": element_id,
+                "element_type": None
+            }
+        
+        if not element_id or not element_id.strip():
+            return {
+                "success": False,
+                "error": "Element ID cannot be empty",
+                "element_id": element_id,
+                "element_type": None
+            }
+        
+        try:
+            with self.driver.session() as session:
+                # 首先检查元素是否存在以及类型
+                check_query = """
+                OPTIONAL MATCH (n) WHERE elementId(n) = $element_id
+                OPTIONAL MATCH ()-[r]-() WHERE elementId(r) = $element_id
+                RETURN 
+                    CASE WHEN n IS NOT NULL THEN 'node' ELSE null END as node_type,
+                    CASE WHEN r IS NOT NULL THEN 'relationship' ELSE null END as rel_type,
+                    CASE WHEN n IS NOT NULL THEN labels(n) ELSE null END as node_labels,
+                    CASE WHEN n IS NOT NULL THEN n.name ELSE null END as node_name,
+                    CASE WHEN r IS NOT NULL THEN type(r) ELSE null END as rel_type_name
+                """
+                
+                check_result = session.run(check_query, element_id=element_id).single()
+                
+                if not check_result or (not check_result["node_type"] and not check_result["rel_type"]):
+                    return {
+                        "success": False,
+                        "error": f"Element with ID '{element_id}' not found",
+                        "element_id": element_id,
+                        "element_type": None
+                    }
+                
+                element_type = None
+                element_info = {}
+                
+                # 删除节点（会自动删除相关关系）
+                if check_result["node_type"]:
+                    element_type = "node"
+                    element_info = {
+                        "labels": check_result["node_labels"],
+                        "name": check_result["node_name"]
+                    }
+                    
+                    # 获取删除前的关系数量
+                    rel_count_query = """
+                    MATCH (n)-[r]-() WHERE elementId(n) = $element_id
+                    RETURN count(r) as rel_count
+                    """
+                    rel_count = session.run(rel_count_query, element_id=element_id).single()["rel_count"]
+                    
+                    # 删除节点（DETACH DELETE 会同时删除所有相关关系）
+                    delete_query = """
+                    MATCH (n) WHERE elementId(n) = $element_id
+                    DETACH DELETE n
+                    RETURN count(n) as deleted_count
+                    """
+                    
+                    result = session.run(delete_query, element_id=element_id)
+                    deleted_count = result.single()["deleted_count"]
+                    
+                    if deleted_count > 0:
+                        logger.info(f"Successfully deleted node {element_id} and {rel_count} related relationships")
+                        return {
+                            "success": True,
+                            "error": None,
+                            "element_id": element_id,
+                            "element_type": element_type,
+                            "element_info": element_info,
+                            "deleted_relationships": rel_count,
+                            "message": f"节点及其 {rel_count} 个关系已成功删除"
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Node deletion failed",
+                            "element_id": element_id,
+                            "element_type": element_type
+                        }
+                
+                # 删除关系
+                elif check_result["rel_type"]:
+                    element_type = "relationship"
+                    element_info = {
+                        "type": check_result["rel_type_name"]
+                    }
+                    
+                    # 删除关系
+                    delete_query = """
+                    MATCH ()-[r]-() WHERE elementId(r) = $element_id
+                    DELETE r
+                    RETURN count(r) as deleted_count
+                    """
+                    
+                    result = session.run(delete_query, element_id=element_id)
+                    deleted_count = result.single()["deleted_count"]
+                    
+                    if deleted_count > 0:
+                        logger.info(f"Successfully deleted relationship {element_id}")
+                        return {
+                            "success": True,
+                            "error": None,
+                            "element_id": element_id,
+                            "element_type": element_type,
+                            "element_info": element_info,
+                            "deleted_relationships": 0,
+                            "message": "关系已成功删除"
+                        }
+                    else:
+                        return {
+                            "success": False,
+                            "error": "Relationship deletion failed",
+                            "element_id": element_id,
+                            "element_type": element_type
+                        }
+                
+                return {
+                    "success": False,
+                    "error": "Unknown element type",
+                    "element_id": element_id,
+                    "element_type": None
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to delete element '{element_id}': {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "element_id": element_id,
+                "element_type": None
+            }
+    
     def clear_recent_memory(self) -> bool:
         """清空 recent_memory.json 文件，重置为初始状态"""
         try:
@@ -904,6 +1142,92 @@ class KnowledgeGraphManager:
         except Exception as e:
             logger.error(f"Failed to clear all memory: {e}")
             print(f"❌ 清空操作失败：{e}")
+            return False
+    
+    def download_neo4j_data(self) -> bool:
+        """检查Neo4j连接并将数据下载到neo4j_memory.json文件
+        
+        Returns:
+            bool: 操作是否成功
+        """
+        # 检查Neo4j连接
+        if not self._ensure_connection():
+            logger.error("Cannot load Neo4j data: No Neo4j connection available")
+            print("❌ 错误：无法连接到Neo4j数据库")
+            return False
+        
+        print("✅ Neo4j连接正常，正在同步数据...")
+        logger.info("Neo4j connection established, starting data download")
+        
+        try:
+            # 确保目录存在
+            neo4j_memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
+            os.makedirs(neo4j_memory_dir, exist_ok=True)
+            
+            neo4j_memory_file = os.path.join(neo4j_memory_dir, "neo4j_memory.json")
+            
+            with self.driver.session() as session:
+                # 加载所有节点
+                print("📥 正在下载节点数据...")
+                nodes_query = """
+                MATCH (n)
+                RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                """
+                nodes_result = session.run(nodes_query)
+                nodes = []
+                
+                for record in nodes_result:
+                    node = {
+                        "id": str(record["id"]),
+                        "labels": record["labels"],
+                        "properties": dict(record["properties"])
+                    }
+                    nodes.append(node)
+                
+                # 加载所有关系
+                print("🔗 正在下载关系数据...")
+                relationships_query = """
+                MATCH (a)-[r]->(b)
+                RETURN elementId(r) as id, type(r) as type, elementId(a) as start_node, elementId(b) as end_node, properties(r) as properties
+                """
+                relationships_result = session.run(relationships_query)
+                relationships = []
+                
+                for record in relationships_result:
+                    relationship = {
+                        "id": str(record["id"]),
+                        "type": record["type"],
+                        "start_node": str(record["start_node"]),
+                        "end_node": str(record["end_node"]),
+                        "properties": dict(record["properties"])
+                    }
+                    relationships.append(relationship)
+                
+                # 构建数据结构
+                neo4j_data = {
+                    "nodes": nodes,
+                    "relationships": relationships,
+                    "metadata": {
+                        "source": "neo4j",
+                        "neo4j_uri": config.grag.neo4j_uri,
+                        "neo4j_database": config.grag.neo4j_database
+                    },
+                    "updated_at": __import__('datetime').datetime.now().isoformat()
+                }
+                
+                # 保存到文件（覆盖模式）
+                with open(neo4j_memory_file, 'w', encoding='utf-8') as f:
+                    json.dump(neo4j_data, f, ensure_ascii=False, indent=2)
+                
+                print(f"💾 Neo4j数据已保存到: {neo4j_memory_file}")
+                print(f"📊 下载统计: {len(nodes)} 个节点, {len(relationships)} 个关系")
+                
+                logger.info(f"Neo4j data successfully downloaded to {neo4j_memory_file}: {len(nodes)} nodes, {len(relationships)} relationships")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Failed to load Neo4j data: {e}")
+            print(f"❌ Neo4j数据下载失败: {e}")
             return False
     
     def upload_recent_memory(self) -> Dict[str, Any]:
@@ -1156,7 +1480,7 @@ class KnowledgeGraphManager:
             specific_time_node = None
             if time:
                 specific_time_node = self._parse_and_create_hierarchical_time(
-                    session, time, source, time_record
+                    session, time, time_record
                 )
             
             # 如果有地点信息，创建或更新地点节点
@@ -1281,6 +1605,11 @@ def upload_recent_memory_to_graph() -> Dict[str, Any]:
     """便捷函数：将 recent_memory.json 中的记忆上传到 Neo4j"""
     manager = get_knowledge_graph_manager()
     return manager.upload_recent_memory()
+
+def load_neo4j_data_to_file() -> bool:
+    """便捷函数：检查Neo4j连接并将数据下载到neo4j_memory.json文件"""
+    manager = get_knowledge_graph_manager()
+    return manager.download_neo4j_data()
 
 def relevant_memories_by_keywords(keywords: List[str], max_results: int = 10) -> str:
     """
@@ -1491,3 +1820,8 @@ def relevant_memories_by_keywords(keywords: List[str], max_results: int = 10) ->
     except Exception as e:
         logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
         return ""
+
+def delete_node_or_relation_by_id(element_id: str) -> Dict[str, Any]:
+    """便捷函数：根据元素ID删除节点或关系"""
+    manager = get_knowledge_graph_manager()
+    return manager.delete_node_or_relation(element_id)

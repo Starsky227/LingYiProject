@@ -1,5 +1,8 @@
 crawl4ai>=0.7.4
 fastapi>=0.116.2
+flask>=3.1.0
+flask-cors>=6.0.1
+jieba>=0.42.1
 langchain_openai>=1.0.0
 mcp>=1.8.0
 neo4j>=5.26.0

@@ -1,0 +1,328 @@
+{
+  "nodes": [
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "labels": [
+        "Time"
+      ],
+      "properties": {
+        "time": "6月1日",
+        "name": "6月1日",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time": "5月10日",
+        "name": "10日",
+        "node_type": "Time",
+        "type": "recurring"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "labels": [
+        "Time",
+        "Month"
+      ],
+      "properties": {
+        "time": "2025年12月1日",
+        "name": "12月",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time": "2025年12月6日13点27分32秒",
+        "name": "6日",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8",
+      "labels": [
+        "Time",
+        "Hour"
+      ],
+      "properties": {
+        "time": "2025年12月6日13点27分32秒",
+        "name": "13点",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "labels": [
+        "Time",
+        "WeekDay"
+      ],
+      "properties": {
+        "week_number": "1",
+        "time": "9月第1个星期一",
+        "weekday": "一",
+        "name": "第1周星期一",
+        "node_type": "Time",
+        "type": "recurring"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time": "2025年12月1日",
+        "name": "1日",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:50",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "赛车比赛",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:57",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "10点",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "A",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.75,
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "赛车比赛10点开始",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69",
+      "labels": [
+        "Time",
+        "Year"
+      ],
+      "properties": {
+        "time_type": "year",
+        "time": "2025年12月1日",
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "2025年",
+        "last_updated": "2025-11-04T20:13",
+        "year": 2025,
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
+      "labels": [
+        "Time",
+        "Month"
+      ],
+      "properties": {
+        "time_type": "month",
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "11月",
+        "month": 11,
+        "last_updated": "2025-11-04T20:13",
+        "year": 2025
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:71",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time_type": "day",
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "3日",
+        "month": 11,
+        "last_updated": "2025-11-04T20:13",
+        "year": 2025,
+        "day": 3
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72",
+      "labels": [
+        "Time",
+        "Hour"
+      ],
+      "properties": {
+        "time_type": "hour",
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "name": "14点",
+        "month": 11,
+        "last_updated": "2025-11-04T20:13",
+        "year": 2025,
+        "hour": 14,
+        "day": 3
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191366",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69",
+      "properties": {
+        "hierarchy_type": "month_to_year"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191367",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "properties": {
+        "hierarchy_type": "day_to_month"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191368",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
+      "properties": {
+        "hierarchy_type": "hour_to_day"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191372",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "properties": {
+        "hierarchy_type": "day_to_month"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152995171885908018",
+      "type": "开始",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:50",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:57",
+      "properties": {
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "predicate": "开始",
+        "created_at": "2025-11-04T20:13",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5,
+        "type": "triple"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152955589467308095",
+      "type": "告知",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
+      "properties": {
+        "time": "2025年11月03日14点",
+        "importance": 0.75,
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "action": "告知",
+        "created_at": "2025-11-04T20:13",
+        "last_updated": "2025-11-04T20:13",
+        "confidence": 0.5,
+        "type": "quintuple"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965256",
+      "type": "HAPPENED_AT",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72",
+      "properties": {
+        "importance": 0.75,
+        "source": "logs/chat_logs_2025_11_03.txt",
+        "action_context": "告知",
+        "created_at": "2025-11-04T20:13",
+        "last_updated": "2025-11-04T20:13"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191430",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69",
+      "properties": {
+        "hierarchy_type": "month_to_year",
+        "created_at": "2025-11-04T20:13"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191431",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:71",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
+      "properties": {
+        "hierarchy_type": "day_to_month",
+        "created_at": "2025-11-04T20:13"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191432",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:71",
+      "properties": {
+        "hierarchy_type": "hour_to_day",
+        "created_at": "2025-11-04T20:13"
+      }
+    }
+  ],
+  "metadata": {
+    "source": "neo4j",
+    "neo4j_uri": "neo4j://127.0.0.1:7687",
+    "neo4j_database": "neo4j"
+  },
+  "updated_at": "2025-12-06T02:08:01.056452"
+}
