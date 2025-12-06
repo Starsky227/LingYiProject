@@ -27,18 +27,38 @@ TEXT_SIZE = config.ui.text_size
 IMAGE_NAME = config.ui.image_name
 LOGS_DIR = config.system.log_dir
 
-def write_chat_log(sender: str, text: str):
-    """将单条对话追加到 brain/memory/logs/chat_logs/chat_logs_YYYY_MM_DD.txt"""
+def write_chat_log(sender: str, text: str, timestamp: str = None):
+    """将单条对话追加到 brain/memory/logs/chat_logs/chat_logs_YYYY_MM_DD.txt
+    
+    Args:
+        sender: 发送者名称
+        text: 消息内容
+        timestamp: 时间戳，如果为None则使用当前时间（用户消息），否则使用指定时间戳（AI消息）
+    """
     try:
         # 使用配置中的日志目录
         logs_dir = os.path.join(LOGS_DIR, "chat_logs")
         os.makedirs(logs_dir, exist_ok=True)
         filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
         path = os.path.join(logs_dir, filename)
-        ts = datetime.datetime.now().strftime("%H:%M:%S")
+        
+        # 根据timestamp参数决定使用的时间戳
+        if timestamp is None:
+            # 用户消息，使用当前时间
+            ts = datetime.datetime.now().strftime("%H:%M:%S")
+        else:
+            # AI消息，解析传入的ISO格式时间戳
+            try:
+                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                ts = dt.strftime("%H:%M:%S")
+            except (ValueError, AttributeError):
+                # 如果解析失败，回退到当前时间
+                ts = datetime.datetime.now().strftime("%H:%M:%S")
+        
         # 将换行替换为空格以保持单行记录
         safe_text = text.replace("\r", " ").replace("\n", " ")
-        line = f"{ts} <{sender}> {safe_text}\n"
+        # 时间戳用[]框住
+        line = f"[{ts}] <{sender}> {safe_text}\n"
         with open(path, "a", encoding="utf-8") as f:
             f.write(line)
     except Exception as e:
@@ -48,6 +68,7 @@ def write_chat_log(sender: str, text: str):
 class ChatUI(QWidget):
     # 定义从工作线程到 GUI 线程传递数据的信号
     chunk_received = pyqtSignal(str)
+    thinking_received = pyqtSignal(str)  # 新增：thinking内容信号
     finished_reply = pyqtSignal()
 
     def __init__(self, chat_with_model, ai_name="AI"):
@@ -136,9 +157,12 @@ class ChatUI(QWidget):
         # 占位符追踪（用于显示“AI 正在输入”）
         self.placeholder_shown = False
         self._placeholder_start = None
+        self.thinking_mode = False  # 跟踪是否在thinking模式
+        self.thinking_content = ""  # 留存thinking内容
 
         # 连接信号槽
         self.chunk_received.connect(self._append_chunk)
+        self.thinking_received.connect(self._update_thinking)
         self.finished_reply.connect(self._finish_reply)
 
         # 保存高度限制并初始化高度
@@ -182,17 +206,38 @@ class ChatUI(QWidget):
 
     def _append_chunk(self, chunk: str):
         """处理模型流式返回的文本块"""
-        # 如果占位符仍在，说明这是第一块内容：移除占位并写入 AI 名前缀
+        # 如果占位符仍在，说明这是第一块正式内容：移除占位并写入 AI 名前缀
         if self.placeholder_shown:
             self._remove_placeholder()
             self._append_text(f"{self.ai_name}: ")
+            self.thinking_mode = False  # 退出thinking模式
         # 追加收到的文本块
         self._append_text(chunk)
+
+    def _update_thinking(self, thinking_text: str):
+        """更新thinking内容显示"""
+        if not self.placeholder_shown:
+            return
+        
+        self.thinking_content += thinking_text
+        # 更新占位符内容
+        cursor = self.chat_box.textCursor()
+        cursor.setPosition(self._placeholder_start)
+        cursor.movePosition(QTextCursor.End, QTextCursor.KeepAnchor)
+        cursor.removeSelectedText()
+        
+        # 重新插入更新的thinking内容
+        thinking_display = self.thinking_content.replace('\n', '<br/>')
+        cursor.insertHtml(f'<span style="color:#A9A9A9;font-style:italic">🤔 {self.ai_name} 正在思考...<br/>{thinking_display}<br/></span>')
+        self.chat_box.ensureCursorVisible()
 
     def _finish_reply(self):
         """模型回复完成后的处理（换行分隔）"""
         # 在聊天框追加换行分隔
         self._append_text("\n")
+        # 重置thinking状态
+        self.thinking_mode = False
+        self.thinking_content = ""
 
     def show_placeholder(self):
         """在聊天框显示灰色占位文本（AI 正在输入）"""
@@ -202,9 +247,11 @@ class ChatUI(QWidget):
         cursor.movePosition(QTextCursor.End)
         self._placeholder_start = cursor.position()
         # 插入灰色占位并换行
-        cursor.insertHtml(f'<span style="color:#A9A9A9">{self.ai_name} 正在输入中...<br/></span>')
+        cursor.insertHtml(f'<span style="color:#A9A9A9;font-style:italic">🤔 {self.ai_name} 正在思考...<br/></span>')
         self.chat_box.ensureCursorVisible()
         self.placeholder_shown = True
+        self.thinking_mode = True
+        self.thinking_content = ""
 
     def _remove_placeholder(self):
         """移除聊天框中的占位文本"""
@@ -216,6 +263,8 @@ class ChatUI(QWidget):
         cursor.removeSelectedText()
         self.placeholder_shown = False
         self._placeholder_start = None
+        self.thinking_mode = False
+        self.thinking_content = ""
 
     # 用户触发：发送消息
     def send_message(self):
@@ -234,7 +283,7 @@ class ChatUI(QWidget):
         self._adjust_input_height()
 
         # 将用户消息加入消息列表并显示占位（等待模型返回）
-        user_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
+        user_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
         self.messages.append({
             "role": USERNAME, 
             "content": user_input,
@@ -246,22 +295,90 @@ class ChatUI(QWidget):
 
     def _worker_call_model(self):
         """工作线程：调用模型并通过回调发送流式数据到主线程显示"""
+        thinking_mode = False
+        thinking_buffer = ""
+        
         def on_response(chunk: str):
-            # 将流式文本通过信号发回主线程显示
-            self.chunk_received.emit(chunk)
+            nonlocal thinking_mode, thinking_buffer
+            
+            # 检测thinking模式的开始和结束
+            if "<thinking>" in chunk:
+                thinking_mode = True
+                # 发送thinking之前的普通内容
+                before_thinking = chunk.split("<thinking>")[0]
+                if before_thinking:
+                    self.chunk_received.emit(before_thinking)
+                # 开始处理thinking内容
+                thinking_content = chunk.split("<thinking>", 1)[1] if "<thinking>" in chunk else ""
+                if "</thinking>" in thinking_content:
+                    # thinking在同一块中结束
+                    thinking_text = thinking_content.split("</thinking>")[0]
+                    if thinking_text:
+                        self.thinking_received.emit(thinking_text)
+                    # 发送thinking之后的普通内容
+                    after_thinking = thinking_content.split("</thinking>", 1)[1] if "</thinking>" in thinking_content else ""
+                    if after_thinking:
+                        self.chunk_received.emit(after_thinking)
+                    thinking_mode = False
+                else:
+                    # thinking跨多个块
+                    if thinking_content:
+                        self.thinking_received.emit(thinking_content)
+            elif "</thinking>" in chunk and thinking_mode:
+                # thinking模式结束
+                thinking_text = chunk.split("</thinking>")[0]
+                if thinking_text:
+                    self.thinking_received.emit(thinking_text)
+                # 发送thinking之后的普通内容
+                after_thinking = chunk.split("</thinking>", 1)[1] if "</thinking>" in chunk else ""
+                if after_thinking:
+                    self.chunk_received.emit(after_thinking)
+                thinking_mode = False
+            elif thinking_mode:
+                # 在thinking模式中，发送到thinking显示
+                self.thinking_received.emit(chunk)
+            else:
+                # 普通内容，直接发送
+                self.chunk_received.emit(chunk)
 
         # 调用注入的 chat_with_model（可能会逐块调用 on_response）
-        reply = self.chat_with_model(self.messages, on_response)
+        response_messages = self.chat_with_model(self.messages, on_response)
         
-        # 记录AI回复到日志
-        if reply and reply.strip():
-            write_chat_log(AI_NAME, reply.strip())
+        # 处理返回的消息列表，提取最后一条assistant回复
+        reply_content = ""
+        if response_messages and isinstance(response_messages, list):
+            # 找到最后一条assistant消息
+            for msg in reversed(response_messages):
+                if msg.get("role") == "assistant":
+                    reply_content = msg.get("content", "")
+                    break
+        elif isinstance(response_messages, str):
+            # 兼容旧版本，如果返回字符串则直接使用
+            reply_content = response_messages
+        
+        # 记录AI回复到日志，逐条记录response_messages中的所有消息
+        if response_messages and isinstance(response_messages, list):
+            # 遍历所有消息并记录到日志
+            for msg in response_messages:
+                msg_role = msg.get("role", "")
+                msg_content = msg.get("content", "").strip()
+                msg_timestamp = msg.get("timestamp")
+                
+                if msg_content:  # 只记录非空内容
+                    if msg_role == "assistant":
+                        write_chat_log(AI_NAME, msg_content, msg_timestamp)
+                    else:
+                        # 如果有其他角色的消息，也可以记录
+                        write_chat_log(msg_role, msg_content, msg_timestamp)
+        elif isinstance(response_messages, str) and response_messages.strip():
+            # 兼容旧版本字符串返回值
+            write_chat_log(AI_NAME, response_messages.strip())
         
         # 将完整回复记录到消息列表并通知主线程完成
-        assistant_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
+        assistant_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
         self.messages.append({
             "role": "assistant", 
-            "content": reply,
+            "content": reply_content,
             "timestamp": assistant_timestamp
         })
         self.finished_reply.emit()

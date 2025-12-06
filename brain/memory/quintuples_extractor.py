@@ -41,6 +41,7 @@ MEMORY_CLASSIFIER_PROMPT = os.path.join(_project_root, "brain", "memory", "promp
 # 导入配置信息
 AI_NAME = config.system.ai_name
 USERNAME = config.ui.username
+DEBUG_MODE = config.system.debug
 
 # 模型配置
 MODEL = config.api.model
@@ -100,11 +101,9 @@ class Quintuple:
 @dataclass
 class MemoryResult:
     has_memory: bool
-    memory_type: MemoryType  # 若混合则为 TRIPLE 与 QUINTUPLE 中较"强"的类型（优先 QUINTUPLE）
-    triples: List[Triple]
-    quintuples: List[Quintuple]
-    raw_json: Any  # 原始解析结果（便于调试/后续处理）
-    reason: str = ""
+    memory_type: MemoryType  # 若混合则为 TRIPLE 与 QUINTUPLE 中较“强”的类型（优先 QUINTUPLE）
+    triples_count: int = 0  # 三元组数量
+    quintuples_count: int = 0  # 五元组数量
 
 
 # ---- 工具函数 ----
@@ -231,7 +230,8 @@ def _extract_memories_task(conversation: List[Dict], source: str = "unknown") ->
     )
     summarized_conversation = response.choices[0].message.content
     logging.info(f"对话总结完成: {summarized_conversation}")
-    
+    if DEBUG_MODE:
+        logging.info(f"[记忆] 记录总结: {summarized_conversation}")
     # 将总结后的内容发送给记忆分类器
     logging.info("开始记忆分类处理...")
     
@@ -255,6 +255,7 @@ def _extract_memories_task(conversation: List[Dict], source: str = "unknown") ->
     triples: List[Triple] = []
     quintuples: List[Quintuple] = []
 
+    #记录三&五元组
     if isinstance(extracted_quintuples, list):
         for it in extracted_quintuples:
             # norm = _normalize_item(it)
@@ -357,20 +358,17 @@ def _extract_memories_task(conversation: List[Dict], source: str = "unknown") ->
 
     # 将 triples/quintuples 持久化到 recent_memory_quintuples.json
     if has_memory:
-        try:
-            _save_memories_to_json(triples, quintuples)
-            logger.info(f"[记忆] 成功保存到 recent_memory_quintuples.json: {len(triples)} 三元组, {len(quintuples)} 五元组")
-        except Exception as e:
-            logger.error(f"[记忆] recent_memory_quintuples.json 保存异常: {e}")
-            # 不阻断流程，继续返回结果
+        _save_memories_to_json(triples, quintuples)
+        logger.info(f"[记忆] 成功保存到 recent_memory_quintuples.json: {len(triples)} 三元组, {len(quintuples)} 五元组")
+        # 调用knowledge_graph_manager将数据推送至neo4j，并保留一份[新记忆]node组在本地
+
+
 
     return MemoryResult(
         has_memory=has_memory,
         memory_type=memory_type,
-        triples=triples,
-        quintuples=quintuples,
-        raw_json=extracted_quintuples,
-        reason="",
+        triples_count=len(triples),
+        quintuples_count=len(quintuples)
     )
 
 
@@ -388,13 +386,10 @@ def record_messages_to_memories(messages: List[Dict], source: str = "unknown", p
         source: 数据来源，应该是USERNAME，否则unknown
         priority: 任务优先级
     """
-    # 检查Neo4j是否可用，如果不可用则跳过记忆提取
-    from system.config import is_neo4j_available
-    if not is_neo4j_available():
-        logger.info("[记忆] Neo4j不可用，跳过记忆提取")
-        return ""
-    
     # 提交异步任务
+    if DEBUG_MODE:
+        logger.info(f"[记忆] 记忆消息: {messages[-1].get('content', '') if messages else ''}, 信息源: {source}")
+        return ""
     task_id = task_manager.submit_task(
         "对话记忆提取",
         _extract_memories_task,

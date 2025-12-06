@@ -7,12 +7,16 @@ LLM 服务模块 - 提供与本地大模型的通信接口
 import asyncio
 import datetime
 import json
+import jieba
+import jieba.analyse
+import jieba.posseg as pseg
 import os
 import re
 import sys
 import traceback
 from typing import List, Dict, Callable
 from openai import OpenAI
+
 
 # 添加项目根目录到路径
 PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
@@ -43,14 +47,14 @@ client = OpenAI(
 
 # 读取 system 提示词（system/prompts/personality.txt）并替换 {AI_NAME} 和 {USERNAME}
 SYSTEM_PROMPT = None
-_personality_path = os.path.join(PROJECT_ROOT, "system", "prompts", "personality.txt")
+_personality_path = os.path.join(PROJECT_ROOT, "system", "prompts", "0_extract_keywords.txt")
 if os.path.exists(_personality_path):
     try:
         with open(_personality_path, "r", encoding="utf-8") as f:
             raw = f.read()
         SYSTEM_PROMPT = raw.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME).strip()
     except Exception as e:
-        print(f"[警告] 读取 personality.txt 失败: {e}")
+        print(f"[警告] 读取 0_extract_keywords.txt 失败: {e}")
         SYSTEM_PROMPT = None
 
 
@@ -118,62 +122,72 @@ def get_recent_messages(messages: List[Dict], max_chars: int = 100, min_messages
         return []
 
 
-def _extract_keywords_from_text(text: str) -> List[str]:
+def _extract_keywords_with_jieba(text: str, topK: int = 10) -> List[str]:
     """
-    从文本中提取关键词
+    使用jieba基于词性标注进行关键词提取
     Args:
         text: 输入文本
+        topK: 返回关键词数量
     Returns:
         关键词列表
     """
-    if not text or not text.strip():
-        return []
-    
     try:
-        # 去除标点符号，保留中英文、数字和空格
-        clean_text = re.sub(r'[^\w\s\u4e00-\u9fff]', ' ', text)
-        # 分词（按空格和标点分割）
-        words = re.split(r'\s+', clean_text)
+        # 进行分词和词性标注
+        words = pseg.cut(text)
         
-        # 定义停用词（常用词汇）
-        stop_words = {
-            # 中文停用词
-            '的', '是', '在', '有', '和', '了', '我', '你', '他', '她', '它', '这', '那', '一个', '什么', '怎么', '为什么', 
-            '可以', '能够', '应该', '需要', '想要', '希望', '觉得', '认为', '知道', '看到', '听到', '说', '做', '去',
-            '来', '会', '要', '把', '被', '给', '让', '使', '对', '向', '从', '到', '于', '为了', '因为', '所以',
-            '但是', '不过', '然而', '而且', '或者', '还是', '就是', '也是', '不是', '没有', '不会', '不能',
-            # 英文停用词
-            'the', 'is', 'are', 'was', 'were', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 
-            'of', 'with', 'by', 'from', 'as', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
-            'will', 'would', 'could', 'should', 'may', 'might', 'can', 'must', 'shall', 'this', 'that', 'these',
-            'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your',
-            'his', 'her', 'its', 'our', 'their', 'what', 'when', 'where', 'why', 'how', 'who', 'which'
-        }
+        # 基于词性筛选关键词
+        # n:名词, nr:人名, ns:地名, nt:机构名, nz:其他专名, vn:名动词，v:动词, a:形容词
+        # 可以根据需要添加更多词性：ad:副形词
+        target_pos = ('n', 'nr', 'ns', 'nt', 'nz', 'vn', 'v', 'a')
+        keywords = [w.word for w in words if w.flag in target_pos]
         
-        # 过滤关键词
-        keywords = []
-        for word in words:
-            word = word.strip().lower()
-            # 过滤条件：长度大于1，不是停用词，不是纯数字
-            if (len(word) > 1 and 
-                word not in stop_words and 
-                not word.isdigit() and
-                word.isalnum()):  # 只保留字母数字组合
-                keywords.append(word)
+        # 去重并限制数量
+        unique_keywords = list(set(keywords))
         
-        # 去重并保持原始大小写（取第一次出现的形式）
-        seen = set()
-        unique_keywords = []
-        for word in keywords:
-            if word not in seen:
-                seen.add(word)
-                unique_keywords.append(word)
-        
-        return unique_keywords[:10]  # 最多返回10个关键词
+        return unique_keywords[:topK]
         
     except Exception as e:
-        print(f"[错误] 关键词提取失败: {e}")
+        print(f"[错误] jieba词性标注关键词提取失败: {e}")
         return []
+
+
+def _extract_keywords(messages: List[Dict]) -> List[str]:
+    """
+    从消息列表中提取关键词
+    Args:
+        messages: 对话历史 [{"role": USERNAME/assistant, "content": content无格式， "timestamp": ISO格式时间戳YYYY_MM_DDTHH:MM:SS.XX}]
+    Returns:
+        关键词列表
+    """
+    user_keywords = []
+    
+    # 提取发言人和日期
+    if messages:
+        user_name = messages[-1].get("role", "")
+        if user_name:
+            user_keywords.append(user_name)
+        timestamp = messages[-1].get("timestamp", "")
+        if timestamp:
+            user_keywords.append(timestamp)
+    
+    # 获取最近的消息进行关键词提取
+    key_word_extract_message = get_recent_messages(messages, 20, 1)  # 增加字符数以获取更多上下文
+    
+    # 使用jieba对每一行的content进行关键词提取
+    for msg in key_word_extract_message:
+        content = msg.get("content", "").strip()
+        if content:
+            # 使用基于词性标注的关键词提取（更精确）
+            pos_keywords = _extract_keywords_with_jieba(content, topK=10)
+            user_keywords.extend(pos_keywords)
+    
+    # 去重并过滤空值
+    filtered_keywords = [kw for kw in user_keywords if kw]
+    unique_keywords = list(set(filtered_keywords))
+    if DEBUG_MODE:
+        print(f"[关键词提取] 提取到的关键词: {unique_keywords}")
+    
+    return unique_keywords
 
 
 def _handle_message_reply_task(task_number: int, message_to_proceed: List[Dict], todo_list: str, relevant_memories: str, work_history: str, on_response: Callable[[str], None]) -> tuple[str, str]:
@@ -372,10 +386,11 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         print("[INFO] 检测到空白消息，跳过处理")
         return ""
     
+    # 提取关键词
+    user_keywords = _extract_keywords(recent_messages)
+    
     # 消息格式化处理 - 直接使用recent_messages中的时间戳
     message_to_proceed = []
-    
-    # 处理所有recent_messages
     for msg in recent_messages:
         role = msg.get("role", "unknown")
         if role != "assistant":
@@ -389,18 +404,13 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
         formatted_content = f"[{timestamp}] <{name}> {content}"
         message_to_proceed.append({"role": role, "content": formatted_content})
 
-    # 在这里对用户的发言内容进行记忆
-    input_memory_id = record_messages_to_memories(message_to_proceed, USERNAME)
 
     # ======首先查询记忆======
     # 从用户最后一条消息中提取关键词
     keywords = []
-    user_keywords = []
-    last_message = recent_messages[-1] if recent_messages else None
-    if last_message:
-        user_keywords = _extract_keywords_from_text(last_message.get("content", "").strip())
-    assistant_keywords = extract_keywords(message_to_proceed)
-    keywords = list(set(user_keywords + assistant_keywords))
+    #assistant_keywords = extract_keywords(message_to_proceed)
+    #keywords = list(set(user_keywords + assistant_keywords))
+    keywords = user_keywords
     if is_neo4j_available():
         print(f"[记忆查询] 提取的关键词: {keywords}")
         relevant_memories = "neo4j链接错误，无法查询记忆。"
@@ -457,7 +467,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
                 todo_list, relevant_memories, work_history, on_response
             )
             # 将message replied添加到full_response中，作为后续任务的上下文
-            current_timestamp = datetime.datetime.now().isoformat(timespec='centiseconds')
+            current_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
             formatted_reply = f"[{current_timestamp}] <{AI_NAME}> {message_replied}"
             full_response.append({"role": "assistant", "content": formatted_reply})
 
@@ -595,20 +605,35 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
             task_number += 1
             todo_list += f"\n{task_number}. 消息回复（请总结并回复用户）"
             work_history, message_replied = _handle_message_reply_task(
-                task_number, "请总结并回复用户", message_to_proceed, 
+                task_number, message_to_proceed, 
                 todo_list, relevant_memories, work_history, on_response
             )
-            full_response += message_replied + "\n"
+            # 添加AI回复到消息列表
+            current_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
+            full_response.append({
+                "role": "assistant",
+                "content": message_replied,
+                "timestamp": current_timestamp
+            })
     else:
         # 如果工作历史为空，直接添加消息回复
         print(f"[执行] 工作历史为空，追加消息回复任务")
         task_number += 1
         todo_list += f"\n{task_number}. 消息回复（请总结并回复用户）"
         work_history, message_replied = _handle_message_reply_task(
-            task_number, "请总结并回复用户", message_to_proceed, 
+            task_number, message_to_proceed, 
             todo_list, relevant_memories, work_history, on_response
         )
-        full_response += message_replied + "\n"
+        # 添加AI回复到消息列表
+        current_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
+        full_response.append({
+            "role": "assistant",
+            "content": message_replied,
+            "timestamp": current_timestamp
+        })
+
+    # 在这里对用户的发言内容进行记忆
+    input_memory_id = record_messages_to_memories(message_to_proceed, USERNAME)
 
     return full_response
 
@@ -623,7 +648,7 @@ def chat_with_model(messages: List[Dict], on_response: Callable[[str], None]) ->
 
         # 从用户最后一条消息中提取关键词
         user_keywords = []
-        user_keywords = _extract_keywords_from_text(new_message.get("content", "").strip())
+        user_keywords = _extract_user_keywords(new_message.get("content", "").strip())
         if DEBUG_MODE:
             print(f"[DEBUG] 从用户消息中提取的关键词: {user_keywords}")
             print(f"[DEBUG] AI分析的记忆搜索关键词: {from_memory}")
@@ -659,10 +684,26 @@ def preload_model(timeout_sec: int = 30) -> bool:
         是否成功加载模型
     """
     print("模型加载中……", flush=True)
+    try:
+        messages = []
+        messages.append({"role": "system", "content": "这是模型预热测试，直接回复【确认】，不要做任何思考。"})
+        messages.append({"role": "user", "content": "测试"})
+        
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            stream=False,
+            temperature=0.7,
+        )
+        
+        return response.choices[0].message.content
+            
+    except Exception as e:
+        return f"[错误] {str(e)}"
     
     try:
         # 使用简单的同步调用进行预热，避免触发完整的聊天流程
-        test_response = call_model_sync("测试", "这是模型预热测试，请简单回复确认。")
+        test_response = call_model_sync("测试", "这是模型预热测试，直接回复【确认】，不要做任何思考。")
         
         if test_response and not test_response.startswith("[错误]"):
             print("✅ 模型加载完成", flush=True)
@@ -718,17 +759,41 @@ def test_chat():
     model_loaded = preload_model()
     print(f"模型加载状态: {'成功' if model_loaded else '失败'}")
     print("-" * 50)
-    
+
     # 测试对话
-    messages = [{"role": "user", "content": "你好，请介绍一下你自己"}]
-    
-    def on_chunk(chunk):
-        print(chunk, end="", flush=True)
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": "[2025_11_20T15:02:23.151] <星空> 你好"}
+        ]
     
     print("模型回复: ", end="", flush=True)
-    reply = chat_with_model(messages, on_chunk)
+    
+    # 使用流式输出来接收思考过程
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        stream=True,  # 启用流式输出
+        temperature=0.1,
+    )
+    
+    reply = ""
+    thinking_content = ""
+    for chunk in response:
+        if chunk.choices[0].delta.content is not None:
+            reply += chunk.choices[0].delta.content
+            thinking_part = chunk.choices[0].delta.reasoning
+            print(f"{thinking_part}", end="", flush=True)
+
+
+    # 如果有思考内容，分别显示
+    if thinking_content:
+        print(f"\n💭 思考过程: {thinking_content}")
+        print(f"📝 回复内容: {reply}")
+    
     print("\n" + "-" * 50)
     print(f"完整回复长度: {len(reply)} 字符")
+    if thinking_content:
+        print(f"思考过程长度: {len(thinking_content)} 字符")
 
 
 if __name__ == "__main__":

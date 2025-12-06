@@ -13,7 +13,7 @@
 【五元组记忆规则】
 五元组的特征：句子包含动作/行为，并且具有时间或地点要素，或描述用户做过某事。
 格式为 (主体 Subject, 动作 Action, 宾语 Object, 时间 Time, 地点 Location, 重要性 Importance)
-若多个角色执行同一事件，如<A><B><C>一起去吃饭，需要额外添加：同行者 with, 主动性 initiative
+若多个角色执行同一事件，如<A><B><C>一起去吃饭，需要额外添加：同行者 with, 指向性 directivity
 若某项缺失请填 null
 重要性依照以下依据判断：
 - 对其他事件的记录，范围0.10-0.50，如：[某个时间]<某人>讲述了某件事。
@@ -82,7 +82,7 @@
     "time": "2025年10月1日18点",
     "location": 游乐园,
     "with": ["B"],
-    "initiative": true,
+    "directivity": true,
     "importance":0.58
   }
 }]
@@ -109,7 +109,7 @@
     "time": "2025年10月31日18点",
     "location": null,
     "with": ["B","C"],
-    "initiative": false,
+    "directivity": false,
     "importance":0.65
   }
 }]

@@ -137,12 +137,12 @@ def extract_keywords(message_to_proceed: List[Dict]) -> List[str]:
     """
     if DEBUG_MODE:
         print(f"[DEBUG] 关键词提取接收到: ")
-        for msg in enumerate(message_to_proceed):            
-            print(f"    {msg.get("content", "")}")
+        for msg in message_to_proceed:            
+            print(f"{msg.get('content', '')}")
     
     # 构建包含系统提示词的完整消息列表
     messages = [{"role": "system", "content": EXTRACT_KEYWORDS_PROMPT}] + message_to_proceed
-        
+
     # 调用模型进行关键词提取
     response = client.chat.completions.create(
         model=MODEL,
@@ -150,11 +150,11 @@ def extract_keywords(message_to_proceed: List[Dict]) -> List[str]:
         stream=False,
         temperature=0.3
     )
-    
+
     full_response = response.choices[0].message.content
     if DEBUG_MODE:
         print(f"[DEBUG] 关键词提取原始响应: {repr(full_response)}")
-    
+
     if not full_response:
         return []
     
@@ -192,13 +192,13 @@ def analyze_intent(message_to_proceed: List[Dict], relevant_memories: str) -> Tu
 
     if DEBUG_MODE:
         print(f"[DEBUG] 意图分析接收到: ")
-        for msg in enumerate(input_messages):            
-            print(f"    {msg.get("content", "")}")
+        for msg in input_messages:            
+            print(f"{msg.get('content', '')}")
 
     # 构建包含系统提示词的完整消息列表
     messages = [{"role": "system", "content": INTENT_ANALYSIS_PROMPT}] + input_messages
         
-    # 调用模型进行关键词提取
+    # 调用模型进行意图分析
     response = client.chat.completions.create(
         model=MODEL,
         messages=messages,
@@ -243,9 +243,9 @@ def generate_response(message_to_proceed: List[Dict], todo_list: str, relevant_m
     input_messages = [{"role": "system", "content": f"[任务列表]：\n{todo_list}"}] + [{"role": "system", "content": f"[工作记录]：\n{work_history}"}] + [{"role": "system", "content": f"[相关记忆]：\n{relevant_memories}"}] + message_to_proceed
 
     if DEBUG_MODE:
-        print(f"[DEBUG] 意图分析接收到: ")
-        for msg in enumerate(input_messages):            
-            print(f"    {msg.get("content", "")}")
+        print(f"[DEBUG] 输出回复接收到: ")
+        for msg in input_messages:
+            print(f"{msg.get("content", "")}")
 
     # 替换提示词中的占位符
     prompt = GENERATE_RESPONSE_PROMPT.replace("{AI_NAME}", AI_NAME).replace("{USERNAME}", USERNAME)
@@ -304,8 +304,8 @@ def tool_call(todo_list: str, tools_available: str) -> Dict[str, Any]:
 
     if DEBUG_MODE:
         print(f"[DEBUG] 意图分析接收到: ")
-        for msg in enumerate(input_messages):            
-            print(f"    {msg.get("content", "")}")
+        for msg in input_messages:            
+            print(f"{msg.get("content", "")}")
 
     # 构建包含系统提示词的完整消息列表
     messages = [{"role": "system", "content": TOOL_CALL_PROMPT}] + input_messages
