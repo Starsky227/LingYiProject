@@ -1,13 +1,67 @@
 {
   "nodes": [
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:0",
       "labels": [
-        "Time"
+        "Character"
       ],
       "properties": {
-        "time": "6月1日",
-        "name": "6月1日",
+        "significance": 1,
+        "importance": 0.8,
+        "trust": 0.8,
+        "name": "星空",
+        "created_at": "2025-12-09T16:43:58.623555",
+        "last_updated": "2025-12-09T16:43:58.623555",
+        "node_type": "Character"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "name": "测试",
+        "created_at": "2025-12-12T17:26:36.444959",
+        "last_updated": "2025-12-12T17:26:36.444959",
+        "node_type": "Entity",
+        "note": "无"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:2",
+      "labels": [
+        "Location"
+      ],
+      "properties": {
+        "name": "北京",
+        "node_type": "Location"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "time": "2025年12月6日",
+        "name": "6日",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:4",
+      "labels": [
+        "Time",
+        "Month"
+      ],
+      "properties": {
+        "time": "2025年5月",
+        "name": "5月",
         "node_type": "Time",
         "type": "static"
       }
@@ -16,13 +70,13 @@
       "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
       "labels": [
         "Time",
-        "Day"
+        "Hour"
       ],
       "properties": {
-        "time": "5月10日",
-        "name": "10日",
+        "time": "2025年12月6日13点",
+        "name": "13点",
         "node_type": "Time",
-        "type": "recurring"
+        "type": "static"
       }
     },
     {
@@ -32,7 +86,7 @@
         "Month"
       ],
       "properties": {
-        "time": "2025年12月1日",
+        "time": "2025年12月",
         "name": "12月",
         "node_type": "Time",
         "type": "static"
@@ -45,8 +99,8 @@
         "Day"
       ],
       "properties": {
-        "time": "2025年12月6日13点27分32秒",
-        "name": "6日",
+        "time": "2025年12月13日",
+        "name": "13日",
         "node_type": "Time",
         "type": "static"
       }
@@ -54,29 +108,44 @@
     {
       "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8",
       "labels": [
-        "Time",
-        "Hour"
+        "Entity"
       ],
       "properties": {
-        "time": "2025年12月6日13点27分32秒",
-        "name": "13点",
-        "node_type": "Time",
-        "type": "static"
+        "significance": 1,
+        "importance": 0.5,
+        "name": "聊天",
+        "created_at": "2025-12-13T14:10:18.146839",
+        "last_updated": "2025-12-13T14:10:18.146839",
+        "node_type": "Entity",
+        "note": "无"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 1,
+        "importance": 0.5,
+        "name": "苹果",
+        "created_at": "2025-12-13T14:16:59.250920",
+        "last_updated": "2025-12-13T14:16:59.250920",
+        "node_type": "Entity",
+        "note": "无"
       }
     },
     {
       "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
       "labels": [
         "Time",
-        "WeekDay"
+        "Hour"
       ],
       "properties": {
-        "week_number": "1",
-        "time": "9月第1个星期一",
-        "weekday": "一",
-        "name": "第1周星期一",
+        "time": "2025年12月13日13点",
+        "name": "13点",
         "node_type": "Time",
-        "type": "recurring"
+        "type": "static"
       }
     },
     {
@@ -90,30 +159,6 @@
         "name": "1日",
         "node_type": "Time",
         "type": "static"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:50",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "source": "logs/chat_logs_2025_11_03.txt",
-        "name": "赛车比赛",
-        "last_updated": "2025-11-04T20:13",
-        "confidence": 0.5
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:57",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "source": "logs/chat_logs_2025_11_03.txt",
-        "name": "10点",
-        "last_updated": "2025-11-04T20:13",
-        "confidence": 0.5
       }
     },
     {
@@ -150,28 +195,13 @@
       ],
       "properties": {
         "time_type": "year",
-        "time": "2025年12月1日",
+        "time": "2025年",
         "source": "logs/chat_logs_2025_11_03.txt",
         "name": "2025年",
         "last_updated": "2025-11-04T20:13",
         "year": 2025,
         "node_type": "Time",
         "type": "static"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
-      "labels": [
-        "Time",
-        "Month"
-      ],
-      "properties": {
-        "time_type": "month",
-        "source": "logs/chat_logs_2025_11_03.txt",
-        "name": "11月",
-        "month": 11,
-        "last_updated": "2025-11-04T20:13",
-        "year": 2025
       }
     },
     {
@@ -182,12 +212,15 @@
       ],
       "properties": {
         "time_type": "day",
+        "time": "2025年12月3日",
         "source": "logs/chat_logs_2025_11_03.txt",
         "name": "3日",
         "month": 11,
         "last_updated": "2025-11-04T20:13",
         "year": 2025,
-        "day": 3
+        "day": 3,
+        "node_type": "Time",
+        "type": "static"
       }
     },
     {
@@ -198,17 +231,87 @@
       ],
       "properties": {
         "time_type": "hour",
+        "time": "2025年12月13日14点",
         "source": "logs/chat_logs_2025_11_03.txt",
         "name": "14点",
         "month": 11,
         "last_updated": "2025-11-04T20:13",
         "year": 2025,
         "hour": 14,
-        "day": 3
+        "day": 3,
+        "node_type": "Time",
+        "type": "static"
       }
     }
   ],
   "relationships": [
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1164256369977589760",
+      "type": "测试",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:0",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "测试",
+        "created_at": "2025-12-10T22:12:58.926796",
+        "last_updated": "2025-12-10T22:12:58.926796",
+        "confidence": 0.75,
+        "directivity": "to_A"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153000669444046848",
+      "type": "做了",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:0",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "做了",
+        "created_at": "2025-12-13T14:11:18.247520",
+        "confidence": 0.75,
+        "directivity": "to_B"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152924803141730305",
+      "type": "HAPPENED_AT",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:4",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "HAPPENED_AT",
+        "created_at": "2025-12-19T17:01:38.779697",
+        "confidence": 0.75,
+        "directivity": "to_A"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191363",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "properties": {
+        "hierarchy_type": "day_to_month"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191364",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:4",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69",
+      "properties": {
+        "hierarchy_type": "month_to_year"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191365",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "properties": {
+        "hierarchy_type": "hour_to_day"
+      }
+    },
     {
       "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191366",
       "type": "BELONGS_TO",
@@ -228,9 +331,35 @@
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191368",
-      "type": "BELONGS_TO",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965195",
+      "type": "HAPPENED_AT",
       "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "HAPPENED_AT",
+        "created_at": "2025-12-13T15:48:15.759418",
+        "confidence": 0.75,
+        "directivity": "to_A"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152924803141730314",
+      "type": "HAPPENED_AT",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "HAPPENED_AT",
+        "created_at": "2025-12-13T14:17:13.161929",
+        "confidence": 0.75,
+        "directivity": "to_A"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191371",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
       "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
       "properties": {
         "hierarchy_type": "hour_to_day"
@@ -246,33 +375,30 @@
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152995171885908018",
-      "type": "开始",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:50",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:57",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917560913478287362",
+      "type": "HAPPENED_IN",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:2",
       "properties": {
-        "source": "logs/chat_logs_2025_11_03.txt",
-        "predicate": "开始",
-        "created_at": "2025-11-04T20:13",
-        "last_updated": "2025-11-04T20:13",
-        "confidence": 0.5,
-        "type": "triple"
+        "source": "manual_input",
+        "predicate": "HAPPENED_IN",
+        "created_at": "2025-12-19T17:01:26.199570",
+        "confidence": 0.75,
+        "directivity": "to_B"
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152955589467308095",
-      "type": "告知",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155249170722848831",
+      "type": "测试",
       "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63",
       "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
       "properties": {
-        "time": "2025年11月03日14点",
-        "importance": 0.75,
-        "source": "logs/chat_logs_2025_11_03.txt",
-        "action": "告知",
-        "created_at": "2025-11-04T20:13",
-        "last_updated": "2025-11-04T20:13",
-        "confidence": 0.5,
-        "type": "quintuple"
+        "source": "manual_input",
+        "predicate": "测试",
+        "created_at": "2025-12-10T17:41:11.469661",
+        "last_updated": "2025-12-10T17:41:11.469661",
+        "confidence": 0.75,
+        "directivity": "to_A"
       }
     },
     {
@@ -282,30 +408,36 @@
       "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72",
       "properties": {
         "importance": 0.75,
-        "source": "logs/chat_logs_2025_11_03.txt",
+        "source": "neo4j",
+        "predicate": "HAPPENED_AT",
         "action_context": "告知",
         "created_at": "2025-11-04T20:13",
-        "last_updated": "2025-11-04T20:13"
+        "last_updated": "2025-12-10T16:43:19.392933",
+        "confidence": 0.75,
+        "directivity": "to_target"
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191430",
-      "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1162004570163904579",
+      "type": "测试",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63",
       "properties": {
-        "hierarchy_type": "month_to_year",
-        "created_at": "2025-11-04T20:13"
+        "source": "manual_input",
+        "predicate": "测试",
+        "created_at": "2025-12-10T17:41:34.230339",
+        "last_updated": "2025-12-10T17:41:53.214094",
+        "confidence": 0.75,
+        "directivity": "to_target"
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191431",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6919818210850111494",
       "type": "BELONGS_TO",
       "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:71",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:70",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
       "properties": {
-        "hierarchy_type": "day_to_month",
-        "created_at": "2025-11-04T20:13"
+        "hierarchy_type": "day_to_month"
       }
     },
     {
@@ -324,5 +456,5 @@
     "neo4j_uri": "neo4j://127.0.0.1:7687",
     "neo4j_database": "neo4j"
   },
-  "updated_at": "2025-12-06T02:08:01.056452"
+  "updated_at": "2025-12-19T18:20:42.774453"
 }
