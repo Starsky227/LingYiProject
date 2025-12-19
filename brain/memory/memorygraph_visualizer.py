@@ -14,6 +14,10 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 import webbrowser
+import signal
+import threading
+import time
+import atexit
 
 # 设置日志级别为WARNING，避免显示INFO级别的日志
 logging.getLogger().setLevel(logging.WARNING)
@@ -84,6 +88,7 @@ class MemoryGraphViewer:
         """合并本地和Neo4j数据"""
         merged_nodes = []
         merged_relationships = []
+        relationship_map = {}  # 用于检测重复关系
         
         # 添加本地节点
         if self.local_data and "nodes" in self.local_data:
@@ -93,13 +98,28 @@ class MemoryGraphViewer:
         if self.neo4j_data and "nodes" in self.neo4j_data:
             merged_nodes.extend(self.neo4j_data["nodes"])
         
-        # 添加本地关系
+        # 添加本地关系（标记为本地来源）
         if self.local_data and "relationships" in self.local_data:
-            merged_relationships.extend(self.local_data["relationships"])
+            for rel in self.local_data["relationships"]:
+                rel_key = f"{rel['start_node']}-{rel['type']}-{rel['end_node']}"
+                rel_copy = rel.copy()
+                rel_copy["source_type"] = "local"
+                merged_relationships.append(rel_copy)
+                relationship_map[rel_key] = len(merged_relationships) - 1  # 记录关系位置
         
-        # 添加Neo4j关系
+        # 添加Neo4j关系（标记为Neo4j来源，检测重复）
         if self.neo4j_data and "relationships" in self.neo4j_data:
-            merged_relationships.extend(self.neo4j_data["relationships"])
+            for rel in self.neo4j_data["relationships"]:
+                rel_key = f"{rel['start_node']}-{rel['type']}-{rel['end_node']}"
+                if rel_key in relationship_map:
+                    # 关系已存在，更新为双端存储
+                    existing_index = relationship_map[rel_key]
+                    merged_relationships[existing_index]["source_type"] = "both"
+                else:
+                    # 新关系，添加为Neo4j来源
+                    rel_copy = rel.copy()
+                    rel_copy["source_type"] = "neo4j"
+                    merged_relationships.append(rel_copy)
         
         return {
             "nodes": merged_nodes,
@@ -170,24 +190,27 @@ class MemoryGraphViewer:
             
             # 根据节点类型设置不同颜色和大小
             if "Entity" in node["labels"]:
-                viz_node["color"] = "#FF9800"
+                viz_node["color"] = "#FFD700"  # 黄色 - 实体
                 viz_node["size"] = 15
             elif "Time" in node["labels"]:
-                viz_node["color"] = "#4CAF50"
+                viz_node["color"] = "#4CAF50"  # 绿色 - 时间
                 viz_node["size"] = 12
-            elif "User" in node["labels"]:
-                viz_node["color"] = "#2196F3"
+            elif "Location" in node["labels"]:
+                viz_node["color"] = "#FF9800"  # 橙色 - 角色
+                viz_node["size"] = 12
+            elif "Character" in node["labels"]:
+                viz_node["color"] = "#2196F3"  # 蓝色 - 地点
                 viz_node["size"] = 12
             else:
-                viz_node["color"] = "#9E9E9E"
+                viz_node["color"] = "#9E9E9E"  # 灰色 - 其他
             
             # 根据数据来源设置描边颜色
             source = self.get_node_source(node["id"])
             if source == "local":
-                viz_node["strokeColor"] = "#00FF00"  # 绿色描边 - 只在本地
+                viz_node["strokeColor"] = "#808080"  # 灰色描边 - 只在本地
                 viz_node["strokeWidth"] = 3
             elif source == "neo4j":
-                viz_node["strokeColor"] = "#808080"  # 灰色描边 - 只在Neo4j
+                viz_node["strokeColor"] = "#00FF00"  # 绿色描边 - 只在Neo4j
                 viz_node["strokeWidth"] = 3
             elif source == "both":
                 viz_node["strokeColor"] = "#0066FF"  # 蓝色描边 - 两者都有
@@ -210,7 +233,8 @@ class MemoryGraphViewer:
                     "target": node_id_map[rel["end_node"]],
                     "type": rel["type"],
                     "properties": rel["properties"],
-                    "neo4j_id": rel["id"]
+                    "neo4j_id": rel["id"],
+                    "source_type": rel.get("source_type", "neo4j")  # 默认为neo4j
                 }
                 links.append(viz_link)
         
@@ -241,1680 +265,15 @@ class MemoryGraphViewer:
             "neo4j_connected": self.neo4j_connected
         }
     
-    def generate_html_template(self) -> str:
-        """生成HTML模板"""
-        return """
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>记忆图谱可视化</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f5f5f5;
-        }
-        
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 10px;
-            text-align: center;
-        }
-        
-        .container {
-            display: flex;
-            height: calc(100vh - 50px);
-        }
-        
-        .sidebar {
-            width: 280px;
-            background: white;
-            padding: 15px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
-            overflow-y: auto;
-        }
-        
-        .main-content {
-            flex: 1;
-            position: relative;
-        }
-        
-        #graph-container {
-            width: 100%;
-            height: 100%;
-            background: white;
-        }
-        
-        .stat-card {
-            background: #f8f9fa;
-            border-radius: 6px;
-            padding: 12px;
-            margin-bottom: 12px;
-            border-left: 3px solid #667eea;
-        }
-        
-        .stat-title {
-            font-weight: bold;
-            color: #333;
-            margin-bottom: 10px;
-        }
-        
-        .stat-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-            font-size: 14px;
-        }
-        
-        .node-details {
-            background: #fff;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 15px;
-            border: 1px solid #e0e0e0;
-            display: none;
-        }
-        
-        .detail-title {
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 10px;
-            border-bottom: 1px solid #e0e0e0;
-            padding-bottom: 5px;
-        }
-        
-        .property-item {
-            margin-bottom: 8px;
-            font-size: 13px;
-        }
-        
-        .property-key {
-            font-weight: bold;
-            color: #555;
-        }
-        
-        .property-value {
-            color: #777;
-            margin-left: 10px;
-        }
-        
-        .node {
-            cursor: pointer;
-        }
-        
-        .node:hover {
-            stroke: #333 !important;
-            stroke-width: 4px !important;
-        }
-        
-        .link {
-            stroke: #999;
-            stroke-opacity: 0.6;
-            stroke-width: 1.5px;
-        }
-        
-        .link:hover {
-            stroke: #333;
-            stroke-opacity: 0.8;
-            stroke-width: 2px;
-        }
-        
-        .node-label {
-            font-size: 11px;
-            text-anchor: middle;
-            pointer-events: none;
-            fill: #333;
-            font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
-        }
-        
-        .link-label {
-            font-size: 10px;
-            text-anchor: middle;
-            pointer-events: none;
-            fill: #666;
-            font-style: italic;
-            background: rgba(255,255,255,0.8);
-        }
-        
-        .controls {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-        }
-        
-        .control-button {
-            margin: 2px;
-            padding: 5px 10px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        
-        .zoom-controls {
-            background: #667eea;
-            color: white;
-        }
-        
-        .filter-controls {
-            background: #28a745;
-            color: white;
-        }
-        
-        .edit-controls {
-            background: #6f42c1;
-            color: white;
-        }
-        
-        .refresh-controls {
-            background: #fd7e14;
-            color: white;
-        }
-        
-        .refresh-controls:hover {
-            background: #e8590c;
-        }
-        
-        .edit-controls:disabled {
-            background: #cccccc;
-            color: #666666;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        
-        .legend {
-            position: absolute;
-            top: 60px;
-            left: 10px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 8px;
-            border-radius: 5px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            font-size: 11px;
-            max-width: 120px;
-        }
-        
-        .legend-item {
-            display: flex;
-            align-items: center;
-            margin-bottom: 3px;
-        }
-        
-        .legend-color {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        
-        /* 节点编辑面板样式 */
-        .edit-panel {
-            position: fixed;
-            top: 0;
-            right: -400px;
-            width: 380px;
-            height: 100vh;
-            background: white;
-            box-shadow: -2px 0 10px rgba(0,0,0,0.3);
-            z-index: 1000;
-            transition: right 0.3s ease;
-            overflow-y: auto;
-        }
-        
-        .edit-panel.show {
-            right: 0;
-        }
-        
-        /* 节点创建模式下的样式 */
-        .creating-node {
-            cursor: crosshair !important;
-        }
-        
-        .creating-node .graph-container {
-            cursor: crosshair !important;
-        }
-        
-        .edit-panel-header {
-            background: #6f42c1;
-            color: white;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid #5a2d91;
-        }
-        
-        .edit-panel-header h3 {
-            margin: 0;
-            font-size: 18px;
-        }
-        
-        .close-button {
-            background: none;
-            border: none;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .close-button:hover {
-            background: rgba(255,255,255,0.2);
-        }
-        
-        .edit-panel-content {
-            padding: 20px;
-        }
-        
-        .edit-buttons-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-        
-        .edit-function-button {
-            flex: 1;
-            padding: 12px 8px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            background: white;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 6px;
-            transition: all 0.2s ease;
-            font-size: 12px;
-            min-width: 0;
-        }
-        
-        .edit-function-button:hover {
-            border-color: #6f42c1;
-            background: #f8f6ff;
-            transform: translateY(-1px);
-        }
-        
-        .edit-function-button.active {
-            border-color: #6f42c1;
-            background: #6f42c1;
-            color: white;
-        }
-        
-        .edit-function-button:disabled {
-            background: #f5f5f5;
-            color: #cccccc;
-            border-color: #e0e0e0;
-            cursor: not-allowed;
-            opacity: 0.6;
-        }
-        
-        .edit-function-button:disabled:hover {
-            background: #f5f5f5;
-            border-color: #e0e0e0;
-            transform: none;
-        }
-        
-        .button-icon {
-            font-size: 16px;
-        }
-        
-        .button-text {
-            font-weight: 500;
-            font-size: 11px;
-            text-align: center;
-            white-space: nowrap;
-        }
-        
-        .edit-forms {
-            border-top: 1px solid #e0e0e0;
-            padding-top: 20px;
-            margin-top: 20px;
-        }
-        
-        .edit-form {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 15px;
-        }
-        
-        .edit-form h4 {
-            margin: 0 0 15px 0;
-            color: #333;
-            font-size: 16px;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #555;
-            font-size: 13px;
-        }
-        
-        .form-group input, .form-group select, .form-group textarea {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        
-        .form-group textarea {
-            resize: vertical;
-            min-height: 60px;
-        }
-        
-        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-            outline: none;
-            border-color: #6f42c1;
-            box-shadow: 0 0 0 2px rgba(111, 66, 193, 0.1);
-        }
-        
-        .warning-text {
-            color: #dc3545;
-            font-size: 13px;
-            margin: 0;
-            padding: 10px;
-            background: #fff5f5;
-            border: 1px solid #fed7d7;
-            border-radius: 4px;
-        }
-        
-        .form-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        
-        .action-btn {
-            flex: 1;
-            padding: 10px 15px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        
-        .confirm-btn {
-            background: #28a745;
-            color: white;
-        }
-        
-        .confirm-btn:hover {
-            background: #218838;
-        }
-        
-        .danger-btn {
-            background: #dc3545;
-            color: white;
-        }
-        
-        .danger-btn:hover {
-            background: #c82333;
-        }
-        
-        .cancel-btn {
-            background: #6c757d;
-            color: white;
-        }
-        
-        .cancel-btn:hover {
-            background: #5a6268;
-        }
-        
-        /* 节点类型选择按钮样式 */
-        .node-type-buttons {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #e0e0e0;
-        }
-        
-        .node-type-button {
-            flex: 1;
-            padding: 15px 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            background: white;
-            cursor: pointer;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.2s ease;
-            min-width: 0;
-        }
-        
-        .node-type-button:hover {
-            border-color: #4CAF50;
-            background: #f8fff8;
-            transform: translateY(-1px);
-        }
-        
-        .node-type-button.selected {
-            border-color: #4CAF50;
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .node-type-icon {
-            font-size: 20px;
-        }
-        
-        .node-type-text {
-            font-weight: 500;
-            font-size: 12px;
-            text-align: center;
-            white-space: nowrap;
-        }
-        
-        /* 时间节点表单样式 */
-        .time-node-form {
-            padding: 20px;
-            background: #f9f9f9;
-            border-radius: 8px;
-            margin-top: 15px;
-        }
-        
-        .time-node-form h4 {
-            margin: 0 0 15px 0;
-            color: #333;
-            font-size: 16px;
-        }
-        
-        .form-group {
-            margin-bottom: 15px;
-        }
-        
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 500;
-            color: #555;
-        }
-        
-        .time-input {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            font-size: 14px;
-            box-sizing: border-box;
-        }
-        
-        .time-input:focus {
-            border-color: #4CAF50;
-            outline: none;
-        }
-        
-        .time-format-help {
-            margin-top: 10px;
-            padding: 10px;
-            background: #fff;
-            border: 1px solid #e0e0e0;
-            border-radius: 4px;
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .time-format-help ul {
-            margin: 5px 0 0 0;
-            padding-left: 20px;
-        }
-        
-        .time-format-help li {
-            margin: 2px 0;
-        }
-        
-        .form-buttons {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 15px;
-        }
-        
-        .create-btn, .cancel-btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.2s ease;
-        }
-        
-        .create-btn {
-            background: #4CAF50;
-            color: white;
-        }
-        
-        .create-btn:hover {
-            background: #45a049;
-        }
-        
-        .create-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-        
-        .cancel-btn {
-            background: #f44336;
-            color: white;
-        }
-        
-        .cancel-btn:hover {
-            background: #da190b;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <h1>🧠 心智云图</h1>
-    </div>
-    
-    <div class="container">
-        <div class="sidebar">
-            <div class="stat-card">
-                <div class="stat-title">📊 图谱统计</div>
-                <div class="stat-item">
-                    <span>节点总数:</span>
-                    <span id="total-nodes">-</span>
-                </div>
-                <div class="stat-item">
-                    <span>关系总数:</span>
-                    <span id="total-links">-</span>
-                </div>
-                <div class="stat-item">
-                    <span>更新时间:</span>
-                    <span id="updated-time">-</span>
-                </div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-title">🏷️ 节点类型</div>
-                <div id="node-types"></div>
-            </div>
-            
-            <div class="stat-card">
-                <div class="stat-title">🔗 关系类型</div>
-                <div id="relation-types"></div>
-            </div>
-            
-            <div class="node-details" id="node-details">
-                <div class="detail-title" id="detail-title">节点详情</div>
-                <div id="node-properties"></div>
-            </div>
-        </div>
-        
-        <div class="main-content">
-            <svg id="graph-container"></svg>
-            
-            <div class="controls">
-                <button class="control-button refresh-controls" onclick="refreshData()">🔄 刷新</button>
-                <button class="control-button zoom-controls" onclick="resetZoom()">重置</button>
-                <button class="control-button filter-controls" onclick="toggleNodeLabels()">节点标签</button>
-                <button class="control-button filter-controls" onclick="toggleLinkLabels()">关系标签</button>
-                <button class="control-button edit-controls" id="edit-button">节点编辑</button>
-            </div>
-            
-            <div class="legend">
-                <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #ccc; padding-bottom: 2px; font-size: 10px;">节点类型</div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background-color: #FF9800; width: 10px; height: 10px; margin-right: 6px;"></div>
-                    <span style="font-size: 10px;">实体</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background-color: #4CAF50; width: 10px; height: 10px; margin-right: 6px;"></div>
-                    <span style="font-size: 10px;">时间</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background-color: #2196F3; width: 10px; height: 10px; margin-right: 6px;"></div>
-                    <span style="font-size: 10px;">用户</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background-color: #9E9E9E; width: 10px; height: 10px; margin-right: 6px;"></div>
-                    <span style="font-size: 10px;">其他</span>
-                </div>
-                
-                <div style="font-weight: bold; margin: 8px 0 6px 0; border-bottom: 1px solid #ccc; padding-bottom: 2px; font-size: 10px;">数据来源</div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #808080; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">本地</span>
-                </div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #00FF00; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">Neo4j</span>
-                </div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #0066FF; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">双源</span>
-                </div>
-            </div>
-        </div>
-        
-        <!-- 节点编辑面板 -->
-        <div class="edit-panel" id="edit-panel">
-            <div class="edit-panel-header">
-                <h3>节点编辑</h3>
-                <button class="close-button" onclick="toggleEditPanel()">×</button>
-            </div>
-            <div class="edit-panel-content">
-                <div class="edit-buttons-row">
-                    <button class="edit-function-button add-node-btn" onclick="showAddNodeForm()">
-                        <span class="button-icon">➕</span>
-                        <span class="button-text">添加</span>
-                    </button>
-                    <button class="edit-function-button modify-node-btn" onclick="showModifyNodeForm()">
-                        <span class="button-icon">✏️</span>
-                        <span class="button-text">修改</span>
-                    </button>
-                    <button class="edit-function-button link-node-btn" onclick="showLinkNodeForm()">
-                        <span class="button-icon">🔗</span>
-                        <span class="button-text">链接</span>
-                    </button>
-                    <button class="edit-function-button delete-node-btn" onclick="showDeleteNodeForm()">
-                        <span class="button-icon">🗑️</span>
-                        <span class="button-text">删除</span>
-                    </button>
-                </div>
-            </div>
-            
-            <!-- 功能表单区域 -->
-            <div class="edit-forms">
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // 图谱数据占位符
-        const graphData = {{GRAPH_DATA}};
-        
-        // 全局变量跟踪当前选中的项目
-        let selectedItem = null;
-        
-        // 设置画布
-        const svg = d3.select("#graph-container");
-        const width = svg.node().getBoundingClientRect().width;
-        const height = svg.node().getBoundingClientRect().height;
-        
-        svg.attr("width", width).attr("height", height);
-        
-        // 创建缩放行为
-        const zoom = d3.zoom()
-            .scaleExtent([0.1, 3])
-            .on("zoom", function(event) {
-                container.attr("transform", event.transform);
-            });
-        
-        svg.call(zoom);
-        
-        // 创建容器组
-        const container = svg.append("g");
-        
-        // 创建力导向图
-        const simulation = d3.forceSimulation(graphData.nodes)
-            .force("link", d3.forceLink(graphData.links).id(d => d.id).distance(100))
-            .force("charge", d3.forceManyBody().strength(-300))
-            .force("center", d3.forceCenter(width / 2, height / 2))
-            .force("collision", d3.forceCollide().radius(d => d.size + 5));
-        
-        // 创建箭头标记
-        container.append("defs").selectAll("marker")
-            .data(["end"])
-            .enter().append("marker")
-            .attr("id", "arrow")
-            .attr("viewBox", "0 -5 10 10")
-            .attr("refX", 20)
-            .attr("refY", 0)
-            .attr("markerWidth", 6)
-            .attr("markerHeight", 6)
-            .attr("orient", "auto")
-            .append("path")
-            .attr("d", "M0,-5L10,0L0,5")
-            .attr("fill", "#999");
-        
-        // 创建链接
-        let link = container.append("g")
-            .selectAll("line")
-            .data(graphData.links)
-            .enter().append("line")
-            .attr("class", "link")
-            .attr("marker-end", "url(#arrow)")
-            .on("click", showLinkDetails);
-        
-        // 创建节点
-        let node = container.append("g")
-            .selectAll("circle")
-            .data(graphData.nodes)
-            .enter().append("circle")
-            .attr("class", "node")
-            .attr("r", d => d.size)
-            .attr("fill", d => d.color)
-            .attr("stroke", d => d.strokeColor)
-            .attr("stroke-width", d => d.strokeWidth)
-            .on("click", showNodeDetails)
-            .call(d3.drag()
-                .on("start", dragstarted)
-                .on("drag", dragged)
-                .on("end", dragended));
-        
-        // 创建节点标签（显示在节点上）
-        let nodeLabels = container.append("g")
-            .selectAll("text")
-            .data(graphData.nodes)
-            .enter().append("text")
-            .attr("class", "node-label")
-            .text(d => d.label.length > 8 ? d.label.substring(0, 8) + "..." : d.label)
-            .style("display", "block");
-        
-        // 创建关系标签背景
-        let linkLabelBgs = container.append("g")
-            .selectAll("rect")
-            .data(graphData.links)
-            .enter().append("rect")
-            .attr("class", "link-label-bg")
-            .attr("fill", "rgba(255,255,255,0.8)")
-            .attr("stroke", "rgba(200,200,200,0.5)")
-            .attr("stroke-width", 0.5)
-            .attr("rx", 3)
-            .attr("ry", 3);
-        
-        // 创建关系标签（显示在连接线上）
-        let linkLabels = container.append("g")
-            .selectAll("text")
-            .data(graphData.links)
-            .enter().append("text")
-            .attr("class", "link-label")
-            .text(d => {
-                // 优先显示predicate或action属性，否则显示关系类型
-                if (d.properties && d.properties.predicate) {
-                    return d.properties.predicate.length > 10 ? d.properties.predicate.substring(0, 10) + "..." : d.properties.predicate;
-                } else if (d.properties && d.properties.action) {
-                    return d.properties.action.length > 10 ? d.properties.action.substring(0, 10) + "..." : d.properties.action;
-                } else {
-                    return d.type.length > 10 ? d.type.substring(0, 10) + "..." : d.type;
-                }
-            })
-            .style("display", "block");
-        
-        // 更新位置
-        simulation.on("tick", () => {
-            link
-                .attr("x1", d => d.source.x)
-                .attr("y1", d => d.source.y)
-                .attr("x2", d => d.target.x)
-                .attr("y2", d => d.target.y);
-            
-            node
-                .attr("cx", d => d.x)
-                .attr("cy", d => d.y);
-            
-            // 节点标签跟随节点
-            nodeLabels
-                .attr("x", d => d.x)
-                .attr("y", d => d.y + 4); // 稍微向下偏移，让文字在节点中心偏下
-            
-            // 关系标签显示在连接线的中点
-            linkLabels
-                .attr("x", d => (d.source.x + d.target.x) / 2)
-                .attr("y", d => (d.source.y + d.target.y) / 2 - 5); // 稍微向上偏移，避免与线重叠
-            
-            // 关系标签背景跟随标签位置
-            linkLabelBgs.each(function(d) {
-                const text = linkLabels.filter(data => data === d).node();
-                if (text) {
-                    const bbox = text.getBBox();
-                    d3.select(this)
-                        .attr("x", bbox.x - 2)
-                        .attr("y", bbox.y - 1)
-                        .attr("width", bbox.width + 4)
-                        .attr("height", bbox.height + 2);
-                }
-            });
-        });
-        
-        // 拖拽函数
-        function dragstarted(event, d) {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-        }
-        
-        function dragged(event, d) {
-            d.fx = event.x;
-            d.fy = event.y;
-        }
-        
-        function dragended(event, d) {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-        }
-        
-        // 显示节点详情
-        function showNodeDetails(event, d) {
-            const detailsDiv = document.getElementById("node-details");
-            const propertiesDiv = document.getElementById("node-properties");
-            const titleDiv = document.getElementById("detail-title");
-            
-            detailsDiv.style.display = "block";
-            titleDiv.textContent = "节点详情";
-            
-            // 跟踪选中的节点
-            selectedItem = {
-                type: 'node',
-                data: d,
-                elementId: d.neo4j_id
-            };
-            
-            let sourceText = '';
-            if (d.source === 'local') {
-                sourceText = '仅本地';
-            } else if (d.source === 'neo4j') {
-                sourceText = '仅Neo4j';
-            } else if (d.source === 'both') {
-                sourceText = '本地+Neo4j';
-            } else {
-                sourceText = '未知';
-            }
-            
-            let html = `
-                <div class="property-item">
-                    <span class="property-key">节点ID:</span>
-                    <span class="property-value">${d.neo4j_id}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">数据来源:</span>
-                    <span class="property-value">${sourceText}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">标签:</span>
-                    <span class="property-value">${d.labels.join(", ")}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">名称:</span>
-                    <span class="property-value">${d.label}</span>
-                </div>
-            `;
-            
-            // 显示所有属性
-            for (const [key, value] of Object.entries(d.properties)) {
-                html += `
-                    <div class="property-item">
-                        <span class="property-key">${key}:</span>
-                        <span class="property-value">${JSON.stringify(value)}</span>
-                    </div>
-                `;
-            }
-            
-            propertiesDiv.innerHTML = html;
-        }
-        
-        // 显示关系详情
-        function showLinkDetails(event, d) {
-            const detailsDiv = document.getElementById("node-details");
-            const propertiesDiv = document.getElementById("node-properties");
-            const titleDiv = document.getElementById("detail-title");
-            
-            detailsDiv.style.display = "block";
-            titleDiv.textContent = "关系详情";
-            
-            // 跟踪选中的关系
-            selectedItem = {
-                type: 'relationship',
-                data: d,
-                elementId: d.neo4j_id
-            };
-            
-            // 获取起始和目标节点的名称
-            const sourceNode = graphData.nodes.find(node => node.id === d.source.id);
-            const targetNode = graphData.nodes.find(node => node.id === d.target.id);
-            
-            let html = `
-                <div class="property-item">
-                    <span class="property-key">关系ID:</span>
-                    <span class="property-value">${d.neo4j_id}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">关系类型:</span>
-                    <span class="property-value">${d.type}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">起始节点:</span>
-                    <span class="property-value">${sourceNode ? sourceNode.label : 'Unknown'}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">目标节点:</span>
-                    <span class="property-value">${targetNode ? targetNode.label : 'Unknown'}</span>
-                </div>
-            `;
-            
-            // 显示所有关系属性
-            for (const [key, value] of Object.entries(d.properties)) {
-                html += `
-                    <div class="property-item">
-                        <span class="property-key">${key}:</span>
-                        <span class="property-value">${JSON.stringify(value)}</span>
-                    </div>
-                `;
-            }
-            
-            propertiesDiv.innerHTML = html;
-        }
-        
-        // 控制函数
-        function resetZoom() {
-            svg.transition().call(zoom.transform, d3.zoomIdentity);
-        }
-        
-        let nodeLabelsVisible = true;
-        let linkLabelsVisible = true;
-        
-        function toggleNodeLabels() {
-            nodeLabelsVisible = !nodeLabelsVisible;
-            nodeLabels.style("display", nodeLabelsVisible ? "block" : "none");
-        }
-        
-        function toggleLinkLabels() {
-            linkLabelsVisible = !linkLabelsVisible;
-            linkLabels.style("display", linkLabelsVisible ? "block" : "none");
-            linkLabelBgs.style("display", linkLabelsVisible ? "block" : "none");
-        }
-        
-        // 刷新数据功能
-        function refreshData() {
-            console.log('正在刷新数据...');
-            
-            // 显示加载状态
-            const refreshBtn = document.querySelector('.refresh-controls');
-            const originalText = refreshBtn.innerHTML;
-            refreshBtn.innerHTML = '⏳ 刷新中...';
-            refreshBtn.disabled = true;
-            
-            fetch('/api/refresh_data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('刷新结果:', data);
-                if (data.success) {
-                    // 刷新页面以加载新数据
-                    window.location.reload();
-                } else {
-                    alert('刷新失败: ' + (data.error || '未知错误'));
-                    refreshBtn.innerHTML = originalText;
-                    refreshBtn.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('刷新错误:', error);
-                alert('刷新失败: ' + error.message);
-                refreshBtn.innerHTML = originalText;
-                refreshBtn.disabled = false;
-            });
-        }
-        
-        // 初始化统计信息
-        function initStats() {
-            document.getElementById("total-nodes").textContent = graphData.stats.total_nodes;
-            document.getElementById("total-links").textContent = graphData.stats.total_links;
-            document.getElementById("updated-time").textContent = new Date(graphData.stats.updated_at).toLocaleString();
-            
-            // 节点类型统计
-            const nodeTypesDiv = document.getElementById("node-types");
-            let nodeTypesHtml = "";
-            for (const [type, count] of Object.entries(graphData.stats.node_types)) {
-                nodeTypesHtml += `
-                    <div class="stat-item">
-                        <span>${type}:</span>
-                        <span>${count}</span>
-                    </div>
-                `;
-            }
-            nodeTypesDiv.innerHTML = nodeTypesHtml;
-            
-            // 关系类型统计
-            const relationTypesDiv = document.getElementById("relation-types");
-            let relationTypesHtml = "";
-            for (const [type, count] of Object.entries(graphData.stats.relation_types)) {
-                relationTypesHtml += `
-                    <div class="stat-item">
-                        <span>${type}:</span>
-                        <span>${count}</span>
-                    </div>
-                `;
-            }
-            relationTypesDiv.innerHTML = relationTypesHtml;
-        }
-        
-        function updateNodeSelectionLists() {
-            const modifySelect = document.getElementById('modify-node-select');
-            const deleteSelect = document.getElementById('delete-node-select');
-            const linkSourceSelect = document.getElementById('link-source-select');
-            const linkTargetSelect = document.getElementById('link-target-select');
-            
-            // 只更新存在的选择框
-            if (modifySelect) {
-                modifySelect.innerHTML = '<option value="">请选择要修改的节点</option>';
-                graphData.nodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.id;
-                    option.textContent = `${node.label} (${node.group})`;
-                    modifySelect.appendChild(option);
-                });
-            }
-            
-            if (deleteSelect) {
-                deleteSelect.innerHTML = '<option value="">请选择要删除的节点</option>';
-                graphData.nodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.id;
-                    option.textContent = `${node.label} (${node.group})`;
-                    deleteSelect.appendChild(option);
-                });
-            }
-            
-            if (linkSourceSelect) {
-                linkSourceSelect.innerHTML = '<option value="">请选择起始节点</option>';
-                graphData.nodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.id;
-                    option.textContent = `${node.label} (${node.group})`;
-                    linkSourceSelect.appendChild(option);
-                });
-            }
-            
-            if (linkTargetSelect) {
-                linkTargetSelect.innerHTML = '<option value="">请选择目标节点</option>';
-                graphData.nodes.forEach(node => {
-                    const option = document.createElement('option');
-                    option.value = node.id;
-                    option.textContent = `${node.label} (${node.group})`;
-                    linkTargetSelect.appendChild(option);
-                });
-            }
-        }
-        
-        function showAddNodeForm() {
-            hideEditForms();
-            
-            // 创建节点类型选择界面
-            const editForms = document.querySelector('.edit-forms');
-            editForms.innerHTML = `
-                <div class="node-type-buttons">
-                    <button class="node-type-button" onclick="selectNodeType('Entity')">
-                        <span class="node-type-icon">🏷️</span>
-                        <span class="node-type-text">实体节点</span>
-                    </button>
-                    <button class="node-type-button" onclick="selectNodeType('Time')">
-                        <span class="node-type-icon">⏰</span>
-                        <span class="node-type-text">时间节点</span>
-                    </button>
-                    <button class="node-type-button" onclick="selectNodeType('User')">
-                        <span class="node-type-icon">👤</span>
-                        <span class="node-type-text">用户节点</span>
-                    </button>
-                </div>
-            `;
-            
-            // 重置按钮状态
-            resetButtonStates();
-            document.querySelector('.add-node-btn').classList.add('active');
-        }
-        
-        function showModifyNodeForm() {
-            // 功能已禁用
-        }
-        
-        function showLinkNodeForm() {
-            // 功能已禁用
-        }
-        
-        // 获取选中项目的信息显示文本
-        function getSelectedItemInfo() {
-            if (!selectedItem) {
-                return '无选中项目';
-            }
-            
-            if (selectedItem.type === 'node') {
-                const node = selectedItem.data;
-                return `
-                    <strong>节点：</strong>${node.label}<br>
-                    <strong>类型：</strong>${node.labels.join(", ")}<br>
-                    <strong>ID：</strong>${node.neo4j_id}
-                `;
-            } else if (selectedItem.type === 'relationship') {
-                const rel = selectedItem.data;
-                const sourceNode = graphData.nodes.find(node => node.id === rel.source.id);
-                const targetNode = graphData.nodes.find(node => node.id === rel.target.id);
-                return `
-                    <strong>关系：</strong>${rel.type}<br>
-                    <strong>从：</strong>${sourceNode ? sourceNode.label : 'Unknown'}<br>
-                    <strong>到：</strong>${targetNode ? targetNode.label : 'Unknown'}<br>
-                    <strong>ID：</strong>${rel.neo4j_id}
-                `;
-            }
-            
-            return '未知项目类型';
-        }
-        
-        // 获取相关项目数量（仅对节点有意义）
-        function getRelatedItemsCount() {
-            if (!selectedItem || selectedItem.type !== 'node') {
-                return 0;
-            }
-            
-            const nodeId = selectedItem.data.id;
-            return graphData.links.filter(link => 
-                link.source.id === nodeId || link.target.id === nodeId
-            ).length;
-        }
-        
-        function showDeleteNodeForm() {
-            hideEditForms();
-            
-            const editForms = document.querySelector('.edit-forms');
-            
-            if (!selectedItem) {
-                // 未选中任何项目
-                editForms.innerHTML = `
-                    <div class="edit-form">
-                        <h4>删除项目</h4>
-                        <div class="warning-text">
-                            请先点击选中一个节点或关系后再进行删除操作。
-                        </div>
-                    </div>
-                `;
-            } else {
-                // 显示选中项目的删除确认
-                const itemInfo = getSelectedItemInfo();
-                const relatedCount = getRelatedItemsCount();
-                
-                let warningText = '';
-                if (selectedItem.type === 'node' && relatedCount > 0) {
-                    warningText = `
-                        <div class="warning-text">
-                            警告：删除此节点将同时删除 ${relatedCount} 个相关关系！
-                        </div>
-                    `;
-                }
-                
-                editForms.innerHTML = `
-                    <div class="edit-form">
-                        <h4>确认删除</h4>
-                        <div class="form-group">
-                            <label>选中项目：</label>
-                            <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px;">
-                                ${itemInfo}
-                            </div>
-                        </div>
-                        ${warningText}
-                        <div class="form-actions">
-                            <button class="action-btn danger-btn" onclick="confirmDelete()">确认删除</button>
-                            <button class="action-btn cancel-btn" onclick="hideEditForms()">取消</button>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            // 设置按钮状态
-            resetButtonStates();
-            document.querySelector('.delete-node-btn').classList.add('active');
-        }
-        
-        function hideEditForms() {
-            // 清空功能表单区域
-            const editForms = document.querySelector('.edit-forms');
-            editForms.innerHTML = '';
-            resetButtonStates();
-            
-            // 如果正在创建节点，取消创建
-            if (isCreatingNode) {
-                cleanupNodeCreation();
-            }
-        }
-        
-        // 确认删除函数
-        async function confirmDelete() {
-            if (!selectedItem) {
-                alert('请先选择要删除的节点或关系');
-                return;
-            }
-            
-            // 计算将要删除的内容
-            let nodeCount = 0;
-            let relationshipCount = 0;
-            let itemDescription = '';
-            
-            if (selectedItem.type === 'node') {
-                nodeCount = 1;
-                relationshipCount = getRelatedItemsCount();
-                itemDescription = `节点"${selectedItem.data.label}"`;
-            } else if (selectedItem.type === 'relationship') {
-                relationshipCount = 1;
-                const sourceNode = graphData.nodes.find(node => node.id === selectedItem.data.source.id);
-                const targetNode = graphData.nodes.find(node => node.id === selectedItem.data.target.id);
-                itemDescription = `关系"${selectedItem.data.type}" (从"${sourceNode ? sourceNode.label : 'Unknown'}"到"${targetNode ? targetNode.label : 'Unknown'}")`;
-            }
-            
-            // 构建确认消息
-            let confirmMessage = `确认删除 ${itemDescription}？\n\n`;
-            confirmMessage += `此操作将删除：\n`;
-            if (nodeCount > 0) {
-                confirmMessage += `• ${nodeCount} 个节点\n`;
-            }
-            if (relationshipCount > 0) {
-                confirmMessage += `• ${relationshipCount} 个关系\n`;
-            }
-            confirmMessage += `\n此操作不可撤销，确定要继续吗？`;
-            
-            // 进行删除确认
-            if (!confirm(confirmMessage)) {
-                return;
-            }
-            
-            try {
-                // 显示加载状态
-                const confirmBtn = document.querySelector('.danger-btn');
-                const originalText = confirmBtn.textContent;
-                confirmBtn.textContent = '删除中...';
-                confirmBtn.disabled = true;
-                
-                const response = await fetch('/api/delete_item', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        element_id: selectedItem.elementId
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`删除成功！${result.message || ''}`);
-                    // 清空选中项目
-                    selectedItem = null;
-                    // 隐藏编辑表单
-                    hideEditForms();
-                    // 隐藏详情面板
-                    document.getElementById("node-details").style.display = "none";
-                    // 重新加载数据
-                    await refreshData();
-                } else {
-                    alert(`删除失败：${result.error || '未知错误'}`);
-                }
-                
-            } catch (error) {
-                console.error('删除操作失败:', error);
-                alert(`删除操作失败：${error.message}`);
-            } finally {
-                // 恢复按钮状态
-                const confirmBtn = document.querySelector('.danger-btn');
-                if (confirmBtn) {
-                    confirmBtn.textContent = originalText;
-                    confirmBtn.disabled = false;
-                }
-            }
-        }
-        
-        // 清空选中项目（当详情面板关闭时）
-        function clearSelection() {
-            selectedItem = null;
-        }
-        
-        function resetButtonStates() {
-            document.querySelectorAll('.edit-function-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-        }
-        
-        // 添加全局变量用于跟踪节点创建状态
-        let isCreatingNode = false;
-        let newNodeData = null;
-        let ghostNode = null;
-        
-        // 选择节点类型
-        function selectNodeType(nodeType) {
-            if (nodeType === 'Time') {
-                // 显示时间节点创建表单
-                showTimeNodeForm();
-            } else {
-                alert(`${nodeType} 节点类型暂未实现`);
-            }
-        }
-        
-        // 显示时间节点创建表单
-        function showTimeNodeForm() {
-            const editForms = document.querySelector('.edit-forms');
-            editForms.innerHTML = `
-                <div class="time-node-form">
-                    <h4>创建时间节点</h4>
-                    <div class="form-group">
-                        <label for="time-input">请输入时间：</label>
-                        <input type="text" id="time-input" placeholder="例如：2024年12月5日14点30分" class="time-input" />
-                        <div class="time-format-help">
-                            支持格式：
-                            <ul>
-                                <li>完整格式：2024年12月5日14点30分45秒</li>
-                                <li>日期格式：2024年12月5日</li>
-                                <li>时间格式：14点30分</li>
-                                <li>周次格式：第3个星期一</li>
-                                <li>相对格式：三点半</li>
-                            </ul>
-                        </div>
-                    </div>
-                    <div class="form-buttons">
-                        <button class="create-btn" onclick="createTimeNode()">创建时间节点</button>
-                        <button class="cancel-btn" onclick="hideEditForms()">取消</button>
-                    </div>
-                </div>
-            `;
-            
-            // 聚焦到输入框
-            setTimeout(() => {
-                document.getElementById('time-input').focus();
-            }, 100);
-            
-            // 添加回车键监听
-            document.getElementById('time-input').addEventListener('keypress', function(event) {
-                if (event.key === 'Enter') {
-                    createTimeNode();
-                }
-            });
-        }
-        
-
-        
-        // 节点操作函数
-        function addNode(nodeType) {
-            // 功能已禁用
-        }
-        
-        function modifyNode() {
-            // 功能已禁用
-        }
-        
-        function linkNodes() {
-            // 功能已禁用
-        }
-        
-        function createGhostNode() {
-            // 功能已禁用
-        }
-        
-        function placeNewNode(x, y) {
-            // 功能已禁用
-        }
-        
-        // 时间格式验证函数
-        function validateTimeFormat(timeStr) {
-            // 功能已禁用
-        }
-        
-        // 创建时间节点
-        function createTimeNode() {
-            const timeInput = document.getElementById('time-input');
-            const timeStr = timeInput.value.trim();
-            
-            if (!timeStr) {
-                alert('请输入时间信息');
-                timeInput.focus();
-                return;
-            }
-            
-            // 显示加载状态
-            const createBtn = document.querySelector('.create-btn');
-            const originalText = createBtn.textContent;
-            createBtn.textContent = '创建中...';
-            createBtn.disabled = true;
-            
-            // 调用API创建时间节点
-            fetch('/api/create_time_node', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    time_str: timeStr
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert(`时间节点创建成功: ${data.message}`);
-                    hideEditForms();
-                    // 自动刷新数据
-                    console.log('自动刷新数据...');
-                    refreshData();
-                } else {
-                    alert(`时间节点创建失败: ${data.error}`);
-                }
-            })
-            .catch(error => {
-                console.error('创建时间节点时出错:', error);
-                alert('创建时间节点时出错: ' + error.message);
-            })
-            .finally(() => {
-                createBtn.textContent = originalText;
-                createBtn.disabled = false;
-            });
-        }
-        
-        function saveNodeToLocalMemory(nodeData) {
-            // 功能已禁用
-        }
-        
-        function cleanupNodeCreation() {
-            // 功能已禁用
-        }
-        
-        function deleteNode() {
-            // 功能已禁用
-        }
-        
-        function updateVisualization() {
-            // 更新节点选择列表
-            updateNodeSelectionLists();
-            
-            // 更新力导向图数据
-            simulation.nodes(graphData.nodes);
-            simulation.force("link").links(graphData.links);
-            
-            // 重新绑定并更新节点
-            node = node.data(graphData.nodes, d => d.id);
-            node.exit().remove();
-            node = node.enter().append("circle")
-                .attr("class", "node")
-                .attr("r", d => d.size)
-                .attr("fill", d => d.color)
-                .attr("stroke", d => d.strokeColor)
-                .attr("stroke-width", d => d.strokeWidth)
-                .on("click", showNodeDetails)
-                .call(d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended))
-                .merge(node);
-            
-            // 重新绑定并更新链接
-            link = link.data(graphData.links);
-            link.exit().remove();
-            link = link.enter().append("line")
-                .attr("class", "link")
-                .attr("marker-end", "url(#arrow)")
-                .merge(link);
-            
-            // 重新绑定并更新节点标签
-            nodeLabels = nodeLabels.data(graphData.nodes, d => d.id);
-            nodeLabels.exit().remove();
-            nodeLabels = nodeLabels.enter().append("text")
-                .attr("class", "node-label")
-                .text(d => d.label.length > 8 ? d.label.substring(0, 8) + "..." : d.label)
-                .style("display", "block")
-                .merge(nodeLabels);
-            
-            // 重新绑定并更新链接标签
-            linkLabels = linkLabels.data(graphData.links);
-            linkLabels.exit().remove();
-            linkLabels = linkLabels.enter().append("text")
-                .attr("class", "link-label")
-                .text(d => {
-                    if (d.properties && d.properties.predicate) {
-                        return d.properties.predicate.length > 10 ? d.properties.predicate.substring(0, 10) + "..." : d.properties.predicate;
-                    } else if (d.properties && d.properties.action) {
-                        return d.properties.action.length > 10 ? d.properties.action.substring(0, 10) + "..." : d.properties.action;
-                    } else {
-                        return d.type.length > 10 ? d.type.substring(0, 10) + "..." : d.type;
-                    }
-                })
-                .style("display", "block")
-                .merge(linkLabels);
-            
-            // 重新绑定并更新链接标签背景
-            linkLabelBgs = linkLabelBgs.data(graphData.links);
-            linkLabelBgs.exit().remove();
-            linkLabelBgs = linkLabelBgs.enter().append("rect")
-                .attr("class", "link-label-bg")
-                .attr("fill", "rgba(255,255,255,0.8)")
-                .attr("stroke", "rgba(200,200,200,0.5)")
-                .attr("stroke-width", 0.5)
-                .attr("rx", 3)
-                .attr("ry", 3)
-                .merge(linkLabelBgs);
-            
-            // 重新启动仿真
-            simulation.alpha(1).restart();
-        }
-        
-        // 初始化
-        initStats();
-        initEditButtonState();
-        
-        // 初始化编辑按钮状态
-        function initEditButtonState() {
-            const editButton = document.getElementById('edit-button');
-            const neo4jConnected = graphData.neo4j_connected;
-            
-            console.log('🔍 Neo4j连接状态检查:', neo4jConnected);
-            console.log('🔍 完整graphData:', graphData);
-            console.log('🔍 编辑按钮元素:', editButton);
-            
-            if (!editButton) {
-                console.error('❌ 无法找到编辑按钮元素');
-                return;
-            }
-            
-            if (!neo4jConnected) {
-                console.log('❌ Neo4j未连接，禁用编辑按钮');
-                editButton.disabled = true;
-                editButton.className = 'control-button edit-controls';
-                editButton.title = 'Neo4j数据库未连接，无法编辑节点';
-                editButton.onclick = function(event) {
-                    event.preventDefault();
-                    alert('Neo4j数据库未连接，无法进行节点编辑操作。\\n\\n请检查：\\n1. Neo4j服务是否启动\\n2. 网络连接是否正常\\n3. 配置文件中的连接信息是否正确');
-                };
-            } else {
-                console.log('✅ Neo4j已连接，启用编辑按钮');
-                editButton.disabled = false;
-                editButton.className = 'control-button edit-controls';
-                editButton.title = '编辑记忆图谱节点';
-                editButton.onclick = function(event) {
-                    event.preventDefault();
-                    toggleEditPanel();
-                };
-            }
-        }
-        
-        // 修改toggleEditPanel函数，增加连接状态检查
-        function toggleEditPanel() {
-            console.log('🔄 toggleEditPanel被调用');
-            console.log('🔍 当前Neo4j连接状态:', graphData.neo4j_connected);
-            
-            if (!graphData.neo4j_connected) {
-                console.log('❌ Neo4j未连接，阻止面板打开');
-                alert('Neo4j数据库未连接，无法进行节点编辑操作。');
-                return;
-            }
-            
-            console.log('✅ Neo4j已连接，切换编辑面板');
-            const panel = document.getElementById('edit-panel');
-            panel.classList.toggle('show');
-            
-            // 如果打开面板，更新节点选择列表
-            if (panel.classList.contains('show')) {
-                console.log('📋 更新节点选择列表');
-                updateNodeSelectionLists();
-            }
-        }
-        
-        // 测试API连接的函数
-        window.testApiConnection = function() {
-            console.log('🧪 测试API连接');
-            fetch('/api/create_time_node', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    time_str: '测试时间'
-                })
-            })
-            .then(response => {
-                console.log('API响应状态:', response.status);
-                return response.json();
-            })
-            .then(data => {
-                console.log('API响应数据:', data);
-                alert('API连接测试完成，请查看控制台');
-            })
-            .catch(error => {
-                console.error('API连接测试失败:', error);
-                alert('API连接失败: ' + error.message);
-            });
-        };
-        
-        // 添加ESC键监听来取消节点创建
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape' && isCreatingNode) {
-                cleanupNodeCreation();
-            }
-        });
-    </script>
-</body>
-</html>
-        """
+    def load_html_template(self) -> str:
+        """从外部文件加载HTML模板"""
+        template_path = os.path.join(os.path.dirname(__file__), 'memory_graph_template.html')
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            # 如果找不到外部模板文件，返回错误页面
+            return """<!DOCTYPE html>"""
     
     def generate_html_visualization(self, output_file: Optional[str] = None) -> bool:
         """生成HTML可视化文件"""
@@ -1933,9 +292,16 @@ class MemoryGraphViewer:
                 logger.error("No visualization data available")
                 return False
             
-            # 生成HTML
-            html_content = self.generate_html_template()
+            # 加载HTML模板
+            html_content = self.load_html_template()
+            
+            # 替换模板变量
             html_content = html_content.replace("{{GRAPH_DATA}}", json.dumps(viz_data, ensure_ascii=False))
+            html_content = html_content.replace("{{DATA_SOURCE}}", viz_data.get('metadata', {}).get('source', '未知'))
+            html_content = html_content.replace("{{NEO4J_STATUS}}", "已连接" if viz_data.get('neo4j_connected', False) else "未连接")
+            html_content = html_content.replace("{{NODE_COUNT}}", str(len(viz_data.get('nodes', []))))
+            html_content = html_content.replace("{{LINK_COUNT}}", str(len(viz_data.get('links', []))))
+            html_content = html_content.replace("{{LAST_UPDATE}}", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             
             # 确定输出文件路径
             if output_file is None:
@@ -1957,6 +323,43 @@ class MemoryGraphViewer:
             logger.error(f"Failed to generate HTML visualization: {e}")
             print(f"❌ 生成HTML可视化失败: {e}")
             return False
+    
+    def prepare_graph_data(self) -> Dict[str, Any]:
+        """准备图谱数据用于API返回，不包含HTML模板"""
+        try:
+            viz_data = self.prepare_visualization_data()
+            
+            if not viz_data:
+                return {
+                    "nodes": [],
+                    "links": [],
+                    "stats": {
+                        "total_nodes": 0,
+                        "total_links": 0,
+                        "node_types": {},
+                        "relation_types": {},
+                        "updated_at": datetime.now().isoformat()
+                    },
+                    "neo4j_connected": self.neo4j_connected
+                }
+            
+            return viz_data
+            
+        except Exception as e:
+            logger.error(f"Failed to prepare graph data: {e}")
+            return {
+                "nodes": [],
+                "links": [],
+                "stats": {
+                    "total_nodes": 0,
+                    "total_links": 0,
+                    "node_types": {},
+                    "relation_types": {},
+                    "updated_at": datetime.now().isoformat()
+                },
+                "neo4j_connected": False,
+                "error": str(e)
+            }
     
     def open_in_browser(self, html_file: Optional[str] = None):
         """在浏览器中打开HTML文件"""
@@ -2030,6 +433,157 @@ def create_time_node_api(time_str: str) -> Dict[str, Any]:
             "created_node": None
         }
 
+def create_character_node_api(character_name: str, trust: float = 0.5, importance: float = 0.5) -> Dict[str, Any]:
+    """
+    API函数：创建角色节点
+    
+    Args:
+        character_name: 角色名称
+        trust: 信任度 (0-1)
+        importance: 重要性 (0-1)
+        
+    Returns:
+        Dict: 包含成功状态和结果信息的字典
+    """
+    try:
+        # 获取知识图谱管理器
+        kg_manager = get_knowledge_graph_manager()
+        
+        # 检查连接状态
+        if not kg_manager._ensure_connection():
+            return {
+                "success": False,
+                "error": "Neo4j数据库连接失败",
+                "created_node": None
+            }
+        
+        # 创建角色节点
+        with kg_manager.driver.session() as session:
+            result_node = kg_manager.create_character_node(session, character_name, importance, trust)
+            
+            if result_node:
+                logger.info(f"Successfully created character node: {result_node}")
+                return {
+                    "success": True,
+                    "error": None,
+                    "created_node": result_node,
+                    "message": f"角色节点 '{result_node}' 创建成功"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "角色节点创建失败",
+                    "created_node": None
+                }
+                
+    except Exception as e:
+        logger.error(f"Failed to create character node '{character_name}': {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "created_node": None
+        }
+
+def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str = "无") -> Dict[str, Any]:
+    """
+    API函数：创建实体节点
+    
+    Args:
+        entity_name: 实体名称
+        importance: 重要程度 (0-1)
+        note: 备注 (默认"无")
+        
+    Returns:
+        Dict: 包含成功状态和结果信息的字典
+    """
+    try:
+        # 获取知识图谱管理器
+        kg_manager = get_knowledge_graph_manager()
+        
+        # 检查连接状态
+        if not kg_manager._ensure_connection():
+            return {
+                "success": False,
+                "error": "Neo4j数据库连接失败",
+                "created_node": None
+            }
+        
+        # 创建实体节点
+        with kg_manager.driver.session() as session:
+            result_node = kg_manager.create_entity_node(session, entity_name, importance, note)
+            
+            if result_node:
+                logger.info(f"Successfully created entity node: {result_node}")
+                return {
+                    "success": True,
+                    "error": None,
+                    "created_node": result_node,
+                    "message": f"实体节点 '{result_node}' 创建成功"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "实体节点创建失败",
+                    "created_node": None
+                }
+                
+    except Exception as e:
+        logger.error(f"Failed to create entity node '{entity_name}': {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "created_node": None
+        }
+
+def create_location_node_api(location_name: str) -> Dict[str, Any]:
+    """
+    API函数：创建地点节点
+    
+    Args:
+        location_name: 地点名称
+        
+    Returns:
+        Dict: 包含成功状态和结果信息的字典
+    """
+    try:
+        # 获取知识图谱管理器
+        kg_manager = get_knowledge_graph_manager()
+        
+        # 检查连接状态
+        if not kg_manager._ensure_connection():
+            return {
+                "success": False,
+                "error": "Neo4j数据库连接失败",
+                "created_node": None
+            }
+        
+        # 创建地点节点
+        with kg_manager.driver.session() as session:
+            result_node = kg_manager.create_location_node(session, location_name)
+            
+            if result_node:
+                logger.info(f"Successfully created location node: {result_node}")
+                return {
+                    "success": True,
+                    "error": None,
+                    "created_node": result_node,
+                    "message": f"地点节点 '{result_node}' 创建成功"
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": "地点节点创建失败",
+                    "created_node": None
+                }
+                
+    except Exception as e:
+        logger.error(f"Failed to create location node '{location_name}': {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "created_node": None
+        }
+
 def main():
     """主函数"""
     print("🧠 记忆图谱可视化工具")
@@ -2069,14 +623,62 @@ def start_api_server():
     try:
         from flask import Flask, request, jsonify, send_file
         from flask_cors import CORS
-        import threading
         
         app = Flask(__name__)
         CORS(app)  # 允许跨域请求
         
+        # 全局变量用于控制服务器状态
+        server_running = threading.Event()
+        server_running.set()
+        last_heartbeat = time.time()
+        client_connected = False
+        heartbeat_timeout = 120  # 2分钟心跳超时时间（两个心跳周期）
+        
+        # 心跳检测端点
+        @app.route('/api/heartbeat', methods=['GET', 'POST'])
+        def heartbeat():
+            nonlocal last_heartbeat, client_connected
+            last_heartbeat = time.time()
+            client_connected = True
+            return jsonify({"status": "ok", "timestamp": last_heartbeat}), 200
+        
+        # 客户端断开连接通知端点
+        @app.route('/api/disconnect', methods=['POST'])
+        def client_disconnect():
+            nonlocal client_connected
+            try:
+                # 尝试解析JSON数据，如果失败则使用默认值
+                data = {}
+                content_type = request.content_type or ''
+                
+                if 'application/json' in content_type:
+                    data = request.get_json() or {}
+                elif request.data:
+                    # 尝试解析原始数据
+                    try:
+                        import json
+                        data = json.loads(request.data.decode('utf-8'))
+                    except:
+                        data = {"raw_data": request.data.decode('utf-8', errors='ignore')}
+                
+                print(f"🔌 接收到客户端断开连接通知 (Content-Type: {content_type}): {data}")
+                client_connected = False
+                
+                # 延迟停止服务器，给响应时间
+                threading.Timer(1.0, lambda: server_running.clear()).start()
+                return jsonify({"status": "disconnecting", "timestamp": time.time()}), 200
+            except Exception as e:
+                print(f"处理断开连接请求时出错: {e}")
+                client_connected = False
+                threading.Timer(1.0, lambda: server_running.clear()).start()
+                return jsonify({"status": "error", "message": str(e)}), 500
+        
         # 提供HTML页面
         @app.route('/')
         def serve_html():
+            nonlocal client_connected, last_heartbeat
+            client_connected = True
+            last_heartbeat = time.time()
             html_file = os.path.join(config.system.log_dir, "memory_graph_visualization.html")
             if os.path.exists(html_file):
                 return send_file(html_file)
@@ -2096,6 +698,88 @@ def start_api_server():
                     }), 400
                 
                 result = create_time_node_api(time_str.strip())
+                
+                if result["success"]:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 500
+                    
+            except Exception as e:
+                logger.error(f"API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/create_character_node', methods=['POST'])
+        def handle_create_character_node():
+            try:
+                data = request.get_json()
+                character_name = data.get('character_name', '')
+                trust = data.get('trust', 0.5)
+                importance = data.get('importance', 0.5)
+                
+                if not character_name.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "角色名称不能为空"
+                    }), 400
+                
+                result = create_character_node_api(character_name.strip(), trust, importance)
+                
+                if result["success"]:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 500
+                    
+            except Exception as e:
+                logger.error(f"API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/create_entity_node', methods=['POST'])
+        def handle_create_entity_node():
+            try:
+                data = request.get_json()
+                entity_name = data.get('entity_name', '')
+                importance = data.get('importance', 0.5)
+                note = data.get('note', '无')
+                
+                if not entity_name.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "实体名称不能为空"
+                    }), 400
+                
+                result = create_entity_node_api(entity_name.strip(), importance, note)
+                
+                if result["success"]:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 500
+                    
+            except Exception as e:
+                logger.error(f"API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/create_location_node', methods=['POST'])
+        def handle_create_location_node():
+            try:
+                data = request.get_json()
+                location_name = data.get('location_name', '')
+                
+                if not location_name.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "地点名称不能为空"
+                    }), 400
+                
+                result = create_location_node_api(location_name.strip())
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -2142,6 +826,42 @@ def start_api_server():
                     "error": str(e)
                 }), 500
         
+        @app.route('/api/get_graph_data', methods=['GET'])
+        def get_current_graph_data():
+            """获取当前最新的图谱数据，用于动态更新"""
+            try:
+                # 重新加载Neo4j数据
+                success = load_neo4j_data_to_file()
+                
+                if not success:
+                    return jsonify({
+                        "success": False,
+                        "error": "Failed to load Neo4j data"
+                    }), 500
+                
+                # 重新创建viewer并加载数据
+                viewer = MemoryGraphViewer()
+                if not viewer.load_memory_graph():
+                    return jsonify({
+                        "success": False,
+                        "error": "Failed to load memory graph"
+                    }), 500
+                
+                # 返回图谱数据（不包含HTML模板）
+                graph_data = viewer.prepare_graph_data()
+                
+                return jsonify({
+                    "success": True,
+                    "data": graph_data
+                }), 200
+                
+            except Exception as e:
+                logger.error(f"Get graph data API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
         @app.route('/api/delete_item', methods=['POST'])
         def handle_delete_item():
             """删除节点或关系"""
@@ -2171,20 +891,263 @@ def start_api_server():
                     "error": str(e)
                 }), 500
         
+        @app.route('/api/modify_item', methods=['POST'])
+        def handle_modify_item():
+            """修改节点或关系的属性"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                element_id = data.get('element_id', '')
+                updates = data.get('updates', {})
+                
+                if not element_id.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "元素ID不能为空"
+                    }), 400
+                
+                if not updates or not isinstance(updates, dict):
+                    return jsonify({
+                        "success": False,
+                        "error": "更新数据必须是非空字典"
+                    }), 400
+                
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                result = kg_manager.modify_node_or_relation(element_id.strip(), updates)
+                
+                if result:
+                    return jsonify({
+                        "success": True,
+                        "element_id": result,
+                        "message": "元素属性已成功更新"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "修改失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Modify API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/modify_relation', methods=['POST'])
+        def handle_modify_relation():
+            """修改关系的属性"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                relation_id = data.get('relation_id', '')
+                predicate = data.get('predicate', '')
+                source = data.get('source', '')
+                confidence = data.get('confidence', 0.5)
+                directivity = data.get('directivity', 'to_target')
+                
+                if not relation_id.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "关系ID不能为空"
+                    }), 400
+                
+                if not predicate.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "关系类型不能为空"
+                    }), 400
+                
+                if not source.strip():
+                    return jsonify({
+                        "success": False,
+                        "error": "关系来源不能为空"
+                    }), 400
+                
+                try:
+                    confidence = float(confidence)
+                    if confidence < 0 or confidence > 1:
+                        return jsonify({
+                            "success": False,
+                            "error": "置信度必须在0-1之间"
+                        }), 400
+                except (ValueError, TypeError):
+                    return jsonify({
+                        "success": False,
+                        "error": "置信度必须是有效的数字"
+                    }), 400
+                
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                result = kg_manager.modify_relation(
+                    relation_id.strip(), 
+                    predicate.strip(), 
+                    source.strip(), 
+                    confidence, 
+                    directivity
+                )
+                
+                if result:
+                    return jsonify({
+                        "success": True,
+                        "relation_id": result,
+                        "message": "关系属性已成功更新"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "关系修改失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Modify relation API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/create_relation', methods=['POST'])
+        def handle_create_relation():
+            """连接两个节点"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                node_a_id = data.get('node_a_id', '')
+                node_b_id = data.get('node_b_id', '')
+                predicate = data.get('predicate', '')
+                source = data.get('source', '')
+                confidence = data.get('confidence', 0.5)
+                directivity = data.get('directivity', 'to_B')
+                
+                if not all([node_a_id.strip(), node_b_id.strip(), predicate.strip(), source.strip()]):
+                    return jsonify({
+                        "success": False,
+                        "error": "节点ID、关系类型和来源不能为空"
+                    }), 400
+                
+                if not isinstance(confidence, (int, float)) or confidence < 0 or confidence > 1:
+                    return jsonify({
+                        "success": False,
+                        "error": "置信度必须在0-1之间"
+                    }), 400
+                
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                relationship_id = kg_manager.create_relation(
+                    node_a_id.strip(), 
+                    node_b_id.strip(), 
+                    predicate.strip(), 
+                    source.strip(), 
+                    confidence, 
+                    directivity
+                )
+                
+                if relationship_id:
+                    return jsonify({
+                        "success": True,
+                        "relationship_id": relationship_id,
+                        "message": "节点链接已成功创建"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "节点链接创建失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Connect nodes API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+
+        
         # 在后台线程中启动服务器
         def run_server():
             print("\n🚀 启动API服务器 (http://localhost:5000)")
-            app.run(host='localhost', port=5000, debug=False, use_reloader=False)
+            try:
+                from werkzeug.serving import make_server
+                
+                # 创建可控制的服务器
+                server = make_server('localhost', 5000, app, threaded=True)
+                
+                # 在另一个线程中监控服务器状态
+                def server_monitor():
+                    while server_running.is_set():
+                        time.sleep(0.5)
+                    print("📡 接收到停止信号，正在关闭服务器...")
+                    server.shutdown()
+                
+                # 心跳超时监控线程
+                def heartbeat_monitor():
+                    while server_running.is_set():
+                        current_time = time.time()
+                        if client_connected and (current_time - last_heartbeat) > heartbeat_timeout:
+                            print(f"💔 客户端心跳超时 ({heartbeat_timeout}秒)，自动停止服务器...")
+                            server_running.clear()
+                            break
+                        time.sleep(10)  # 每10秒检查一次心跳状态
+                
+                monitor = threading.Thread(target=server_monitor, daemon=True)
+                heartbeat_thread = threading.Thread(target=heartbeat_monitor, daemon=True)
+                monitor.start()
+                heartbeat_thread.start()
+                
+                # 启动服务器
+                server.serve_forever()
+                
+            except Exception as e:
+                print(f"❌ 服务器运行错误: {e}")
+            finally:
+                server_running.clear()
+                print("🔌 Flask服务器已关闭")
         
-        server_thread = threading.Thread(target=run_server, daemon=True)
+        # 优雅关闭处理
+        def cleanup():
+            print("\n🧹 清理资源...")
+            server_running.clear()
+        
+        # 注册退出处理
+        atexit.register(cleanup)
+        
+        # 信号处理
+        def signal_handler(sig, frame):
+            print(f"\n📡 接收到信号 {sig}，正在关闭服务器...")
+            server_running.clear()
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        # 启动服务器线程
+        server_thread = threading.Thread(target=run_server, daemon=False)
         server_thread.start()
         
+
+        
         # 等待服务器启动
-        import time
         time.sleep(2)
         
-        # 等待用户按Enter键退出
-        input("\n按Enter键退出...")
+        print("📝 提示：关闭浏览器页面将自动停止服务器")
+        print("⌨️  或者按 Ctrl+C 手动停止服务器")
+        
+        try:
+            # 等待服务器停止信号
+            while server_running.is_set():
+                time.sleep(1)
+            
+        except KeyboardInterrupt:
+            print("\n⌨️  接收到键盘中断，正在关闭服务器...")
+            server_running.clear()
+        
+        # 等待服务器线程结束
+        if server_thread.is_alive():
+            server_thread.join(timeout=5)
         
     except ImportError:
         print("⚠️ Flask未安装，无法启动API服务器")
