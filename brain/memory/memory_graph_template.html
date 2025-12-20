@@ -829,11 +829,11 @@
         // 图谱数据占位符
         const graphData = {{GRAPH_DATA}};
         
-        // 全局变量跟踪当前选中的项目
-        let selectedItem = null;
-        
-        // 全局变量跟踪最近点击的两个节点（用于链接功能）
+        // 全局变量跟踪最近选中的项目列表（节点和关系），最多保留10个
         let recentSelectedNodes = [];
+        
+        // 删除模式状态变量
+        let deleteMode = false;
         
         // 设置画布
         const svg = d3.select("#graph-container");
@@ -1101,14 +1101,14 @@
             titleDiv.querySelector('span').textContent = "节点详情";
             
             // 跟踪选中的节点
-            selectedItem = {
+            const selectedItemData = {
                 type: 'node',
                 data: d,
                 elementId: d.neo4j_id
             };
             
-            // 更新最近选中的节点列表（用于链接功能）
-            updateRecentSelectedNodes(d);
+            // 更新最近选中的项目列表
+            updateRecentSelectedNodes(selectedItemData);
             
             // 如果删除界面已打开，实时更新删除内容
             updateDeleteFormIfVisible();
@@ -1175,17 +1175,23 @@
             titleDiv.querySelector('span').textContent = "关系详情";
             
             // 跟踪选中的关系
-            selectedItem = {
+            const selectedItemData = {
                 type: 'relationship',
                 data: d,
                 elementId: d.neo4j_id
             };
+            
+            // 更新最近选中的项目列表
+            updateRecentSelectedNodes(selectedItemData);
             
             // 如果删除界面已打开，实时更新删除内容
             updateDeleteFormIfVisible();
             
             // 如果修改界面已打开，实时更新修改内容
             updateModifyFormIfVisible();
+            
+            // 如果链接界面已打开，实时更新链接内容
+            updateLinkFormIfVisible();
             
             // 获取起始和目标节点的名称
             const sourceNode = graphData.nodes.find(node => node.id === d.source.id);
@@ -1563,6 +1569,7 @@
         
         // 获取选中项目的信息显示文本
         function getSelectedItemInfo() {
+            const selectedItem = recentSelectedNodes[0];
             if (!selectedItem) {
                 return '无选中项目';
             }
@@ -1591,6 +1598,7 @@
         
         // 获取相关项目数量（仅对节点有意义）
         function getRelatedItemsCount() {
+            const selectedItem = recentSelectedNodes[0];
             if (!selectedItem || selectedItem.type !== 'node') {
                 return 0;
             }
@@ -1628,13 +1636,14 @@
             }
         }
         
-        // 更新最近选中的节点列表
-        function updateRecentSelectedNodes(nodeData) {
-            // 只跟踪节点类型的点击
-            if (!nodeData) return;
+        // 更新最近选中的项目列表（节点和关系）
+        function updateRecentSelectedNodes(itemData) {
+            // 检查参数
+            if (!itemData) return;
             
             // 检查是否已经在列表中
-            const existingIndex = recentSelectedNodes.findIndex(node => node.id === nodeData.id);
+            const existingIndex = recentSelectedNodes.findIndex(item => 
+                item.elementId === itemData.elementId && item.type === itemData.type);
             
             if (existingIndex !== -1) {
                 // 如果已存在，移除后重新添加到最前面
@@ -1642,11 +1651,48 @@
             }
             
             // 添加到列表开头
-            recentSelectedNodes.unshift(nodeData);
+            recentSelectedNodes.unshift(itemData);
             
-            // 只保留最近的两个节点
-            if (recentSelectedNodes.length > 2) {
-                recentSelectedNodes = recentSelectedNodes.slice(0, 2);
+            // 只保留最近的10个项目
+            if (recentSelectedNodes.length > 10) {
+                recentSelectedNodes = recentSelectedNodes.slice(0, 10);
+            }
+            
+            // 如果在删除模式下，更新样式
+            if (deleteMode) {
+                updateSelectedItemsStyle();
+            }
+        }
+        
+        // 更新选中项目的样式（删除模式下显示红色描边）
+        function updateSelectedItemsStyle() {
+            // 重置所有节点的样式
+            container.selectAll(".node")
+                .attr("stroke", d => d.strokeColor)
+                .attr("stroke-width", d => d.strokeWidth);
+            
+            // 重置所有关系的样式
+            container.selectAll(".link")
+                .attr("stroke", d => getStorageTypeColor(d.source_type))
+                .attr("stroke-width", "2");
+            
+            // 如果在删除模式下，为选中的项目添加红色描边
+            if (deleteMode) {
+                recentSelectedNodes.forEach(item => {
+                    if (item.type === 'node') {
+                        // 为选中的节点添加红色描边
+                        container.selectAll(".node")
+                            .filter(d => d.id === item.data.id)
+                            .attr("stroke", "#ff0000")
+                            .attr("stroke-width", "4");
+                    } else if (item.type === 'relationship') {
+                        // 为选中的关系添加红色描边
+                        container.selectAll(".link")
+                            .filter(d => d.neo4j_id === item.data.neo4j_id)
+                            .attr("stroke", "#ff0000")
+                            .attr("stroke-width", "4");
+                    }
+                });
             }
         }
         
@@ -1654,42 +1700,81 @@
         function updateDeleteFormContent() {
             const editForms = document.querySelector('.edit-forms');
             
-            if (!selectedItem) {
+            if (recentSelectedNodes.length === 0) {
                 // 未选中任何项目
                 editForms.innerHTML = `
                     <div class="edit-form">
                         <h4>删除项目</h4>
                         <div class="warning-text">
-                            请先点击选中一个节点或关系后再进行删除操作。
+                            请先点击选中一个或多个节点或关系后再进行删除操作。
                         </div>
                     </div>
                 `;
             } else {
-                // 显示选中项目的删除确认
-                const itemInfo = getSelectedItemInfo();
-                const relatedCount = getRelatedItemsCount();
+                // 计算将要删除的所有项目
+                let totalNodeCount = 0;
+                let totalRelationshipCount = 0;
+                let itemsList = [];
+                
+                recentSelectedNodes.forEach((item, index) => {
+                    if (item.type === 'node') {
+                        totalNodeCount += 1;
+                        // 计算每个节点的相关关系数量
+                        const relatedCount = graphData.links.filter(link => 
+                            link.source.id === item.data.id || link.target.id === item.data.id
+                        ).length;
+                        totalRelationshipCount += relatedCount;
+                        itemsList.push(`<strong>节点${index + 1}:</strong> ${item.data.label} (节点, 将删除${relatedCount}个关系)`);
+                    } else if (item.type === 'relationship') {
+                        totalRelationshipCount += 1;
+                        const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
+                        const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
+                        itemsList.push(`<strong>关系${index + 1}:</strong> ${item.data.type} (从 "${sourceNode ? sourceNode.label : 'Unknown'}" 到 "${targetNode ? targetNode.label : 'Unknown'}")`);
+                    }
+                });
                 
                 let warningText = '';
-                if (selectedItem.type === 'node' && relatedCount > 0) {
+                if (totalNodeCount > 0 && totalRelationshipCount > 0) {
                     warningText = `
                         <div class="warning-text">
-                            警告：删除此节点将同时删除 ${relatedCount} 个相关关系！
+                            警告：此次操作将删除 ${totalNodeCount} 个节点和 ${totalRelationshipCount} 个关系！
+                        </div>
+                    `;
+                } else if (totalNodeCount > 0) {
+                    warningText = `
+                        <div class="warning-text">
+                            警告：此次操作将删除 ${totalNodeCount} 个节点和其相关的 ${totalRelationshipCount} 个关系！
+                        </div>
+                    `;
+                } else if (totalRelationshipCount > 0) {
+                    warningText = `
+                        <div class="warning-text">
+                            警告：此次操作将删除 ${totalRelationshipCount} 个关系！
                         </div>
                     `;
                 }
                 
                 editForms.innerHTML = `
                     <div class="edit-form">
-                        <h4>即将删除</h4>
+                        <h4>即将删除 (共${recentSelectedNodes.length}个项目)</h4>
                         <div class="form-group">
-                            <label>选中项目：</label>
-                            <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px;">
-                                ${itemInfo}
+                            <label>选中的项目列表：</label>
+                            <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px; max-height: 200px; overflow-y: auto;">
+                                ${itemsList.join('<br>')}
                             </div>
                         </div>
                         ${warningText}
+                        <div class="form-group">
+                            <label>删除统计：</label>
+                            <div style="padding: 8px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px; margin-top: 5px;">
+                                • 节点：${totalNodeCount} 个<br>
+                                • 关系：${totalRelationshipCount} 个<br>
+                                • 总计：${totalNodeCount + totalRelationshipCount} 个项目
+                            </div>
+                        </div>
                         <div class="form-actions">
                             <button class="action-btn danger-btn" onclick="confirmDelete()">确认删除</button>
+                            <button class="action-btn" onclick="clearRecentNodes()" style="background-color: #6c757d; color: white;">清空已选</button>
                             <button class="action-btn cancel-btn" onclick="hideEditForms()">取消</button>
                         </div>
                     </div>
@@ -1700,6 +1785,7 @@
         // 更新修改表单内容
         function updateModifyFormContent() {
             const editForms = document.querySelector('.edit-forms');
+            const selectedItem = recentSelectedNodes[0];
             
             if (!selectedItem) {
                 // 未选中任何项目
@@ -1908,17 +1994,57 @@
                             <div class="form-group">
                                 <label>已选择的节点：</label>
                                 <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px;">
-                                    <strong>节点1：</strong>${recentSelectedNodes[0].label}<br>
-                                    <strong>类型：</strong>${recentSelectedNodes[0].labels.join(", ")}
+                                    <strong>节点1：</strong>${recentSelectedNodes[0].data.label}<br>
+                                    <strong>类型：</strong>${recentSelectedNodes[0].data.labels.join(", ")}
                                 </div>
                             </div>
                         ` : ''}
                     </div>
                 `;
             } else {
-                // 已选择两个节点，检查是否都是时间节点
-                const node1 = recentSelectedNodes[0];
-                const node2 = recentSelectedNodes[1];
+                // 已选择两个项目，首先检查是否都是节点类型
+                const item1 = recentSelectedNodes[0];
+                const item2 = recentSelectedNodes[1];
+                
+                // 检查是否有非节点类型的项目
+                if (item1.type !== 'node' || item2.type !== 'node') {
+                    // 有关系或其他类型，不允许链接
+                    const nonNodeItems = [];
+                    if (item1.type !== 'node') nonNodeItems.push(`项目1: ${item1.type === 'relationship' ? '关系' : '未知类型'}`);
+                    if (item2.type !== 'node') nonNodeItems.push(`项目2: ${item2.type === 'relationship' ? '关系' : '未知类型'}`);
+                    
+                    editForms.innerHTML = `
+                        <div class="edit-form">
+                            <h4>链接节点</h4>
+                            <div class="form-group">
+                                <label>当前选中的项目：</label>
+                                <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px;">
+                                    <strong>项目1：</strong>${item1.type === 'node' ? item1.data.label + ' (节点)' : (item1.type === 'relationship' ? item1.data.type + ' (关系)' : '未知类型')}<br>
+                                    <strong>项目2：</strong>${item2.type === 'node' ? item2.data.label + ' (节点)' : (item2.type === 'relationship' ? item2.data.type + ' (关系)' : '未知类型')}
+                                </div>
+                            </div>
+                            <div style="padding: 15px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 18px; margin-right: 8px;">⚠️</span>
+                                    <span style="font-weight: 600; color: #721c24;">请选择两个节点</span>
+                                </div>
+                                <div style="color: #721c24; font-size: 14px; line-height: 1.4;">
+                                    链接功能只能在两个节点之间创建关系。<br>
+                                    当前选择包含非节点类型项目：${nonNodeItems.join('、')}<br>
+                                    请重新选择两个节点进行链接。
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button class="action-btn cancel-btn" onclick="clearRecentNodes()">重新选择</button>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                // 两个都是节点，继续检查是否都是时间节点
+                const node1 = item1.data;
+                const node2 = item2.data;
                 
                 const isNode1Time = node1.labels && node1.labels.includes('Time');
                 const isNode2Time = node2.labels && node2.labels.includes('Time');
@@ -2060,11 +2186,20 @@
         // 清空最近选择的节点
         function clearRecentNodes() {
             recentSelectedNodes = [];
+            // 更新所有可能打开的界面
             updateLinkFormContent();
+            updateDeleteFormContent();
+            updateModifyFormContent();
+            
+            // 更新样式（清除删除模式的红色描边）
+            updateSelectedItemsStyle();
         }
         
         function showDeleteNodeForm() {
             hideEditForms();
+            
+            // 启用删除模式
+            deleteMode = true;
             
             // 更新删除表单内容
             updateDeleteFormContent();
@@ -2072,6 +2207,9 @@
             // 设置按钮状态
             resetButtonStates();
             document.querySelector('.delete-node-btn').classList.add('active');
+            
+            // 更新所有选中项目的样式
+            updateSelectedItemsStyle();
         }
         
         function showQuintupleForm() {
@@ -2125,6 +2263,12 @@
             editForms.innerHTML = '';
             resetButtonStates();
             
+            // 禁用删除模式
+            deleteMode = false;
+            
+            // 恢复所有选中项目的正常样式
+            updateSelectedItemsStyle();
+            
             // 如果正在创建节点，取消创建
             if (isCreatingNode) {
                 cleanupNodeCreation();
@@ -2133,35 +2277,44 @@
         
         // 确认删除函数
         async function confirmDelete() {
-            if (!selectedItem) {
+            if (recentSelectedNodes.length === 0) {
                 alert('请先选择要删除的节点或关系');
                 return;
             }
             
-            // 计算将要删除的内容
-            let nodeCount = 0;
-            let relationshipCount = 0;
-            let itemDescription = '';
+            // 计算将要删除的所有内容
+            let totalNodeCount = 0;
+            let totalRelationshipCount = 0;
+            let itemDescriptions = [];
             
-            if (selectedItem.type === 'node') {
-                nodeCount = 1;
-                relationshipCount = getRelatedItemsCount();
-                itemDescription = `节点"${selectedItem.data.label}"`;
-            } else if (selectedItem.type === 'relationship') {
-                relationshipCount = 1;
-                const sourceNode = graphData.nodes.find(node => node.id === selectedItem.data.source.id);
-                const targetNode = graphData.nodes.find(node => node.id === selectedItem.data.target.id);
-                itemDescription = `关系"${selectedItem.data.type}" (从"${sourceNode ? sourceNode.label : 'Unknown'}"到"${targetNode ? targetNode.label : 'Unknown'}")`;
-            }
+            recentSelectedNodes.forEach((item, index) => {
+                if (item.type === 'node') {
+                    totalNodeCount += 1;
+                    const relatedCount = graphData.links.filter(link => 
+                        link.source.id === item.data.id || link.target.id === item.data.id
+                    ).length;
+                    totalRelationshipCount += relatedCount;
+                    itemDescriptions.push(`节点"${item.data.label}"（包含${relatedCount}个关系）`);
+                } else if (item.type === 'relationship') {
+                    totalRelationshipCount += 1;
+                    const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
+                    const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
+                    itemDescriptions.push(`关系"${item.data.type}" (从"${sourceNode ? sourceNode.label : 'Unknown'}"到"${targetNode ? targetNode.label : 'Unknown'}")`);
+                }
+            });
             
             // 构建确认消息
-            let confirmMessage = `确认删除 ${itemDescription}？\n\n`;
-            confirmMessage += `此操作将删除：\n`;
-            if (nodeCount > 0) {
-                confirmMessage += `• ${nodeCount} 个节点\n`;
+            let confirmMessage = `确认删除以下${recentSelectedNodes.length}个项目？\n\n`;
+            confirmMessage += `删除列表：\n`;
+            itemDescriptions.forEach((desc, index) => {
+                confirmMessage += `${index + 1}. ${desc}\n`;
+            });
+            confirmMessage += `\n此操作将总共删除：\n`;
+            if (totalNodeCount > 0) {
+                confirmMessage += `• ${totalNodeCount} 个节点\n`;
             }
-            if (relationshipCount > 0) {
-                confirmMessage += `• ${relationshipCount} 个关系\n`;
+            if (totalRelationshipCount > 0) {
+                confirmMessage += `• ${totalRelationshipCount} 个关系\n`;
             }
             confirmMessage += `\n此操作不可撤销，确定要继续吗？`;
             
@@ -2177,39 +2330,114 @@
                 confirmBtn.textContent = '删除中...';
                 confirmBtn.disabled = true;
                 
-                const response = await fetch('/api/delete_item', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        element_id: selectedItem.elementId
-                    })
-                });
+                // 按类型分组删除项目
+                const nodesToDelete = recentSelectedNodes.filter(item => item.type === 'node');
+                const relationshipsToDelete = recentSelectedNodes.filter(item => item.type === 'relationship');
                 
-                const result = await response.json();
+                let deleteResults = [];
                 
-                if (result.success) {
-                    // 清空选中项目
-                    selectedItem = null;
+                // 删除节点
+                for (const nodeItem of nodesToDelete) {
+                    try {
+                        const response = await fetch('/api/delete_item', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                element_id: nodeItem.data.neo4j_id
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        deleteResults.push({
+                            type: 'node',
+                            name: nodeItem.data.label,
+                            success: result.success,
+                            error: result.error
+                        });
+                    } catch (error) {
+                        deleteResults.push({
+                            type: 'node',
+                            name: nodeItem.data.label,
+                            success: false,
+                            error: error.message
+                        });
+                    }
+                }
+                
+                // 删除关系
+                for (const relationshipItem of relationshipsToDelete) {
+                    try {
+                        const response = await fetch('/api/delete_item', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                element_id: relationshipItem.data.neo4j_id
+                            })
+                        });
+                        
+                        const result = await response.json();
+                        deleteResults.push({
+                            type: 'relationship',
+                            name: relationshipItem.data.type,
+                            success: result.success,
+                            error: result.error
+                        });
+                    } catch (error) {
+                        deleteResults.push({
+                            type: 'relationship',
+                            name: relationshipItem.data.type,
+                            success: false,
+                            error: error.message
+                        });
+                    }
+                }
+                
+                // 统计结果
+                const successCount = deleteResults.filter(r => r.success).length;
+                const failCount = deleteResults.filter(r => !r.success).length;
+                
+                if (successCount > 0) {
+                    // 清空最近选择的项目
+                    recentSelectedNodes = [];
                     // 隐藏编辑表单
                     hideEditForms();
                     // 隐藏详情面板
                     document.getElementById("node-details").style.display = "none";
+                    
                     // 使用动态更新代替页面刷新
                     const updateSuccess = await updateGraphData();
-                    if (updateSuccess) {
-                        alert(`删除成功！${result.message || ''}\n\n图谱已自动更新显示最新数据。`);
-                    } else {
-                        alert(`删除成功！${result.message || ''}\n\n图谱数据更新失败，请手动刷新页面。`);
+                    
+                    let resultMessage = `批量删除完成！\n\n`;
+                    resultMessage += `成功删除：${successCount} 个项目\n`;
+                    if (failCount > 0) {
+                        resultMessage += `删除失败：${failCount} 个项目\n\n失败项目：\n`;
+                        deleteResults.filter(r => !r.success).forEach(r => {
+                            resultMessage += `- ${r.type === 'node' ? '节点' : '关系'} "${r.name}": ${r.error}\n`;
+                        });
                     }
+                    
+                    if (updateSuccess) {
+                        resultMessage += `\n图谱已自动更新显示最新数据。`;
+                    } else {
+                        resultMessage += `\n图谱数据更新失败，请手动刷新页面。`;
+                    }
+                    
+                    alert(resultMessage);
                 } else {
-                    alert(`删除失败：${result.error || '未知错误'}`);
+                    let errorMessage = `所有项目删除失败：\n\n`;
+                    deleteResults.forEach(r => {
+                        errorMessage += `- ${r.type === 'node' ? '节点' : '关系'} "${r.name}": ${r.error || '未知错误'}\n`;
+                    });
+                    alert(errorMessage);
                 }
                 
             } catch (error) {
-                console.error('删除操作失败:', error);
-                alert(`删除操作失败：${error.message}`);
+                console.error('批量删除操作失败:', error);
+                alert(`批量删除操作失败：${error.message}`);
             } finally {
                 // 恢复按钮状态
                 const confirmBtn = document.querySelector('.danger-btn');
@@ -2227,8 +2455,8 @@
                 return;
             }
             
-            const node1 = recentSelectedNodes[0];
-            const node2 = recentSelectedNodes[1];
+            const node1 = recentSelectedNodes[0].data;
+            const node2 = recentSelectedNodes[1].data;
             
             // 获取表单数据
             const predicate = document.getElementById('link-predicate').value.trim();
@@ -2365,6 +2593,7 @@
         // 更新动态属性显示区域
         function updateDynamicProperties(nodeType) {
             const container = document.getElementById('dynamic-properties-container');
+            const selectedItem = recentSelectedNodes[0];
             if (!container || !selectedItem) {
                 return;
             }
@@ -2431,7 +2660,7 @@
                         </div>
                     </div>
                 `;
-            } else if (nodeType === 'relationship' && selectedItem.type === 'relationship') {
+            } else if (nodeType === 'relationship' && selectedItem && selectedItem.type === 'relationship') {
                 // 处理关系类型
                 const item = selectedItem.data;
                 
@@ -2481,6 +2710,7 @@
         
         // 确认节点修改函数
         async function confirmNodeModification() {
+            const selectedItem = recentSelectedNodes[0];
             if (!selectedItem || (selectedItem.type !== 'node' && selectedItem.type !== 'relationship')) {
                 alert('请先选择一个节点或关系进行修改');
                 return;
@@ -2711,8 +2941,8 @@
                 return;
             }
             
-            const node1 = recentSelectedNodes[0];
-            const node2 = recentSelectedNodes[1];
+            const node1 = recentSelectedNodes[0].data;
+            const node2 = recentSelectedNodes[1].data;
             
             // 构建确认消息
             let directionText = '';
