@@ -116,7 +116,7 @@ class KnowledgeGraphManager:
             time_str: 时间字符串
             
         Returns:
-            Optional[str]: 创建的最具体时间节点名称，失败返回None
+            Optional[str]: 创建的最具体时间节点ID，失败返回None
         """
         if not time_str:
             return None
@@ -136,25 +136,30 @@ class KnowledgeGraphManager:
             else:
                 time_type = 'static'
 
+            most_specific_node_id = None
+
             # 如果有年份，创建年份节点
             if year_match:
                 year = year_match.group(1)
                 year_name = f"{year}年"
                 if time_type == 'recurring':
                     year_name = f"[re]{year}年"
-                most_specific_node = year_name
                 
                 # 创建年份节点 - 只记录到年份
                 year_time_str = f"{year}年"  # 只记录年份
-                session.run("""
+                result = session.run("""
                     MERGE (y:Time:Year {name: $year_name, time: $year_time_str})
                     SET y.node_type = 'Time',
                         y.type = $time_type
+                    RETURN elementId(y) as node_id
                 """, 
                     year_name=year_name,
                     year_time_str=year_time_str,
                     time_type=time_type
                 )
+                record = result.single()
+                if record:
+                    most_specific_node_id = record["node_id"]
             
             if month_match:
             # 如果有月份
@@ -164,7 +169,6 @@ class KnowledgeGraphManager:
                     month_name = f"{month}月"
                     if time_type == 'recurring':
                         month_name = f"[re]{month}月"
-                    most_specific_node = month_name
                     
                     # 创建月份节点 - 记录到年月或只记录月（recurring类型）
                     if time_type == 'recurring':
@@ -172,15 +176,19 @@ class KnowledgeGraphManager:
                     else:
                         month_time_str = f"{year}年{month}月"  # static类型记录年月
                     
-                    session.run("""
+                    result = session.run("""
                         MERGE (m:Time:Month {name: $month_name, time: $month_time_str})
                         SET m.node_type = 'Time',
                             m.type = $time_type
+                        RETURN elementId(m) as node_id
                     """, 
                         month_name=month_name,
                         month_time_str=month_time_str,
                         time_type=time_type
                     )
+                    record = result.single()
+                    if record:
+                        most_specific_node_id = record["node_id"]
                     
                     # 创建月份到年份的层次关系（年份节点在同一函数中已创建）
                     if year_match:
@@ -204,7 +212,6 @@ class KnowledgeGraphManager:
                     day_name = f"{day}日"
                     if time_type == 'recurring':
                         day_name = f"[re]{day}日"
-                    most_specific_node = day_name
                     
                     # 创建日期节点
                     day_time_str = f"{day}日"
@@ -213,15 +220,19 @@ class KnowledgeGraphManager:
                         if year_match:
                             day_time_str = f"{year}年{month}月{day}日"
                     
-                    session.run("""
+                    result = session.run("""
                         MERGE (d:Time:Day {name: $day_name, time: $day_time_str})
                         SET d.node_type = 'Time',
                             d.type = $time_type
+                        RETURN elementId(d) as node_id
                     """, 
                         day_name=day_name,
                         day_time_str=day_time_str,
                         time_type=time_type
                     )
+                    record = result.single()
+                    if record:
+                        most_specific_node_id = record["node_id"]
                     
                     # 创建日期到月份的层次关系（月份节点在同一函数中已创建）
                     if month_match:
@@ -254,7 +265,6 @@ class KnowledgeGraphManager:
                         day_name = f"第{week_number}周星期{weekday}"
                         if time_type == 'recurring':
                             day_name = f"[re]第{week_number}周星期{weekday}"
-                        most_specific_node = day_name
                         
                         # 创建周日期节点 - 根据类型记录对应精度
                         day_time_str = f"第{week_number}周星期{weekday}"
@@ -263,12 +273,13 @@ class KnowledgeGraphManager:
                             if year_match:
                                 day_time_str = f"{year}年{month}月第{week_number}周星期{weekday}"
                         
-                        session.run("""
+                        result = session.run("""
                             MERGE (d:Time:WeekDay {name: $day_name, time: $day_time_str})
                             SET d.node_type = 'Time',
                                 d.type = $time_type,
                                 d.week_number = $week_number,
                                 d.weekday = $weekday
+                            RETURN elementId(d) as node_id
                         """, 
                             day_name=day_name,
                             day_time_str=day_time_str,
@@ -276,6 +287,9 @@ class KnowledgeGraphManager:
                             week_number=week_number,
                             weekday=weekday
                         )
+                        record = result.single()
+                        if record:
+                            most_specific_node_id = record["node_id"]
                         
                         # 创建WeekDay到月份的层次关系（月份节点在同一函数中已创建）
                         if month_match:
@@ -299,7 +313,6 @@ class KnowledgeGraphManager:
                 hour_name = f"{hour}点"
                 if time_type == 'recurring':
                     hour_name = f"[re]{hour}点"
-                most_specific_node = hour_name
                 
                 # 创建小时节点 - 根据类型和已有信息记录对应精度
                 hour_time_str = f"{hour}点"
@@ -310,15 +323,19 @@ class KnowledgeGraphManager:
                         if year_match:
                             hour_time_str = f"{year}年{month}月{day}日{hour}点"
                 
-                session.run("""
+                result = session.run("""
                     MERGE (h:Time:Hour {name: $hour_name, time: $hour_time_str})
                     SET h.node_type = 'Time',
                         h.type = $time_type
+                    RETURN elementId(h) as node_id
                 """, 
                     hour_name=hour_name,
                     hour_time_str=hour_time_str,
                     time_type=time_type
                 )
+                record = result.single()
+                if record:
+                    most_specific_node_id = record["node_id"]
                 
                 # 创建小时到日期的层次关系（日期节点在同一函数中已创建）
                 if day_match:
@@ -381,20 +398,23 @@ class KnowledgeGraphManager:
                 sub_hour_name = sub_hour
                 if time_type == 'recurring':
                     sub_hour_name = f"[re]{sub_hour}"
-                most_specific_node = sub_hour_name
                     
                 # 创建SubHour节点
                 sub_hour_time_str = time_str
 
-                session.run("""
+                result = session.run("""
                     MERGE (sh:Time:SubHour {name: $sub_hour_name, time: $sub_hour_time_str})
                     SET sh.node_type = 'Time',
                         sh.type = $time_type
+                    RETURN elementId(sh) as node_id
                 """, 
                     sub_hour_name=sub_hour_name,
                     sub_hour_time_str=sub_hour_time_str,
                     time_type=time_type
                 )
+                record = result.single()
+                if record:
+                    most_specific_node_id = record["node_id"]
                 
                 # 创建SubHour到Hour的层次关系（Hour节点在同一函数中已创建）
                 if hour_match:
@@ -412,27 +432,51 @@ class KnowledgeGraphManager:
                         hour_time_str=hour_time_str
                     )
             
-            logger.debug(f"Created hierarchical time node, most specific node: {most_specific_node}")
-            return most_specific_node
+            if most_specific_node_id:
+                logger.debug(f"Created hierarchical time node with ID: {most_specific_node_id}")
+                return most_specific_node_id
+            else:
+                logger.warning(f"No specific node created for time: {time_str}")
+                return None
             
         except Exception as e:
             logger.error(f"Failed to create time node '{time_str}': {e}")
             # 回退到创建通用时间节点
             try:
-                session.run("""
+                result = session.run("""
                     MERGE (t:Time {name: $time, time: $time})
                     SET t.node_type = 'Time',
                         t.type = $time_type
+                    RETURN elementId(t) as node_id
                 """, 
                     time=time_str,
                     time_type=time_type
                 )
-                return time_str
+                record = result.single()
+                if record:
+                    return record["node_id"]
+                return None
             except Exception as fallback_e:
                 logger.error(f"Failed to create fallback time node: {fallback_e}")
                 return None
+
+
+    def create_node(self, session, name: str, node_type: str, importance: float = 0.5, trust: float = 0.5, context: str = "reality", note: str = "无") -> Optional[str]:
+        """
+        创建节点，可能创建多种节点类型时通过此节点。
+        """
+        if node_type == "Character":
+            return self.create_character_node(session, name, importance, trust, context)
+        elif node_type == "Location":
+            return self.create_location_node(session, name, context)
+        elif node_type == "Entity":
+            return self.create_entity_node(session, name, importance, context, note)
+        else:
+            logger.error(f"Unsupported node type: {node_type}")
+            return None
     
-    def create_character_node(self, session, name: str, importance: float = 0.5, trust: float = 0.5) -> Optional[str]:
+    
+    def create_character_node(self, session, name: str, importance: float = 0.5, trust: float = 0.5, context: str = "reality") -> Optional[str]:
         """
         创建角色节点
         
@@ -441,9 +485,10 @@ class KnowledgeGraphManager:
             name: 角色名称
             importance: 重要程度 (默认0.5)
             trust: 信任度 (默认0.5)
+            context: 上下文环境 (默认"reality")
             
         Returns:
-            Optional[str]: 创建的角色节点名称，失败返回None
+            Optional[str]: 创建的角色节点ID，失败返回None
         """
         if not name or not name.strip():
             logger.warning("Character name cannot be empty")
@@ -455,36 +500,50 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
             
-            session.run("""
+            result = session.run("""
                 CREATE (c:Character {name: $name})
                 SET c.created_at = $created_at,
                     c.node_type = 'Character',
                     c.importance = $importance,
                     c.trust = $trust,
+                    c.context = $context,
                     c.last_updated = $last_updated,
                     c.significance = 1
+                RETURN elementId(c) as node_id
             """, 
                 name=name,
                 importance=importance,
                 trust=trust,
+                context=context,
                 created_at=current_time,
                 last_updated=current_time
             )
             
-            logger.debug(f"Created character node: {name}")
-            return name
+            record = result.single()
+            if record:
+                node_id = record["node_id"]
+                logger.debug(f"Created character node '{name}' with ID: {node_id}")
+                return node_id
+            else:
+                logger.error(f"No result returned when creating character node '{name}'")
+                return None
             
         except Exception as e:
             logger.error(f"Failed to create character node '{name}': {e}")
             return None
     
 
-    def create_location_node(self, session, name: str) -> Optional[str]:
+    def create_location_node(self, session, name: str, context: str = "reality") -> Optional[str]:
         """
         创建地点节点
 
         Args:
+            session: Neo4j session
             name: 地点名称
+            context: 上下文环境 (默认"reality")
+            
+        Returns:
+            Optional[str]: 创建的地点节点ID，失败返回None
         """
         if not name or not name.strip():
             logger.warning("Location name cannot be empty")
@@ -496,24 +555,35 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
             
-            session.run("""
+            result = session.run("""
                 CREATE (l:Location {name: $name})
-                SET l.node_type = 'Location'
+                SET l.node_type = 'Location',
+                    l.context = $context,
+                    l.created_at = $created_at,
+                    l.last_updated = $last_updated
+                RETURN elementId(l) as node_id
             """, 
                 name=name,
+                context=context,
                 created_at=current_time,
                 last_updated=current_time
             )
             
-            logger.debug(f"Created location node: {name}")
-            return name
+            record = result.single()
+            if record:
+                node_id = record["node_id"]
+                logger.debug(f"Created location node '{name}' with ID: {node_id}")
+                return node_id
+            else:
+                logger.error(f"No result returned when creating location node '{name}'")
+                return None
             
         except Exception as e:
             logger.error(f"Failed to create location node '{name}': {e}")
             return None
 
 
-    def create_entity_node(self, session, name: str, importance: float = 0.5, note: str = "无") -> Optional[str]:
+    def create_entity_node(self, session, name: str, importance: float = 0.5, context: str = "reality", note: str = "无") -> Optional[str]:
         """
         创建实体节点（事件，物品，概念等）
         
@@ -521,10 +591,11 @@ class KnowledgeGraphManager:
             session: Neo4j session
             name: 实体名称
             importance: 重要程度 (默认0.5)
+            context: 上下文环境 (默认"reality")
             note: 备注 (默认"无")
             
         Returns:
-            Optional[str]: 创建的实体节点名称，失败返回None
+            Optional[str]: 创建的实体节点ID，失败返回None
         """
         if not name or not name.strip():
             logger.warning("Entity name cannot be empty")
@@ -536,24 +607,33 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
             
-            session.run("""
+            result = session.run("""
                 CREATE (e:Entity {name: $name})
                 SET e.created_at = $created_at,
                     e.node_type = 'Entity',
                     e.importance = $importance,
+                    e.context = $context,
                     e.note = $note,
                     e.last_updated = $last_updated,
                     e.significance = 1
+                RETURN elementId(e) as node_id
             """, 
                 name=name,
                 importance=importance,
+                context=context,
                 note=note,
                 created_at=current_time,
                 last_updated=current_time
             )
             
-            logger.debug(f"Created entity node: {name}")
-            return name
+            record = result.single()
+            if record:
+                node_id = record["node_id"]
+                logger.debug(f"Created entity node '{name}' with ID: {node_id}")
+                return node_id
+            else:
+                logger.error(f"No result returned when creating entity node '{name}'")
+                return None
             
         except Exception as e:
             logger.error(f"Failed to create entity node '{name}': {e}")
@@ -828,6 +908,10 @@ class KnowledgeGraphManager:
                 
                 if updated_record:
                     logger.info(f"Successfully updated node {node_id}")
+                    
+                    # 更新修改的节点
+                    self.update_node(node_id, significance=0.99, Increase_importance=True)
+                    
                     return node_id
                 else:
                     logger.error("Failed to update node")
@@ -837,142 +921,6 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to modify node '{node_id}': {e}")
             return None
     
-
-    def set_entity_time(self, node_id: str, time_str: str) -> Optional[str]:
-        """
-        为节点设置时间属性，如：
-        Entity--HAPPENED_AT->Time
-        Lation--BUILT_AT->Time
-        Character--BIRTHDAY_AT->Time
-        
-        Args:
-            node_id: Neo4j节点ID
-            time_str: 时间字符串
-            
-        Returns:
-            Optional[str]: 设置成功返回节点ID，失败返回None
-        """
-        if not self._ensure_connection():
-            logger.error("Cannot set node time: No Neo4j connection")
-            return None
-        
-        if not node_id or not node_id.strip():
-            logger.error("Node ID cannot be empty")
-            return None
-        
-        if not time_str or not time_str.strip():
-            logger.error("Time string cannot be empty")
-            return None
-        
-        try:
-            with self.driver.session() as session:
-                # 检查节点是否存在且为Entity类型
-                check_query = """
-                MATCH (n) WHERE elementId(n) = $node_id
-                RETURN n.name as node_name, labels(n) as node_labels
-                """
-                
-                check_result = session.run(check_query, node_id=node_id).single()
-                
-                if not check_result:
-                    logger.error(f"Node with ID '{node_id}' not found")
-                    return None
-                
-                node_labels = check_result["node_labels"]
-                if "Entity" not in node_labels:
-                    logger.error(f"Only Entity nodes can have time attributes. Node {node_id} has labels: {node_labels}")
-                    return None
-                
-                # 删除已有的时间关联（覆盖逻辑）
-                session.run("""
-                    MATCH (n) WHERE elementId(n) = $node_id
-                    OPTIONAL MATCH (n)-[r:HAPPENED_AT]->(t:Time)
-                    DELETE r
-                """, node_id=node_id)
-                
-                # 创建时间节点
-                time_node_name = self.create_time_node(session, time_str)
-                
-                if not time_node_name:
-                    logger.error(f"Failed to create time node for '{time_str}'")
-                    return None
-                
-                # 将时间节点与目标节点关联
-                session.run("""
-                    MATCH (n) WHERE elementId(n) = $node_id
-                    MATCH (t:Time {name: $time_node_name})
-                    CREATE (n)-[r:HAPPENED_AT]->(t)
-                    SET r.created_at = $created_at
-                """, 
-                    node_id=node_id,
-                    time_node_name=time_node_name,
-                    created_at=datetime.now().isoformat()
-                )
-                
-                logger.info(f"Set time '{time_str}' for Entity node {node_id}")
-                return node_id
-                
-        except Exception as e:
-            logger.error(f"Failed to set time for node '{node_id}': {e}")
-            return None
-
-    def set_location(self, relation_id: str, location_name: str) -> Optional[str]:
-        """
-        为关系设置地点属性，如：
-        (Entity)-[HAPPENED_AT]->(Location)
-        添加地点信息
-        
-        Args:
-            relation_id: Neo4j关系ID
-            location_name: 地点名称
-            
-        Returns:
-            Optional[str]: 设置成功返回关系ID，失败返回None
-        """
-        if not self._ensure_connection():
-            logger.error("Cannot set relation location: No Neo4j connection")
-            return None
-        
-        if not relation_id or not relation_id.strip():
-            logger.error("Relation ID cannot be empty")
-            return None
-        
-        if not location_name or not location_name.strip():
-            logger.error("Location name cannot be empty")
-            return None
-        
-        try:
-            with self.driver.session() as session:
-                # 检查关系是否存在
-                check_query = """
-                MATCH ()-[r]->() WHERE elementId(r) = $relation_id
-                RETURN type(r) as rel_type, properties(r) as rel_properties
-                """
-                
-                check_result = session.run(check_query, relation_id=relation_id).single()
-                
-                if not check_result:
-                    logger.error(f"Relation with ID '{relation_id}' not found")
-                    return None
-                
-                # 更新关系属性，添加地点信息
-                session.run("""
-                    MATCH ()-[r]->() WHERE elementId(r) = $relation_id
-                    SET r.location = $location_name,
-                        r.last_updated = $last_updated
-                """, 
-                    relation_id=relation_id,
-                    location_name=location_name,
-                    last_updated=datetime.now().isoformat()
-                )
-                
-                logger.info(f"Set location '{location_name}' for relation {relation_id}")
-                return relation_id
-                
-        except Exception as e:
-            logger.error(f"Failed to set location for relation '{relation_id}': {e}")
-            return None
-
 
     def modify_relation(self, relation_id: str, predicate: str, source: str, confidence: float = 0.5, 
                         directivity: str = "to_B") -> Optional[str]:
@@ -1088,8 +1036,8 @@ class KnowledgeGraphManager:
                         
                         # 创建保护关系到原位置
                         restore_relation_id = self.create_relation(
-                            node_a_id=source_node_id,
-                            node_b_id=target_node_id,
+                            node_a_id=restore_source_id,
+                            node_b_id=restore_target_id,
                             predicate=opposite_relation_info.get("predicate", "PRESERVED_RELATION"),
                             source=opposite_relation_info.get("source", "relation_swap_protection"),
                             confidence=opposite_relation_info.get("confidence", 0.5),
@@ -1106,6 +1054,11 @@ class KnowledgeGraphManager:
             
             if new_relation_id:
                 logger.info(f"Successfully modified relation: created new relation {new_relation_id} with predicate '{predicate}' and directivity '{directivity}'")
+                
+                # 更新关系涉及的两个节点
+                self.update_node(source_node_id, significance=0.99, Increase_importance=True)
+                self.update_node(target_node_id, significance=0.99, Increase_importance=True)
+                
                 return new_relation_id
             else:
                 logger.error("Failed to create new relation after deletion")
@@ -1113,6 +1066,166 @@ class KnowledgeGraphManager:
                 
         except Exception as e:
             logger.error(f"Failed to modify relation '{relation_id}': {e}")
+            return None
+
+
+    def set_entity_time(self, node_id: str, time_str: str, source: str = "unknown") -> Optional[str]:
+        """
+        为节点设置时间属性：
+        Entity--HAPPENED_AT->Time
+        
+        Args:
+            node_id: Neo4j节点ID
+            time_str: 时间字符串
+            
+        Returns:
+            Optional[str]: 设置成功返回节点ID，失败返回None
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot set node time: No Neo4j connection")
+            return None
+        
+        if not node_id or not node_id.strip():
+            logger.error("Node ID cannot be empty")
+            return None
+        
+        if not time_str or not time_str.strip():
+            logger.error("Time string cannot be empty")
+            return None
+        
+        try:
+            with self.driver.session() as session:
+                # 检查节点是否存在且为Entity类型
+                check_query = """
+                MATCH (n) WHERE elementId(n) = $node_id
+                RETURN n.name as node_name, labels(n) as node_labels
+                """
+                
+                check_result = session.run(check_query, node_id=node_id).single()
+                
+                if not check_result:
+                    logger.error(f"Node with ID '{node_id}' not found")
+                    return None
+                
+                node_labels = check_result["node_labels"]
+                if "Entity" not in node_labels:
+                    logger.error(f"Only Entity nodes can have time attributes. Node {node_id} has labels: {node_labels}")
+                    return None
+                
+                # 删除已有的时间关联（覆盖逻辑）
+                session.run("""
+                    MATCH (n) WHERE elementId(n) = $node_id
+                    OPTIONAL MATCH (n)-[r:HAPPENED_AT]->(t:Time)
+                    DELETE r
+                """, node_id=node_id)
+                
+                # 创建时间节点
+                time_node_id = self.create_time_node(session, time_str)
+                
+                if not time_node_id:
+                    logger.error(f"Failed to create time node for '{time_str}'")
+                    return None
+                
+                # 将时间节点与目标节点关联
+                relation_id = self.create_relation(
+                    node_a_id=node_id,
+                    node_b_id=time_node_id,
+                    predicate="HAPPENED_AT",
+                    source="set_entity_time",
+                    confidence=0.9,
+                    directivity="to_B"
+                )
+                
+                if not relation_id:
+                    logger.error("Failed to create HAPPENED_AT relationship")
+                    return None
+                
+                logger.info(f"Set time '{time_str}' for Entity node {node_id}")
+                
+                # 更新实体节点
+                self.update_node(node_id, significance=0.99, Increase_importance=True)
+                
+                return node_id
+                
+        except Exception as e:
+            logger.error(f"Failed to set time for node '{node_id}': {e}")
+            return None
+
+    def set_location(self, node_id: str, location: str, source: str = "unknown", context: str = "reality") -> Optional[str]:
+        """
+        为节点设置地点属性，如：
+        (Entity)-[HAPPENED_IN]->(Location)
+        
+        Args:
+            node_id: Neo4j节点ID
+            location: 地点名称
+            
+        Returns:
+            Optional[str]: 设置成功返回node_id，失败返回None
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot set node location: No Neo4j connection")
+            return None
+        
+        if not node_id or not node_id.strip():
+            logger.error("Node ID cannot be empty")
+            return None
+        
+        if not location or not location.strip():
+            logger.error("Location name cannot be empty")
+            return None
+        
+        try:
+            with self.driver.session() as session:
+                # 检查节点是否存在
+                check_query = """
+                MATCH (n) WHERE elementId(n) = $node_id
+                RETURN n.name as node_name, labels(n) as node_labels
+                """
+                
+                check_result = session.run(check_query, node_id=node_id).single()
+                
+                if not check_result:
+                    logger.error(f"Node with ID '{node_id}' not found")
+                    return None
+                
+                # 删除已有的地点关联（覆盖逻辑）
+                session.run("""
+                    MATCH (n) WHERE elementId(n) = $node_id
+                    OPTIONAL MATCH (n)-[r:HAPPENED_IN]->(l:Location)
+                    DELETE r
+                """, node_id=node_id)
+                
+                # 创建地点节点
+                location_node_id = self.create_location_node(session, location, context)
+                
+                if not location_node_id:
+                    logger.error(f"Failed to create location node for '{location}'")
+                    return None
+                
+                # 将地点节点与目标节点关联
+                relation_id = self.create_relation(
+                    node_a_id=node_id,
+                    node_b_id=location_node_id,
+                    predicate="HAPPENED_IN",
+                    source="set_location",
+                    confidence=0.9,
+                    directivity="to_B"
+                )
+                
+                if not relation_id:
+                    logger.error("Failed to create HAPPENED_AT relationship")
+                    return None
+                
+                logger.info(f"Set location '{location}' for node {node_id}")
+
+                # 更新节点
+                self.update_node(node_id, significance=0.99, Increase_importance=True)
+
+                return node_id
+                
+        except Exception as e:
+            logger.error(f"Failed to set location for node '{node_id}': {e}")
             return None
 
     
@@ -1200,7 +1313,7 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to update node significance '{node_id}': {e}")
             return None
 
-    def _find_node(self, session, node_name: str, node_type: str, time: str, location: str, signature_node: str) -> Optional[str]:
+    def _find_node(self, session, node_name: str, node_type: str, time: str, location: str, signature_node: str, context: str) -> Optional[str]:
         """
         查找匹配的客体节点
         
@@ -1224,7 +1337,7 @@ class KnowledgeGraphManager:
             OPTIONAL MATCH (n)-[:HAPPENED_AT]->(t:Time)
             OPTIONAL MATCH (n)-[:HAPPENED_IN]->(l:Location)
             RETURN elementId(n) as node_id, n.last_updated as last_updated,
-                   labels(n) as node_labels, n.node_type as node_type,
+                   labels(n) as node_labels, n.node_type as node_type, n.context as node_context,
                    t.time as node_time, l.name as node_location
             """
             
@@ -1238,18 +1351,19 @@ class KnowledgeGraphManager:
                     'node_labels': record['node_labels'],
                     'node_type': record['node_type'],
                     'node_time': record['node_time'],
-                    'node_location': record['node_location']
+                    'node_location': record['node_location'],
+                    'node_context': record['node_context']
                 })
             
             if not candidates:
                 # 没有找到同名节点
                 return None
             
-            # 第2步：移除不符合类型（node_type）的节点
+            # 第2步：移除不符合类型（node_type）和语境（context）的节点
             if node_type:  # 只有提供了node_type才进行类型过滤
                 candidates = [
                     candidate for candidate in candidates
-                    if candidate['node_type'] == node_type
+                    if candidate['node_type'] == node_type and context in candidate['node_context']
                 ]
                 if not candidates:
                     return None
@@ -1347,22 +1461,21 @@ class KnowledgeGraphManager:
             return None
         
 
-    def write_quintuple(self, subject: str, action: str, object: str, time: str = None, location: str = None, with_person: str = None, directivity: bool = True, importance: float = 0.5, confidence: float = 0.5, context: str = "", source: str = "user_input") -> Optional[str]:
+    def write_quintuple(self, subject: str, action: str, object: str, time: str = None, location: str = None, with_person: str = None, directivity: bool = True, importance: float = 0.5, confidence: float = 0.5, context: str = "reality", source: str = "user_input") -> Optional[str]:
         """
         创建五元组关系
-        
         输入(list of)：
-            subject:"主体（必填）",
-            predicate:"谓词/动作（必填），",
-            object:"客体/事件（选填）",
-            time:"事件发生的时间（选填）",
-            location:"事件发生的地点（选填）",
-            with_person:["事件涉及到的其他人A", "事件涉及到的其他人B"],
-            directivity:"主体与其他人的关系是否可逆（仅在有with_person时填写）",
-            importance:"这条信息的重要性（必填）",
-            confidence:"这条信息的真实性（必填）",
-            context:"这条信息的语境，如现实，某款游戏，某个故事（必填）",
-            source:"谁提供的信息（必填）"
+            subject:主体（必填）,
+            predicate:谓词/动作（必填），,
+            object:客体/事件（选填）,
+            time:事件发生的时间（选填）,
+            location:事件发生的地点（选填）,
+            with_person:[事件涉及到的其他人A, 事件涉及到的其他人B],
+            directivity:主体与其他人的关系是否可逆（仅在有with_person时填写）,
+            importance:这条信息的重要性（必填）,
+            confidence:这条信息的真实性（必填）,
+            context:这条信息的语境，如现实，某款游戏，某个故事（必填）,
+            source:谁提供的信息（必填）
         返回：
             创建成功：返回主关系ID
             创建失败：返回None
@@ -1372,68 +1485,67 @@ class KnowledgeGraphManager:
             当试图存储，A吃的是一个红色的苹果，AI应该传输和A相连的苹果的节点ID，从而确保不会混淆。
             然具体实施过于复杂（尤其是要过两边AI），当前并不进行实际查询和匹配，主要依靠时间地点匹配和[最近提到]的机制来匹配。
         """
+        
         if not self._ensure_connection():
             logger.error("Cannot write quintuple: No Neo4j connection")
             return None
         
         # 整理输入元素
+        # 情况0：信息不全，无主体和谓词，直接返回None
+        if not all([subject, action]):
+            logger.error("Subject, action, and object are required")
+            return None
         # 情况1：主谓宾，无时间地点 -> 三元组，关系建立(主语)--谓词->(宾语)
         # 无需调整
         # 情况2：主谓+时间or地点，无宾语 -> 不完全五元组，关系建立(主语)--has_action->(谓词)--HAPPENED_AT/IN->(时间/地点)
         # 将谓词作为宾语，谓词改为HAS_ACTION
-        # 情况3：主谓宾+时间or地点 -> 完整五元组
-        # 无需调整
-
-        # 必须有主体和谓词，没有则直接返回None
-        if not all([subject, action]):
-            logger.error("Subject, action, and object are required")
-            return None
-
-        # 如果没有客体，将谓词作为客体，谓词填HAS_ACTION
         if not object:
             object = action
             action = "HAS_ACTION"
             logger.debug(f"No object provided, using action as object with predicate 'HAS_ACTION'")
-        
+        # 情况3：主谓宾+时间or地点 -> 完整五元组
+        # 无需调整，于是到这里为止至少确保后续都一定有主谓宾
         # 检查各项内容是否被标注：[时间](地点)<角色>
+        def decode_annotation(text: str) -> tuple[str, str]:
+            """解析标注并返回节点类型和纯净内容"""
+            if text.startswith('[') and text.endswith(']'):
+                return "Time", text[1:-1]
+            elif text.startswith('(') and text.endswith(')'):
+                return "Location", text[1:-1]
+            elif text.startswith('<') and text.endswith('>'):
+                return "Character", text[1:-1]
+            else:
+                return "Entity", text
         
+        subject_type, subject = decode_annotation(subject)
+        object_type, object = decode_annotation(object)
         
          # 开始事务处理
         try:
             with self.driver.session() as session:
-                # 查找主体节点，提供主体，客体作为signature_node帮助匹配
-                subject_id = self._find_node(session, subject, None, None, None, object)
+                # 查找主体节点，提供客体作为signature_node帮助匹配
+                subject_id = self._find_node(session, subject, subject_type, None, None, object, context)
                 if subject_id:
                     logger.debug(f"Found existing subject node: {subject} with ID: {subject_id}")
                 else:
                     # 没有找到匹配的节点，创建新的主体节点
-                    self.create_entity_node(session, subject, 0.5, "主体节点")
-                    subject_result = session.run("""
-                        MATCH (n:Entity {name: $name})
-                        WHERE n.created_at IS NOT NULL
-                        RETURN elementId(n) as node_id
-                        ORDER BY n.created_at DESC
-                        LIMIT 1
-                    """, name=subject).single()
-                    subject_id = subject_result["node_id"] if subject_result else None
-                    logger.debug(f"Created new subject node: {subject} with ID: {subject_id}")
+                    subject_id = self.create_node(session, subject, subject_type, context)
+                    if subject_id:
+                        logger.debug(f"Created new subject node: {subject} with ID: {subject_id}")
+                    else:
+                        logger.error(f"Failed to create subject node: {subject}")
                 
-                # 查找客体节点
-                object_id = self._find_node(session, object, time, location)
+                # 查找客体节点，提供时间，地点，主体作为signature_node帮助匹配
+                object_id = self._find_node(session, object, object_type, time, location, subject, context)
                 if object_id:
                     logger.debug(f"Found existing object node: {object} with ID: {object_id}")
                 else:
                     # 没有找到匹配的节点，创建新的客体节点
-                    self.create_entity_node(session, object, importance, "客体节点")
-                    object_result = session.run("""
-                        MATCH (n:Entity {name: $name})
-                        WHERE n.created_at IS NOT NULL
-                        RETURN elementId(n) as node_id
-                        ORDER BY n.created_at DESC
-                        LIMIT 1
-                    """, name=object).single()
-                    object_id = object_result["node_id"] if object_result else None
-                    logger.debug(f"Created new object node: {object} with ID: {object_id}")
+                    object_id = self.create_node(session, object, object_type, context)
+                    if object_id:
+                        logger.debug(f"Created new object node: {object} with ID: {object_id}")
+                    else:
+                        logger.error(f"Failed to create object node: {object}")
                 
                 if not subject_id or not object_id:
                     logger.error("Failed to create or find subject/object nodes")
@@ -1453,10 +1565,10 @@ class KnowledgeGraphManager:
                     logger.error("Failed to create main relation")
                     return None
                 
-                # 处理时间节点
+                # 处理时间节点（时间节点有特殊规则，可以直接使用）
                 if time:
                     # 使用set_entity_time方法设置时间
-                    result = self.set_entity_time(object_id, time)
+                    result = self.set_entity_time(object_id, time, source=source)
                     if result:
                         logger.debug(f"Set time for object node {object}: {time}")
                     else:
@@ -1464,50 +1576,12 @@ class KnowledgeGraphManager:
                 
                 # 处理地点节点
                 if location:
-                    # 检查客体节点是否已经有地点链接
-                    existing_location_check = session.run("""
-                        MATCH (obj) WHERE elementId(obj) = $object_id
-                        OPTIONAL MATCH (obj)-[:HAPPENED_IN]->(l:Location)
-                        RETURN l.name as existing_location
-                    """, object_id=object_id).single()
-                    
-                    existing_location = existing_location_check["existing_location"] if existing_location_check else None
-                    
-                    if existing_location:
-                        logger.debug(f"Object node {object} already has location link to: {existing_location}, skipping location creation")
+                    # 直接使用set_location方法设置地点
+                    result = self.set_location(object_id, location, source=source, context=context)
+                    if result:
+                        logger.debug(f"Set location for object node {object}: {location}")
                     else:
-                        # 创建地点节点
-                        session.run("""
-                            MERGE (l:Location {name: $location})
-                            ON CREATE SET l.created_at = $created_at,
-                                         l.node_type = 'Location'
-                            SET l.source = $source,
-                                l.last_updated = $created_at
-                        """, 
-                            location=location,
-                            source=source,
-                            created_at=datetime.now().isoformat()
-                        )
-                        
-                        # 通过HAPPENED_IN链接客体到地点节点
-                        location_relation = session.run("""
-                            MATCH (obj) WHERE elementId(obj) = $object_id
-                            MATCH (l:Location {name: $location})
-                            CREATE (obj)-[r:HAPPENED_IN]->(l)
-                            SET r.created_at = $created_at,
-                                r.source = $source,
-                                r.confidence = $confidence,
-                                r.action_context = $action
-                            RETURN elementId(r) as relation_id
-                        """, 
-                            object_id=object_id,
-                            location=location,
-                            created_at=datetime.now().isoformat(),
-                            source=source,
-                            confidence=confidence,
-                            action=action
-                        ).single()
-                        logger.debug(f"Created location relationship: {object} -> {location}")
+                        logger.warning(f"Failed to set location for object node {object}: {location}")
                 
                 # 处理同行者节点
                 if with_person:
@@ -1517,16 +1591,11 @@ class KnowledgeGraphManager:
                         logger.debug(f"Found existing with_person node: {with_person} with ID: {with_person_id}")
                     else:
                         # 没有找到匹配的节点，创建新的同行者节点
-                        self.create_entity_node(session, with_person, importance, "同行者节点")
-                        with_person_result = session.run("""
-                            MATCH (n:Entity {name: $name})
-                            WHERE n.created_at IS NOT NULL
-                            RETURN elementId(n) as node_id
-                            ORDER BY n.created_at DESC
-                            LIMIT 1
-                        """, name=with_person).single()
-                        with_person_id = with_person_result["node_id"] if with_person_result else None
-                        logger.debug(f"Created new with_person node: {with_person} with ID: {with_person_id}")
+                        with_person_id = self.create_entity_node(session, with_person, importance, "同行者节点")
+                        if with_person_id:
+                            logger.debug(f"Created new with_person node: {with_person} with ID: {with_person_id}")
+                        else:
+                            logger.error(f"Failed to create with_person node: {with_person}")
                     
                     if with_person_id:
                         # 根据directivity决定关系方向
