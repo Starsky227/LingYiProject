@@ -1167,6 +1167,204 @@
             console.log('显示关系详情 - 原始数据:', d);
             console.log('关系source_type:', d.source_type);
             
+            // 检查是否有多个同向关系
+            const sameDirectionLinks = graphData.links.filter(link => 
+                (link.source.id === d.source.id && link.target.id === d.target.id) ||
+                (link.source.id === d.target.id && link.target.id === d.source.id)
+            );
+            
+            if (sameDirectionLinks.length > 1) {
+                // 有多个同向关系，显示选择框
+                showMultiRelationSelector(event, sameDirectionLinks);
+                return;
+            }
+            
+            // 只有一个关系，直接显示详情
+            showSingleRelationDetails(d);
+        }
+        
+        // 显示多关系选择框
+        function showMultiRelationSelector(event, relations) {
+            // 移除已存在的选择框
+            d3.select('.multi-relation-selector').remove();
+            
+            const mouseX = event.pageX;
+            const mouseY = event.pageY;
+            
+            // 创建选择框容器
+            const selectorDiv = d3.select('body')
+                .append('div')
+                .attr('class', 'multi-relation-selector')
+                .style('position', 'fixed')
+                .style('left', Math.min(mouseX + 10, window.innerWidth - 420) + 'px')
+                .style('top', Math.min(mouseY - 10, window.innerHeight - 320) + 'px')
+                .style('background', '#fff')
+                .style('border', '2px solid #007bff')
+                .style('border-radius', '8px')
+                .style('box-shadow', '0 4px 12px rgba(0,0,0,0.3)')
+                .style('z-index', '10000')
+                .style('min-width', '300px')
+                .style('max-width', '400px')
+                .style('max-height', '300px')
+                .style('overflow-y', 'auto')
+                .style('font-family', 'Arial, sans-serif');
+            
+            // 添加标题栏
+            const headerDiv = selectorDiv.append('div')
+                .style('background', '#f8f9fa')
+                .style('padding', '8px 12px')
+                .style('border-bottom', '1px solid #dee2e6')
+                .style('display', 'flex')
+                .style('justify-content', 'space-between')
+                .style('align-items', 'center');
+            
+            headerDiv.append('span')
+                .style('font-weight', 'bold')
+                .style('font-size', '14px')
+                .style('color', '#495057')
+                .text(`选择关系 (${relations.length}个)`);
+            
+            // 添加关闭按钮
+            headerDiv.append('button')
+                .style('background', 'none')
+                .style('border', 'none')
+                .style('font-size', '18px')
+                .style('color', '#6c757d')
+                .style('cursor', 'pointer')
+                .style('padding', '0')
+                .style('width', '24px')
+                .style('height', '24px')
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .text('×')
+                .on('click', function(event) {
+                    event.stopPropagation();
+                    closeMutliRelationSelector();
+                })
+                .on('mouseover', function() {
+                    d3.select(this).style('background', '#e9ecef').style('border-radius', '4px');
+                })
+                .on('mouseout', function() {
+                    d3.select(this).style('background', 'none');
+                });
+            
+            // 添加关系列表
+            const listDiv = selectorDiv.append('div')
+                .style('padding', '8px 0');
+            
+            relations.forEach((relation, index) => {
+                const relationDiv = listDiv.append('div')
+                    .style('padding', '8px 12px')
+                    .style('cursor', 'pointer')
+                    .style('border-bottom', index < relations.length - 1 ? '1px solid #f1f3f4' : 'none')
+                    .style('display', 'flex')
+                    .style('flex-direction', 'column')
+                    .style('transition', 'background-color 0.2s')
+                    .on('click', function(event) {
+                        event.stopPropagation();
+                        selectRelationFromList(relation);
+                    })
+                    .on('mouseover', function() {
+                        d3.select(this).style('background', '#f8f9fa');
+                        // 高亮对应的关系线
+                        highlightRelation(relation, true);
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this).style('background', '#fff');
+                        // 取消高亮
+                        highlightRelation(relation, false);
+                    });
+                
+                // 关系类型和方向
+                const typeDiv = relationDiv.append('div')
+                    .style('font-weight', 'bold')
+                    .style('color', '#495057')
+                    .style('margin-bottom', '4px')
+                    .style('font-size', '14px');
+                
+                const sourceNode = graphData.nodes.find(n => n.id === relation.source.id);
+                const targetNode = graphData.nodes.find(n => n.id === relation.target.id);
+                
+                let directionIcon = '→';
+                if (relation.properties?.directivity === 'bidirectional') {
+                    directionIcon = '↔';
+                } else if (relation.properties?.directivity === 'to_A') {
+                    directionIcon = '←';
+                }
+                
+                typeDiv.text(`${relation.type} (${sourceNode?.label || 'Unknown'} ${directionIcon} ${targetNode?.label || 'Unknown'})`);
+                
+                // 关系详细信息
+                const detailsDiv = relationDiv.append('div')
+                    .style('font-size', '12px')
+                    .style('color', '#6c757d');
+                
+                let details = [];
+                if (relation.properties?.source) {
+                    details.push(`来源: ${relation.properties.source}`);
+                }
+                if (relation.properties?.confidence) {
+                    const confidence = parseFloat(relation.properties.confidence);
+                    details.push(`置信度: ${(confidence * 100).toFixed(1)}%`);
+                }
+                if (relation.properties?.created_at) {
+                    const date = new Date(relation.properties.created_at);
+                    details.push(`创建: ${date.toLocaleDateString()}`);
+                }
+                
+                if (details.length > 0) {
+                    detailsDiv.text(details.join(' • '));
+                }
+            });
+            
+            // 点击其他地方关闭选择框
+            setTimeout(() => {
+                d3.select('body').on('click.multiRelationSelector', function(event) {
+                    if (!event.target.closest('.multi-relation-selector')) {
+                        closeMutliRelationSelector();
+                    }
+                });
+            }, 100);
+            
+            // ESC键关闭选择框
+            d3.select('body').on('keydown.multiRelationSelector', function(event) {
+                if (event.key === 'Escape') {
+                    closeMutliRelationSelector();
+                }
+            });
+        }
+        
+        // 关闭多关系选择框
+        function closeMutliRelationSelector() {
+            d3.select('.multi-relation-selector').remove();
+            d3.select('body').on('click.multiRelationSelector', null);
+            d3.select('body').on('keydown.multiRelationSelector', null);
+            // 取消所有关系的高亮
+            container.selectAll('.link')
+                .style('stroke-width', function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke', null);
+        }
+        
+        // 从列表中选择关系
+        function selectRelationFromList(relation) {
+            // 关闭选择框
+            closeMutliRelationSelector();
+            
+            // 显示选中关系的详情
+            showSingleRelationDetails(relation);
+        }
+        
+        // 高亮/取消高亮关系
+        function highlightRelation(relation, highlight) {
+            container.selectAll('.link')
+                .filter(d => d === relation)
+                .style('stroke-width', highlight ? '5px' : function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke', highlight ? '#ff6b6b' : null);
+        }
+        
+        // 显示单个关系详情
+        function showSingleRelationDetails(d) {
             const detailsDiv = document.getElementById("node-details");
             const propertiesDiv = document.getElementById("node-properties");
             const titleDiv = document.getElementById("detail-title");
