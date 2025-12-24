@@ -640,8 +640,8 @@ class KnowledgeGraphManager:
             return None
     
 
-    def create_relation(self, node_a_id: str, node_b_id: str, predicate: str, source: str, 
-                     confidence: float = 0.5, directivity: str = "to_B") -> Optional[str]:
+    def create_relation(self, node_a_id: str, node_b_id: str, predicate: str, source: str, confidence: float = 0.5, 
+                        directivity: str = "to_B") -> Optional[str]:
         """
         在两个节点之间创建关系
         
@@ -710,16 +710,7 @@ class KnowledgeGraphManager:
                 current_time = datetime.now().isoformat()
                 
                 # 删除已存在的相同方向关系，避免重复
-                if directivity == "bidirectional":
-                    # 删除双向关系
-                    session.run("""
-                        MATCH (a) WHERE elementId(a) = $node_a_id
-                        MATCH (b) WHERE elementId(b) = $node_b_id
-                        OPTIONAL MATCH (a)-[r1]->(b) WHERE r1.directivity = 'to_B'
-                        OPTIONAL MATCH (b)-[r2]->(a) WHERE r2.directivity = 'to_A'
-                        DELETE r1, r2
-                    """, node_a_id=node_a_id, node_b_id=node_b_id)
-                elif directivity == "to_A":
+                if directivity == "to_A" or directivity == "bidirectional":
                     # 删除B->A方向的关系
                     session.run("""
                         MATCH (a) WHERE elementId(a) = $node_b_id
@@ -727,7 +718,8 @@ class KnowledgeGraphManager:
                         OPTIONAL MATCH (a)-[r]->(b) WHERE r.directivity = 'to_A'
                         DELETE r
                     """, node_a_id=node_a_id, node_b_id=node_b_id)
-                else:  # directivity == "to_B"
+                    
+                if directivity == "to_B" or directivity == "bidirectional":
                     # 删除A->B方向的关系
                     session.run("""
                         MATCH (a) WHERE elementId(a) = $node_a_id
@@ -736,8 +728,10 @@ class KnowledgeGraphManager:
                         DELETE r
                     """, node_a_id=node_a_id, node_b_id=node_b_id)
                 
-                # 如果是双向关系，直接创建两个单向关系
-                if directivity == "bidirectional":
+                # 创建关系
+                relationship_id = None
+                
+                if directivity == "to_B" or directivity == "bidirectional":
                     # 创建 A->B 关系 (to_B)
                     to_b_query = f"""
                     MATCH (source) WHERE elementId(source) = $node_a_id
@@ -751,6 +745,20 @@ class KnowledgeGraphManager:
                     RETURN elementId(r) as to_b_relationship_id
                     """
                     
+                    to_b_result = session.run(to_b_query,
+                                             node_a_id=node_a_id,
+                                             node_b_id=node_b_id,
+                                             predicate=predicate,
+                                             source=source,
+                                             confidence=confidence,
+                                             created_at=current_time)
+                    
+                    to_b_record = to_b_result.single()
+                    if to_b_record:
+                        relationship_id = to_b_record["to_b_relationship_id"]
+                        logger.debug(f"Created to_B relationship")
+                
+                if directivity == "to_A" or directivity == "bidirectional":
                     # 创建 B->A 关系 (to_A)
                     to_a_query = f"""
                     MATCH (source) WHERE elementId(source) = $node_b_id
@@ -764,15 +772,6 @@ class KnowledgeGraphManager:
                     RETURN elementId(r) as to_a_relationship_id
                     """
                     
-                    # 执行两个关系创建
-                    to_b_result = session.run(to_b_query,
-                                             node_a_id=node_a_id,
-                                             node_b_id=node_b_id,
-                                             predicate=predicate,
-                                             source=source,
-                                             confidence=confidence,
-                                             created_at=current_time)
-                    
                     to_a_result = session.run(to_a_query,
                                              node_a_id=node_a_id,
                                              node_b_id=node_b_id,
@@ -781,50 +780,11 @@ class KnowledgeGraphManager:
                                              confidence=confidence,
                                              created_at=current_time)
                     
-                    to_b_record = to_b_result.single()
                     to_a_record = to_a_result.single()
-                    
-                    if to_b_record and to_a_record:
-                        logger.debug(f"Created bidirectional relationships: to_B and to_A")
-                        relationship_id = to_b_record["to_b_relationship_id"]  # 返回其中一个关系ID
-                    elif to_b_record:
-                        logger.debug(f"Created to_B relationship")
-                        relationship_id = to_b_record["to_b_relationship_id"]
-                    elif to_a_record:
+                    if to_a_record:
+                        if not relationship_id:  # 如果还没有设置关系ID，使用to_A的ID
+                            relationship_id = to_a_record["to_a_relationship_id"]
                         logger.debug(f"Created to_A relationship")
-                        relationship_id = to_a_record["to_a_relationship_id"]
-                    else:
-                        logger.warning(f"Failed to create bidirectional relationships")
-                        relationship_id = None
-                else:
-                    # 创建单向关系
-                    create_relationship_query = f"""
-                    MATCH (source) WHERE elementId(source) = $source_id
-                    MATCH (target) WHERE elementId(target) = $target_id
-                    CREATE (source)-[r:{predicate_safe}]->(target)
-                    SET r.created_at = $created_at,
-                        r.predicate = $predicate,
-                        r.source = $source,
-                        r.confidence = $confidence,
-                        r.directivity = $directivity
-                    RETURN elementId(r) as relationship_id
-                    """
-                    
-                    result = session.run(create_relationship_query,
-                                       source_id=source_id,
-                                       target_id=target_id,
-                                       predicate=predicate,
-                                       source=source,
-                                       confidence=confidence,
-                                       directivity=directivity,
-                                       created_at=current_time)
-                    
-                    relationship_record = result.single()
-                    if relationship_record:
-                        relationship_id = relationship_record["relationship_id"]
-                        logger.debug(f"Created relationship: {direction_desc} with predicate '{predicate}'")
-                    else:
-                        relationship_id = None
                 
                 if relationship_id:
                     logger.info(f"Successfully connected nodes: {direction_desc}")
@@ -972,38 +932,6 @@ class KnowledgeGraphManager:
                 target_name = check_result["target_name"]
                 current_directivity = check_result["current_directivity"]
                 
-                # 检查是否需要进行关系交换保护
-                opposite_relation_info = None
-                if ((current_directivity == "to_B" and directivity == "to_A") or 
-                    (current_directivity == "to_A" and directivity == "to_B")) and directivity != "bidirectional":
-                    
-                    # 检查反向是否已有关系
-                    if directivity == "to_A":
-                        # 当前要改为 B->A，检查是否已有 B->A 关系
-                        opposite_check_query = """
-                        MATCH (a) WHERE elementId(a) = $target_node_id
-                        MATCH (b) WHERE elementId(b) = $source_node_id
-                        OPTIONAL MATCH (a)-[r]->(b) WHERE r.directivity = 'to_A'
-                        RETURN elementId(r) as opposite_rel_id, properties(r) as opposite_properties
-                        """
-                    else:  # directivity == "to_B"
-                        # 当前要改为 A->B，检查是否已有 A->B 关系
-                        opposite_check_query = """
-                        MATCH (a) WHERE elementId(a) = $source_node_id
-                        MATCH (b) WHERE elementId(b) = $target_node_id
-                        OPTIONAL MATCH (a)-[r]->(b) WHERE r.directivity = 'to_B'
-                        RETURN elementId(r) as opposite_rel_id, properties(r) as opposite_properties
-                        """
-                    
-                    opposite_result = session.run(opposite_check_query, 
-                                                source_node_id=source_node_id, 
-                                                target_node_id=target_node_id).single()
-                    
-                    if opposite_result and opposite_result["opposite_rel_id"]:
-                        # 保存即将被覆盖的关系信息
-                        opposite_relation_info = opposite_result["opposite_properties"]
-                        logger.info(f"Found existing opposite relation, will preserve its data")
-                
                 # 删除原关系
                 session.run("""
                     MATCH ()-[r]-() WHERE elementId(r) = $relation_id
@@ -1021,36 +949,6 @@ class KnowledgeGraphManager:
                 confidence=confidence,
                 directivity=directivity
             )
-            
-            # 如果有需要保护的反向关系，将其数据写到原位置
-            if opposite_relation_info and new_relation_id:
-                try:
-                    with self.driver.session() as session:
-                        # 确定原位置的方向
-                        if current_directivity == "to_B":
-                            restore_directivity = "to_B"
-                            restore_source_id, restore_target_id = source_node_id, target_node_id
-                        else:  # current_directivity == "to_A"
-                            restore_directivity = "to_A" 
-                            restore_source_id, restore_target_id = target_node_id, source_node_id
-                        
-                        # 创建保护关系到原位置
-                        restore_relation_id = self.create_relation(
-                            node_a_id=restore_source_id,
-                            node_b_id=restore_target_id,
-                            predicate=opposite_relation_info.get("predicate", "PRESERVED_RELATION"),
-                            source=opposite_relation_info.get("source", "relation_swap_protection"),
-                            confidence=opposite_relation_info.get("confidence", 0.5),
-                            directivity=restore_directivity
-                        )
-                        
-                        if restore_relation_id:
-                            logger.info(f"Successfully preserved opposite relation data at original position")
-                        else:
-                            logger.warning(f"Failed to preserve opposite relation data")
-                            
-                except Exception as e:
-                    logger.error(f"Failed to preserve opposite relation: {e}")
             
             if new_relation_id:
                 logger.info(f"Successfully modified relation: created new relation {new_relation_id} with predicate '{predicate}' and directivity '{directivity}'")
@@ -1459,9 +1357,9 @@ class KnowledgeGraphManager:
         except Exception as e:
             logger.error(f"Failed to find object node '{node_name}': {e}")
             return None
-        
 
-    def write_quintuple(self, subject: str, action: str, object: str, time: str = None, location: str = None, with_person: str = None, directivity: bool = True, importance: float = 0.5, confidence: float = 0.5, context: str = "reality", source: str = "user_input") -> Optional[str]:
+
+    def write_quintuple(self, subject: str, predicate: str, object: str, time: str = None, location: str = None, with_person: str = None, directivity: bool = True, importance: float = 0.5, confidence: float = 0.5, context: str = "reality", source: str = "user_input") -> Optional[str]:
         """
         创建五元组关系
         输入(list of)：
@@ -1492,16 +1390,16 @@ class KnowledgeGraphManager:
         
         # 整理输入元素
         # 情况0：信息不全，无主体和谓词，直接返回None
-        if not all([subject, action]):
-            logger.error("Subject, action, and object are required")
+        if not all([subject, predicate]):
+            logger.error("Subject, predicate, and object are required")
             return None
         # 情况1：主谓宾，无时间地点 -> 三元组，关系建立(主语)--谓词->(宾语)
         # 无需调整
         # 情况2：主谓+时间or地点，无宾语 -> 不完全五元组，关系建立(主语)--has_action->(谓词)--HAPPENED_AT/IN->(时间/地点)
         # 将谓词作为宾语，谓词改为HAS_ACTION
         if not object:
-            object = action
-            action = "HAS_ACTION"
+            object = predicate
+            predicate = "HAS_ACTION"
             logger.debug(f"No object provided, using action as object with predicate 'HAS_ACTION'")
         # 情况3：主谓宾+时间or地点 -> 完整五元组
         # 无需调整，于是到这里为止至少确保后续都一定有主谓宾
@@ -1555,7 +1453,7 @@ class KnowledgeGraphManager:
                 main_relation_id = self.create_relation(
                     node_a_id=subject_id,
                     node_b_id=object_id,
-                    predicate=action,
+                    predicate=predicate,
                     source=source,
                     confidence=confidence,
                     directivity="to_B"
@@ -1586,12 +1484,12 @@ class KnowledgeGraphManager:
                 # 处理同行者节点
                 if with_person:
                     # 查找同行者节点
-                    with_person_id = self._find_node(session, with_person)
+                    with_person_id = self._find_node(session, with_person, "Character", None, None, object, context)
                     if with_person_id:
                         logger.debug(f"Found existing with_person node: {with_person} with ID: {with_person_id}")
                     else:
                         # 没有找到匹配的节点，创建新的同行者节点
-                        with_person_id = self.create_entity_node(session, with_person, importance, "同行者节点")
+                        with_person_id = self.create_entity_node(session, with_person, importance, context)
                         if with_person_id:
                             logger.debug(f"Created new with_person node: {with_person} with ID: {with_person_id}")
                         else:
@@ -1601,11 +1499,13 @@ class KnowledgeGraphManager:
                         # 根据directivity决定关系方向
                         if directivity:
                             # True: 被动参与 (to_B: 客体 -> 同行者)
+                            # 使用"被+原动作"的形式
+                            passive_predicate = f"被{predicate}"
                             with_relation_directivity = "to_B"
                             with_relation_id = self.create_relation(
                                 node_a_id=object_id,
                                 node_b_id=with_person_id,
-                                predicate="同行",
+                                predicate=passive_predicate,
                                 source=source,
                                 confidence=confidence,
                                 directivity=with_relation_directivity
@@ -1616,7 +1516,7 @@ class KnowledgeGraphManager:
                             with_relation_id = self.create_relation(
                                 node_a_id=object_id,
                                 node_b_id=with_person_id,
-                                predicate="共事",
+                                predicate=predicate,
                                 source=source,
                                 confidence=confidence,
                                 directivity=with_relation_directivity
@@ -1624,7 +1524,7 @@ class KnowledgeGraphManager:
                         
                         logger.debug(f"Created with_person relationship: {object} <-> {with_person}")
                 
-                logger.info(f"Successfully created quintuple: {subject} -{action}-> {object}")
+                logger.info(f"Successfully created quintuple: {subject} -{predicate}-> {object}")
                 return main_relation_id
                 
         except Exception as e:
@@ -1632,410 +1532,6 @@ class KnowledgeGraphManager:
             return None
 
 
-    def _create_quintuple_cross_references(self, session, quintuples: List) -> bool:
-        """
-        检测五元组之间的交叉引用并创建关系
-        例如：A告诉B关于某个事件 -> 直接链接到该事件的五元组
-        """
-        
-        try:
-            # 为每个五元组创建一个事件标识符
-            events = []
-            for quintuple in quintuples:
-                # 创建事件签名：主体+动作+客体+时间
-                event_signature = f"{quintuple.subject}_{quintuple.action}_{quintuple.object}_{quintuple.time or 'no_time'}"
-                events.append({
-                    'quintuple': quintuple,
-                    'signature': event_signature,
-                    'key_info': {
-                        'subject': quintuple.subject,
-                        'action': quintuple.action,
-                        'object': quintuple.object,
-                        'time': quintuple.time,
-                        'location': quintuple.location
-                    }
-                })
-            
-            # 检测讲述类型的五元组
-            narrative_actions = ['告诉', '说', '讲', '提到', '描述', '回忆']
-            
-            for event in events:
-                quintuple = event['quintuple']
-                
-                # 检查是否是讲述类型的动作
-                if any(action in quintuple.action for action in narrative_actions):
-                    object_content = quintuple.object
-                    
-                    # 尝试从object中提取时间、地点、人物信息
-                    time_matches = re.findall(r'\(([^)]+)\)', object_content)
-                    location_matches = re.findall(r'\[([^\]]+)\]', object_content)
-                    person_matches = re.findall(r'<([^>]+)>', object_content)
-                    
-                    # 查找可能匹配的事件
-                    for other_event in events:
-                        if other_event == event:  # 跳过自己
-                            continue
-                        
-                        other_quintuple = other_event['quintuple']
-                        match_score = 0
-                        
-                        # 检查时间匹配
-                        if time_matches and other_quintuple.time:
-                            for time_ref in time_matches:
-                                if time_ref in other_quintuple.time or other_quintuple.time in time_ref:
-                                    match_score += 3
-                        
-                        # 检查地点匹配
-                        if location_matches and other_quintuple.location:
-                            for loc_ref in location_matches:
-                                if loc_ref in other_quintuple.location or other_quintuple.location in loc_ref:
-                                    match_score += 2
-                        
-                        # 检查人物匹配
-                        if person_matches:
-                            for person_ref in person_matches:
-                                if person_ref == other_quintuple.subject:
-                                    match_score += 2
-                        
-                        # 检查动作关键词匹配
-                        object_clean = re.sub(r'[()<>\[\]]', '', object_content)
-                        if other_quintuple.action in object_clean or any(word in object_clean for word in other_quintuple.action.split()):
-                            match_score += 1
-                        
-                        # 如果匹配分数够高，创建引用关系
-                        if match_score >= 3:
-                            self._create_event_reference_relationship(
-                                session, quintuple, other_quintuple, match_score
-                            )
-                            logger.debug(f"Created cross-reference: {quintuple.subject} {quintuple.action} -> {other_quintuple.subject} {other_quintuple.action} (score: {match_score})")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to create quintuple cross-references: {e}")
-            return False
-    
-    def _create_event_reference_relationship(self, session, narrative_quintuple, referenced_quintuple, confidence_score: int):
-        """
-        在讲述类五元组和被引用的事件五元组之间创建引用关系
-        """
-        try:
-            # 创建事件节点（如果不存在）
-            narrative_event_id = f"event_{hash(f'{narrative_quintuple.subject}_{narrative_quintuple.action}_{narrative_quintuple.object}_{narrative_quintuple.time_record}')}"
-            referenced_event_id = f"event_{hash(f'{referenced_quintuple.subject}_{referenced_quintuple.action}_{referenced_quintuple.object}_{referenced_quintuple.time_record}')}"
-            
-            # 创建或更新讲述事件节点
-            session.run("""
-                MERGE (ne:Event {id: $narrative_event_id})
-                SET ne.subject = $narrative_subject,
-                    ne.action = $narrative_action,
-                    ne.object = $narrative_object,
-                    ne.time = $narrative_time,
-                    ne.location = $narrative_location,
-                    ne.source = $narrative_source,
-                    ne.confidence = $narrative_confidence,
-                    ne.importance = $narrative_importance,
-                    ne.time_record = $narrative_time_record,
-                    ne.event_type = 'narrative'
-            """, 
-                narrative_event_id=narrative_event_id,
-                narrative_subject=narrative_quintuple.subject,
-                narrative_action=narrative_quintuple.action,
-                narrative_object=narrative_quintuple.object,
-                narrative_time=narrative_quintuple.time,
-                narrative_location=narrative_quintuple.location,
-                narrative_source=narrative_quintuple.source,
-                narrative_confidence=narrative_quintuple.confidence,
-                narrative_importance=narrative_quintuple.importance,
-                narrative_time_record=narrative_quintuple.time_record
-            )
-            
-            # 创建或更新被引用事件节点
-            session.run("""
-                MERGE (re:Event {id: $referenced_event_id})
-                SET re.subject = $referenced_subject,
-                    re.action = $referenced_action,
-                    re.object = $referenced_object,
-                    re.time = $referenced_time,
-                    re.location = $referenced_location,
-                    re.source = $referenced_source,
-                    re.confidence = $referenced_confidence,
-                    re.importance = $referenced_importance,
-                    re.time_record = $referenced_time_record,
-                    re.event_type = 'actual'
-            """, 
-                referenced_event_id=referenced_event_id,
-                referenced_subject=referenced_quintuple.subject,
-                referenced_action=referenced_quintuple.action,
-                referenced_object=referenced_quintuple.object,
-                referenced_time=referenced_quintuple.time,
-                referenced_location=referenced_quintuple.location,
-                referenced_source=referenced_quintuple.source,
-                referenced_confidence=referenced_quintuple.confidence,
-                referenced_importance=referenced_quintuple.importance,
-                referenced_time_record=referenced_quintuple.time_record
-            )
-            
-            # 创建引用关系
-            session.run("""
-                MATCH (ne:Event {id: $narrative_event_id})
-                MATCH (re:Event {id: $referenced_event_id})
-                MERGE (ne)-[r:REFERS_TO]->(re)
-                ON CREATE SET r.created_at = $time_record
-                SET r.confidence_score = $confidence_score,
-                    r.last_updated = $time_record,
-                    r.relationship_type = 'narrative_reference'
-            """, 
-                narrative_event_id=narrative_event_id,
-                referenced_event_id=referenced_event_id,
-                confidence_score=confidence_score,
-                time_record=narrative_quintuple.time_record
-            )
-            
-            logger.debug(f"Created event reference relationship with confidence {confidence_score}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to create event reference relationship: {e}")
-            return False
-    
-    def _create_triple_node_and_relationship(self, session, triple) -> bool:
-        """创建三元组的节点和关系"""
-        try:
-            # 创建主体节点
-            session.run("""
-                MERGE (s:Entity {name: $subject})
-                ON CREATE SET s.created_at = $time_record
-                SET s.source = $source,
-                    s.confidence = $confidence,
-                    s.last_updated = $time_record
-            """,
-                subject=triple.subject,
-                source=triple.source,
-                confidence=triple.confidence,
-                time_record=triple.time_record
-            )
-            
-            # 创建客体节点
-            session.run("""
-                MERGE (o:Entity {name: $object})
-                ON CREATE SET o.created_at = $time_record
-                SET o.source = $source,
-                    o.confidence = $confidence,
-                    o.last_updated = $time_record
-            """,
-                object=triple.object,
-                source=triple.source,
-                confidence=triple.confidence,
-                time_record=triple.time_record
-            )
-            
-            # 创建关系
-            # 使用 APOC 或直接构建动态关系类型
-            predicate_safe = triple.predicate.replace(" ", "_").replace("-", "_").upper()
-            if not predicate_safe.replace("_", "").isalnum():
-                predicate_safe = "RELATED_TO"  # 回退到通用关系
-            
-            session.run(f"""
-                MATCH (s:Entity {{name: $subject}})
-                MATCH (o:Entity {{name: $object}})
-                MERGE (s)-[r:{predicate_safe}]->(o)
-                ON CREATE SET r.created_at = $time_record
-                SET r.predicate = $predicate,
-                    r.source = $source,
-                    r.confidence = $confidence,
-                    r.last_updated = $time_record
-            """,
-                subject=triple.subject,
-                object=triple.object,
-                predicate=triple.predicate,
-                source=triple.source,
-                confidence=triple.confidence,
-                time_record=triple.time_record
-            )
-            
-            logger.debug(f"Created triple: {triple.subject} -> {triple.predicate} -> {triple.object}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to create triple: {e}")
-            return False
-    
-    def _create_quintuple_nodes_and_relationships(self, session, quintuple) -> bool:
-        """创建五元组的节点和关系"""
-        try:
-            # 创建主体节点
-            session.run("""
-                MERGE (s:Entity {name: $subject})
-                ON CREATE SET s.created_at = $time_record
-                SET s.source = $source,
-                    s.confidence = $confidence,
-                    s.last_updated = $time_record
-            """, 
-                subject=quintuple.subject,
-                source=quintuple.source,
-                confidence=quintuple.confidence,
-                time_record=quintuple.time_record
-            )
-            
-            # 创建客体节点
-            session.run("""
-                MERGE (o:Entity {name: $object})
-                ON CREATE SET o.created_at = $time_record
-                SET o.source = $source,
-                    o.confidence = $confidence,
-                    o.importance = $importance,
-                    o.significance = 1,
-                    o.last_updated = $time_record
-            """, 
-                object=quintuple.object,
-                source=quintuple.source,
-                confidence=quintuple.confidence,
-                importance=quintuple.importance,
-                time_record=quintuple.time_record
-            )
-            
-            # 如果有时间信息，创建层次化时间节点
-            specific_time_node = None
-            if quintuple.time:
-                specific_time_node = self.create_time_node(
-                    session, quintuple.time
-                )
-            
-            # 如果有地点信息，创建地点节点
-            if quintuple.location:
-                session.run("""
-                    MERGE (l:Location {name: $location})
-                    ON CREATE SET l.created_at = $time_record
-                    SET l.source = $source,
-                        l.last_updated = $time_record
-                """, 
-                    location=quintuple.location,
-                    source=quintuple.source,
-                    time_record=quintuple.time_record
-                )
-            
-            # 创建主要动作关系
-            action_safe = quintuple.action.replace(" ", "_").replace("-", "_").upper()
-            if not action_safe.replace("_", "").isalnum():
-                action_safe = "PERFORMED_ACTION"  # 回退到通用动作
-            
-            session.run(f"""
-                MATCH (s:Entity {{name: $subject}})
-                MATCH (o:Entity {{name: $object}})
-                MERGE (s)-[r:{action_safe}]->(o)
-                ON CREATE SET r.created_at = $time_record
-                SET r.action = $action,
-                    r.source = $source,
-                    r.confidence = $confidence,
-                    r.importance = $importance,
-                    r.last_updated = $time_record,
-                    r.time = $time,
-                    r.location = $location
-            """, 
-                subject=quintuple.subject,
-                object=quintuple.object,
-                action=quintuple.action,
-                source=quintuple.source,
-                confidence=quintuple.confidence,
-                importance=quintuple.importance,
-                time_record=quintuple.time_record,
-                time=quintuple.time,
-                location=quintuple.location
-            )
-            
-            # 如果有时间，创建时间关系（连接到最具体的时间节点）
-            if specific_time_node:
-                # 根据时间节点类型选择合适的标签查询
-                time_query = """
-                    MATCH (o:Entity {name: $object})
-                    MATCH (t {name: $time_node})
-                    MERGE (o)-[r:HAPPENED_AT]->(t)
-                    ON CREATE SET r.created_at = $time_record
-                    SET r.source = $source,
-                        r.last_updated = $time_record,
-                        r.action_context = $action,
-                        r.importance = $importance
-                """
-                session.run(time_query, 
-                    object=quintuple.object,
-                    time_node=specific_time_node,
-                    source=quintuple.source,
-                    time_record=quintuple.time_record,
-                    action=quintuple.action,
-                    importance=quintuple.importance
-                )
-            
-            # 如果有地点，创建地点关系
-            # 如果有地点，应该把地点关联到事件（object）而非主体
-            if quintuple.location:
-                session.run("""
-                    MATCH (o:Entity {name: $object})
-                    MATCH (l:Location {name: $location})
-                    MERGE (o)-[r:HAPPENED_IN]->(l)
-                    ON CREATE SET r.created_at = $time_record
-                    SET r.source = $source,
-                        r.last_updated = $time_record,
-                        r.action_context = $action,
-                        r.importance = $importance
-                """, 
-                    object=quintuple.object,
-                    location=quintuple.location,
-                    source=quintuple.source,
-                    time_record=quintuple.time_record,
-                    action=quintuple.action,
-                    importance=quintuple.importance
-                )
-            
-            logger.debug(f"Created quintuple: {quintuple.subject} -> {quintuple.action} -> {quintuple.object}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to create quintuple: {e}")
-            return False
-    
-    def write_triple(self, triple) -> bool:
-        """写入单个三元组到 Neo4j"""
-        if not self._ensure_connection():
-            logger.error("Cannot write triple: No Neo4j connection")
-            return False
-        
-        try:
-            with self.driver.session() as session:
-                return self._create_triple_node_and_relationship(session, triple)
-        except TransientError as e:
-            logger.warning(f"Transient error writing triple, retrying: {e}")
-            try:
-                with self.driver.session() as session:
-                    return self._create_triple_node_and_relationship(session, triple)
-            except Exception as retry_e:
-                logger.error(f"Failed to write triple after retry: {retry_e}")
-                return False
-        except Exception as e:
-            logger.error(f"Failed to write triple: {e}")
-            return False
-    
-    def write_quintuple(self, quintuple) -> bool:
-        """写入单个五元组到 Neo4j"""
-        if not self._ensure_connection():
-            logger.error("Cannot write quintuple: No Neo4j connection")
-            return False
-        
-        try:
-            with self.driver.session() as session:
-                return self._create_quintuple_nodes_and_relationships(session, quintuple)
-        except TransientError as e:
-            logger.warning(f"Transient error writing quintuple, retrying: {e}")
-            try:
-                with self.driver.session() as session:
-                    return self._create_quintuple_nodes_and_relationships(session, quintuple)
-            except Exception as retry_e:
-                logger.error(f"Failed to write quintuple after retry: {retry_e}")
-                return False
-        except Exception as e:
-            logger.error(f"Failed to write quintuple: {e}")
-            return False
-    
     def write_memories_batch(self, triples: List, quintuples: List) -> Dict[str, Any]:
         """批量写入三元组和五元组"""
         if not self._ensure_connection():
@@ -2288,41 +1784,8 @@ class KnowledgeGraphManager:
                 "element_id": element_id,
                 "element_type": None
             }
-    
-    def clear_recent_memory(self) -> bool:
-        """清空 recent_memory.json 文件，重置为初始状态"""
-        try:
-            # 获取 recent_memory.json 文件路径
-            recent_memory_file = os.path.join(config.system.log_dir, "recent_memory.json")
-            
-            # 创建初始状态的数据结构
-            initial_data = {
-                "triples": [],
-                "quintuples": [],
-                "metadata": {
-                    "last_cleared": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-                    "total_triples": 0,
-                    "total_quintuples": 0,
-                    "total_memories": 0
-                }
-            }
-            
-            # 确保目录存在
-            os.makedirs(os.path.dirname(recent_memory_file), exist_ok=True)
-            
-            # 写入初始状态
-            with open(recent_memory_file, 'w', encoding='utf-8') as f:
-                json.dump(initial_data, f, ensure_ascii=False, indent=2)
-            
-            logger.info(f"Successfully cleared recent_memory.json at {recent_memory_file}")
-            logger.info(f"File reset to initial state at {initial_data['metadata']['last_cleared']}")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to clear recent_memory.json: {e}")
-            return False
-    
+
+
     def clear_all_memory(self) -> bool:
         """清空Neo4j中的全部记忆节点，彻底格式化记忆，无法回退
         
@@ -2611,227 +2074,305 @@ class KnowledgeGraphManager:
                 "triples_uploaded": 0,
                 "quintuples_uploaded": 0
             }
-    
-    def _upload_triple_with_dedup(self, session, triple_data) -> bool:
-        """上传三元组到Neo4j，处理查重和覆盖逻辑"""
+
+
+    def _extract_connected_nodes(self, session, nodes_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        根据根据节点id提取节点内容。
+        输入：
+        nodes_data->来自上一次该函数的产出。
+        输出：
+        {"nodes": [
+            {"id": "节点ID",
+            "labels": ["节点标签1", "节点标签2"],
+            "properties": {property1: value1, property2: value2}}
+        ],
+        "relationships": [
+            {"id": "关系ID",
+            "type": "关系类型",
+            "start_node": "起始节点ID",
+            "end_node": "结束节点ID",
+            "properties": {property1: value1, property2: value2}}
+        ],
+        "connected_node_ids": [node_id1, node_id2, ...],
+        "new_node_ids": [node_id3, node_id4, ...]  # 仅包含新提取的节点ID}
+        """
+        if not nodes_data:
+            return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
+        
         try:
-            subject = triple_data.get("subject", "")
-            predicate = triple_data.get("predicate", "")
-            object_name = triple_data.get("object", "")
-            source = triple_data.get("source", "")
-            confidence = triple_data.get("confidence", 0.0)
-            time_record = triple_data.get("time_record", "")
+            # 存储所有节点和关系
+            all_nodes_list = nodes_data.get("nodes", [])
+            all_relationships_list = nodes_data.get("relationships", [])
+            connected_node_ids = set(nodes_data.get("connected_node_ids", []) + nodes_data.get("new_node_ids", []))
+            nodes_to_read = nodes_data.get("new_node_ids", [])
+            new_node_ids = set()
             
-            if not all([subject, predicate, object_name]):
-                logger.warning(f"Incomplete triple data: {triple_data}")
-                return False
+            # 转换为字典格式便于去重和查找
+            all_nodes = {node["id"]: node for node in all_nodes_list}
+            all_relationships = {rel["id"]: rel for rel in all_relationships_list}
             
-            # 创建或更新主体节点（如果存在则覆盖属性）
-            session.run("""
-                MERGE (s:Entity {name: $subject})
-                ON CREATE SET s.created_at = $time_record
-                SET s.source = $source,
-                    s.confidence = $confidence,
-                    s.last_updated = $time_record
-            """, 
-                subject=subject,
-                source=source,
-                confidence=confidence,
-                time_record=time_record
-            )
+            # 如果没有新节点需要读取，直接返回原数据
+            if not nodes_to_read:
+                return {
+                    "nodes": all_nodes_list,
+                    "relationships": all_relationships_list,
+                    "connected_node_ids": list(connected_node_ids),
+                    "new_node_ids": []
+                }
             
-            # 创建或更新客体节点（如果存在则覆盖属性）
-            session.run("""
-                MERGE (o:Entity {name: $object})
-                ON CREATE SET o.created_at = $time_record
-                SET o.source = $source,
-                    o.confidence = $confidence,
-                    o.last_updated = $time_record
-            """, 
-                object=object_name,
-                source=source,
-                confidence=confidence,
-                time_record=time_record
-            )
-            
-            # 处理关系名称
-            predicate_safe = predicate.replace(" ", "_").replace("-", "_").upper()
-            if not predicate_safe.replace("_", "").isalnum():
-                predicate_safe = "RELATED_TO"
-            
-            # 创建或更新关系（如果存在则覆盖属性）
-            session.run(f"""
-                MATCH (s:Entity {{name: $subject}})
-                MATCH (o:Entity {{name: $object}})
-                MERGE (s)-[r:{predicate_safe}]->(o)
-                SET r.predicate = $predicate,
-                    r.source = $source,
-                    r.confidence = $confidence,
-                    r.created_at = $time_record,
-                    r.last_updated = $time_record
-            """, 
-                subject=subject,
-                object=object_name,
-                predicate=predicate,
-                source=source,
-                confidence=confidence,
-                time_record=time_record
-            )
-            
-            logger.debug(f"Uploaded triple with dedup: {subject} -> {predicate} -> {object_name}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Failed to upload triple with dedup: {e}")
-            return False
-    
-    def _upload_quintuple_with_dedup(self, session, quintuple_data) -> bool:
-        """上传五元组到Neo4j，处理查重和覆盖逻辑"""
-        try:
-            subject = quintuple_data.get("subject", "")
-            action = quintuple_data.get("action", "")
-            object_name = quintuple_data.get("object", "")
-            time = quintuple_data.get("time", "")
-            location = quintuple_data.get("location", "")
-            source = quintuple_data.get("source", "")
-            confidence = quintuple_data.get("confidence", 0.0)
-            importance = quintuple_data.get("importance", 0.5)
-            time_record = quintuple_data.get("time_record", "")
-            
-            if not all([subject, action, object_name]):
-                logger.warning(f"Incomplete quintuple data: {quintuple_data}")
-                return False
-            
-            # 创建或更新主体节点
-            session.run("""
-                MERGE (s:Entity {name: $subject})
-                ON CREATE SET s.created_at = $time_record
-                SET s.source = $source,
-                    s.confidence = $confidence,
-                    s.last_updated = $time_record
-            """, 
-                subject=subject,
-                source=source,
-                confidence=confidence,
-                time_record=time_record
-            )
-            
-            # 创建或更新客体节点
-            session.run("""
-                MERGE (o:Entity {name: $object})
-                ON CREATE SET o.created_at = $time_record
-                SET o.source = $source,
-                    o.confidence = $confidence,
-                    o.importance = $importance,
-                    o.significance = 1,
-                    o.last_updated = $time_record
-            """, 
-                object=object_name,
-                source=source,
-                confidence=confidence,
-                importance=importance,
-                time_record=time_record
-            )
-            
-            # 如果有时间信息，创建层次化时间节点
-            specific_time_node = None
-            if time:
-                specific_time_node = self._parse_and_create_hierarchical_time(
-                    session, time, time_record
-                )
-            
-            # 如果有地点信息，创建或更新地点节点
-            if location:
-                session.run("""
-                    MERGE (l:Location {name: $location})
-                    ON CREATE SET l.created_at = $time_record
-                    SET l.source = $source,
-                        l.last_updated = $time_record
-                """, 
-                    location=location,
-                    source=source,
-                    time_record=time_record
-                )
-            
-            # 处理动作关系名称
-            action_safe = action.replace(" ", "_").replace("-", "_").upper()
-            if not action_safe.replace("_", "").isalnum():
-                action_safe = "PERFORMED_ACTION"
-            
-            # 创建或更新主要动作关系
-            session.run(f"""
-                MATCH (s:Entity {{name: $subject}})
-                MATCH (o:Entity {{name: $object}})
-                MERGE (s)-[r:{action_safe}]->(o)
-                SET r.action = $action,
-                    r.source = $source,
-                    r.confidence = $confidence,
-                    r.importance = $importance,
-                    r.created_at = $time_record,
-                    r.time = $time,
-                    r.location = $location,
-                    r.last_updated = $time_record
-            """, 
-                subject=subject,
-                object=object_name,
-                action=action,
-                source=source,
-                confidence=confidence,
-                importance=importance,
-                time_record=time_record,
-                time=time,
-                location=location
-            )
-            
-            # 如果有时间，创建时间关系（连接到最具体的时间节点）
-            if specific_time_node:
-                # 根据时间节点类型选择合适的标签查询
-                time_query = """
-                    MATCH (o:Entity {name: $object})
-                    MATCH (t {name: $time_node})
-                    MERGE (o)-[r:HAPPENED_AT]->(t)
-                    SET r.source = $source,
-                        r.created_at = $time_record,
-                        r.action_context = $action,
-                        r.last_updated = $time_record,
-                        r.importance = $importance
+            # 查询nodes_to_read连接的所有节点和关系
+            for node_id in nodes_to_read:
+                # 查询该节点及其所有连接的节点和关系
+                query = """
+                MATCH (root) WHERE elementId(root) = $node_id
+                OPTIONAL MATCH (root)-[r]-(connected)
+                RETURN 
+                    elementId(root) as root_id, labels(root) as root_labels, properties(root) as root_properties,
+                    elementId(connected) as connected_id, labels(connected) as connected_labels, properties(connected) as connected_properties,
+                    elementId(r) as rel_id, type(r) as rel_type, 
+                    elementId(startNode(r)) as rel_start, elementId(endNode(r)) as rel_end,
+                    properties(r) as rel_properties
                 """
-                session.run(time_query, 
-                    object=object_name,
-                    time_node=specific_time_node,
-                    source=source,
-                    time_record=time_record,
-                    action=action,
-                    importance=importance
-                )
+                
+                result = session.run(query, node_id=node_id)
+                
+                for record in result:
+                    # 添加连接的节点（跳过根节点本身，因为它已经在之前的数据中了）
+                    connected_id = record["connected_id"]
+                    if connected_id and connected_id not in all_nodes and connected_id not in connected_node_ids:
+                        all_nodes[connected_id] = {
+                            "id": connected_id,
+                            "labels": record["connected_labels"] or [],
+                            "properties": dict(record["connected_properties"]) if record["connected_properties"] else {}
+                        }
+                        new_node_ids.add(connected_id)
+                    
+                    # 添加关系
+                    rel_id = record["rel_id"]
+                    if rel_id and rel_id not in all_relationships:
+                        all_relationships[rel_id] = {
+                            "id": rel_id,
+                            "type": record["rel_type"],
+                            "start_node": record["rel_start"],
+                            "end_node": record["rel_end"],
+                            "properties": dict(record["rel_properties"]) if record["rel_properties"] else {}
+                        }
+                
+            # 从new_node_ids中移除所有原本就存在的connected_node_ids，确保只包含真正新发现的节点
+            original_connected_ids = set(nodes_data.get("connected_node_ids", []) + nodes_data.get("new_node_ids", []))
+            new_node_ids = new_node_ids - original_connected_ids
             
-            # 如果有地点，创建或更新地点关系
-            # 如果有地点，关联到事件（object）而非主体
-            if location:
-                session.run("""
-                    MATCH (o:Entity {name: $object})
-                    MATCH (l:Location {name: $location})
-                    MERGE (o)-[r:HAPPENED_IN]->(l)
-                    SET r.source = $source,
-                        r.created_at = $time_record,
-                        r.action_context = $action,
-                        r.last_updated = $time_record,
-                        r.importance = $importance
-                """, 
-                    object=object_name,
-                    location=location,
-                    source=source,
-                    time_record=time_record,
-                    action=action,
-                    importance=importance
-                )
+            # 更新连接的节点ID集合
+            connected_node_ids.update(new_node_ids)
             
-            logger.debug(f"Uploaded quintuple with dedup: {subject} -> {action} -> {object_name}")
-            return True
+            # 转换为列表格式
+            nodes_list = list(all_nodes.values())
+            relationships_list = list(all_relationships.values())
+            connected_node_ids_list = list(connected_node_ids)
+            new_node_ids_list = list(new_node_ids)
+            
+            logger.debug(f"Extracted {len(new_node_ids)} new nodes, {len(relationships_list)} total relationships from {len(nodes_to_read)} root nodes")
+            
+            return {
+                "nodes": nodes_list,
+                "relationships": relationships_list,
+                "connected_node_ids": connected_node_ids_list,
+                "new_node_ids": new_node_ids_list
+            }
             
         except Exception as e:
-            logger.error(f"Failed to upload quintuple with dedup: {e}")
-            return False
+            logger.error(f"Failed to extract connected nodes: {e}")
+            return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
+
+
+    def _extract_keywords(self, text: str, keywords: List[str]) -> Dict[str, Any]:
+        """
+        根据输入的关键词列表提取相应的节点及信息。
+        
+        Args:
+            text: 输入文本
+            keywords: 预定义的关键词列表
+            
+        Returns Dict[str, Any]:
+            {"nodes": [
+                {"id": "节点ID",
+                "labels": ["节点标签1", "节点标签2"],
+                "properties": {property1: value1, property2: value2}}
+            ],
+            "relationships": [],
+            "connected_node_ids": [],
+            "new_node_ids": [node_id3, node_id4, ...]}
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot extract keywords: No Neo4j connection")
+            return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
+        
+        if not keywords:
+            logger.debug("No keywords provided for extraction")
+            return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
+        
+        try:
+            nodes_dict = {}  # 使用字典避免重复节点
+            
+            with self.driver.session() as session:
+                for keyword in keywords:
+                    if not keyword or not keyword.strip():
+                        continue
+                        
+                    keyword = keyword.strip()
+                    logger.debug(f"Searching for keyword: {keyword}")
+                    
+                    # 1. 首先尝试精确匹配 - 查找名称完全匹配的节点
+                    exact_match_query = """
+                    MATCH (n)
+                    WHERE n.name = $keyword
+                    RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                    """
+                    
+                    exact_results = session.run(exact_match_query, keyword=keyword)
+                    exact_matches = list(exact_results)
+                    
+                    if exact_matches:
+                        logger.debug(f"Found {len(exact_matches)} exact matches for '{keyword}'")
+                        for record in exact_matches:
+                            node_id = record["id"]
+                            if node_id not in nodes_dict:
+                                nodes_dict[node_id] = {
+                                    "id": node_id,
+                                    "labels": record["labels"] or [],
+                                    "properties": dict(record["properties"]) if record["properties"] else {}
+                                }
+                    else:
+                        # 2. 如果精确匹配没有结果，进行模糊匹配
+                        logger.debug(f"No exact matches for '{keyword}', trying fuzzy matching")
+                        
+                        # 模糊匹配 - 查找名称包含关键词的节点
+                        fuzzy_match_query = """
+                        MATCH (n)
+                        WHERE n.name CONTAINS $keyword
+                        RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                        LIMIT 5
+                        """
+                        
+                        fuzzy_results = session.run(fuzzy_match_query, keyword=keyword)
+                        fuzzy_matches = list(fuzzy_results)
+                        
+                        if fuzzy_matches:
+                            logger.debug(f"Found {len(fuzzy_matches)} fuzzy matches for '{keyword}'")
+                            for record in fuzzy_matches:
+                                node_id = record["id"]
+                                if node_id not in nodes_dict:
+                                    nodes_dict[node_id] = {
+                                        "id": node_id,
+                                        "labels": record["labels"] or [],
+                                        "properties": dict(record["properties"]) if record["properties"] else {}
+                                    }
+                        else:
+                            logger.debug(f"No matches found for keyword: '{keyword}'")
+                
+                # 转换为列表格式
+                nodes_list = list(nodes_dict.values())
+                new_node_ids = [node["id"] for node in nodes_list]
+                
+                logger.info(f"Extracted {len(nodes_list)} nodes from {len(keywords)} keywords")
+                
+                return {
+                    "nodes": nodes_list,
+                    "relationships": [],  # 初始状态没有关系，需要后续调用_extract_connected_nodes获取
+                    "connected_node_ids": [],
+                    "new_node_ids": new_node_ids
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to extract keywords '{keywords}': {e}")
+            return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
+
+
+    def relevant_memories_by_keywords(keywords: List[str], max_results: int = 50) -> Dict[str, Any]:
+        """
+        通过_extract_keywords获得基础节点数据。
+        而后通过反复调用_extract_connected_nodes获取相关联的节点和关系。
+        当总节点数超过max_results时停止，输出最多max_results个节点的记忆信息字符串。
+
+        Args:
+            keywords: 已提取的关键词列表
+            max_results: 最大返回结果数
+            
+        Returns Dict[str, Any]:
+            {"nodes": [
+                {"id": "节点ID",
+                "labels": ["节点标签1", "节点标签2"],
+                "properties": {property1: value1, property2: value2}}
+            ],
+            "relationships": [
+                {"id": "关系ID",
+                "type": "关系类型",
+                "start_node": "起始节点ID",
+                "end_node": "结束节点ID",
+                "properties": {property1: value1, property2: value2}}
+            ]}
+        """
+        try:
+            # 首先检查全局Neo4j可用性
+            from system.config import is_neo4j_available
+            if not is_neo4j_available():
+                return {"nodes": [], "relationships": []}
+                
+            kg_manager = get_knowledge_graph_manager()
+            if not kg_manager.connected:
+                return {"nodes": [], "relationships": []}
+            
+            if not keywords:
+                logger.debug("[记忆查询] 关键词列表为空")
+                return {"nodes": [], "relationships": []}
+            
+            logger.debug(f"[记忆查询] 使用关键词: {keywords}")
+            
+            # 第一步：通过关键词提取基础节点
+            with kg_manager.driver.session() as session:
+                nodes_data = kg_manager._extract_keywords("", keywords)
+                
+                if not nodes_data.get("nodes"):
+                    logger.debug("[记忆查询] 未找到匹配的节点")
+                    return {"nodes": [], "relationships": []}
+                
+                logger.debug(f"[记忆查询] 初始找到 {len(nodes_data['nodes'])} 个节点")
+                
+                # 第二步：反复扩展连接的节点，直到达到最大数量限制
+                expansion_rounds = 0
+                max_expansion_rounds = 3  # 限制扩展轮数避免过度查询
+                
+                while (len(nodes_data.get("nodes", [])) < max_results and 
+                       nodes_data.get("new_node_ids") and 
+                       expansion_rounds < max_expansion_rounds):
+                    
+                    expansion_rounds += 1
+                    logger.debug(f"[记忆查询] 第 {expansion_rounds} 轮扩展，当前节点数: {len(nodes_data['nodes'])}")
+                    
+                    # 扩展连接的节点
+                    nodes_data = kg_manager._extract_connected_nodes(session, nodes_data)
+                    
+                    # 如果节点数量超过限制，截断到最大数量
+                    if len(nodes_data.get("nodes", [])) > max_results:
+                        nodes_data["nodes"] = nodes_data["nodes"][:max_results]
+                        nodes_data["new_node_ids"] = []  # 停止进一步扩展
+                        logger.debug(f"[记忆查询] 节点数量超过限制，截断到 {max_results} 个")
+                        break
+                
+                # 直接返回节点和关系数据
+                result = {
+                    "nodes": nodes_data.get("nodes", []),
+                    "relationships": nodes_data.get("relationships", [])
+                }
+                
+                logger.info(f"[记忆查询] 成功返回 {len(result['nodes'])} 个节点，{len(result['relationships'])} 个关系")
+                return result
+            
+        except Exception as e:
+            logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
+            return {"nodes": [], "relationships": []}
+
 
 
 # 全局实例
@@ -2868,220 +2409,3 @@ def load_neo4j_data_to_file() -> bool:
     """便捷函数：检查Neo4j连接并将数据下载到neo4j_memory.json文件"""
     manager = get_knowledge_graph_manager()
     return manager.download_neo4j_data()
-
-def relevant_memories_by_keywords(keywords: List[str], max_results: int = 10) -> str:
-    """
-    直接使用关键词列表从Neo4j查询相关的记忆信息
-    
-    Args:
-        keywords: 已提取的关键词列表
-        max_results: 最大返回结果数
-        
-    Returns:
-        格式化的记忆信息字符串
-    """
-    try:
-        # 首先检查全局Neo4j可用性
-        from system.config import is_neo4j_available
-        if not is_neo4j_available():
-            return ""
-            
-        kg_manager = get_knowledge_graph_manager()
-        if not kg_manager.connected:
-            return ""
-        
-        if not keywords:
-            logger.debug("[记忆查询] 关键词列表为空")
-            return ""
-        
-        logger.debug(f"[记忆查询] 使用关键词: {keywords}")
-        
-        memories = []
-        
-        with kg_manager.driver.session() as session:
-            # 查询实体节点
-            for keyword in keywords[:5]:  # 限制关键词数量避免查询过多
-                # 查询包含关键词的实体
-                entity_query = """
-                MATCH (e:Entity)
-                WHERE toLower(e.name) CONTAINS $keyword
-                RETURN e.name as entity, 
-                       e.source as source,
-                       e.importance as importance,
-                       e.confidence as confidence,
-                       e.last_updated as last_updated
-                ORDER BY e.importance DESC, e.confidence DESC
-                LIMIT 3
-                """
-                
-                result = session.run(entity_query, keyword=keyword.lower())
-                for record in result:
-                    entity_info = {
-                        'type': 'entity',
-                        'name': record['entity'],
-                        'source': record['source'],
-                        'importance': record.get('importance', 0.5),
-                        'confidence': record.get('confidence', 0.5),
-                        'last_updated': record.get('last_updated', '')
-                    }
-                    memories.append(entity_info)
-            
-            # 查询相关的五元组关系
-            for keyword in keywords[:5]:
-                relation_query = """
-                MATCH (s:Entity)-[r]->(o:Entity)
-                WHERE (toLower(s.name) CONTAINS $keyword OR toLower(o.name) CONTAINS $keyword)
-                  AND r.action IS NOT NULL
-                RETURN s.name as subject,
-                       type(r) as relation_type,
-                       r.action as action,
-                       o.name as object,
-                       r.time as time,
-                       r.location as location,
-                       r.source as source,
-                       r.importance as importance,
-                       r.confidence as confidence,
-                       r.created_at as created_at
-                ORDER BY r.importance DESC, r.confidence DESC
-                LIMIT 3
-                """
-                
-                result = session.run(relation_query, keyword=keyword.lower())
-                for record in result:
-                    relation_info = {
-                        'type': 'relation',
-                        'subject': record['subject'],
-                        'relation_type': record['relation_type'],
-                        'action': record.get('action', ''),
-                        'object': record['object'],
-                        'time': record.get('time', ''),
-                        'location': record.get('location', ''),
-                        'source': record['source'],
-                        'importance': record.get('importance', 0.5),
-                        'confidence': record.get('confidence', 0.5),
-                        'created_at': record.get('created_at', '')
-                    }
-                    memories.append(relation_info)
-            
-            # 查询时间相关的记忆
-            for keyword in keywords[:3]:
-                time_query = """
-                MATCH (e:Entity)-[r:HAPPENED_AT]->(t:Time)
-                WHERE toLower(e.name) CONTAINS $keyword OR toLower(t.name) CONTAINS $keyword
-                RETURN e.name as entity,
-                       t.name as time_node,
-                       r.action_context as action,
-                       r.importance as importance,
-                       r.source as source
-                ORDER BY r.importance DESC
-                LIMIT 2
-                """
-                
-                result = session.run(time_query, keyword=keyword.lower())
-                for record in result:
-                    time_info = {
-                        'type': 'time_relation',
-                        'entity': record['entity'],
-                        'time_node': record['time_node'],
-                        'action': record.get('action', ''),
-                        'importance': record.get('importance', 0.5),
-                        'source': record['source']
-                    }
-                    memories.append(time_info)
-            
-            # 查询地点相关的记忆
-            for keyword in keywords[:3]:
-                location_query = """
-                MATCH (e:Entity)-[r:HAPPENED_IN]->(l:Location)
-                WHERE toLower(e.name) CONTAINS $keyword OR toLower(l.name) CONTAINS $keyword
-                RETURN e.name as entity,
-                       l.name as location,
-                       r.action_context as action,
-                       r.importance as importance,
-                       r.source as source
-                ORDER BY r.importance DESC
-                LIMIT 2
-                """
-                
-                result = session.run(location_query, keyword=keyword.lower())
-                for record in result:
-                    location_info = {
-                        'type': 'location_relation',
-                        'entity': record['entity'],
-                        'location': record['location'],
-                        'action': record.get('action', ''),
-                        'importance': record.get('importance', 0.5),
-                        'source': record['source']
-                    }
-                    memories.append(location_info)
-        
-        if not memories:
-            return ""
-        
-        # 按重要性和置信度排序
-        memories.sort(key=lambda x: (x.get('importance', 0.5), x.get('confidence', 0.5)), reverse=True)
-        
-        # 去重（基于内容）
-        unique_memories = []
-        seen_content = set()
-        for memory in memories:
-            if memory['type'] == 'entity':
-                content_key = f"entity_{memory['name']}"
-            elif memory['type'] == 'relation':
-                content_key = f"relation_{memory['subject']}_{memory['action']}_{memory['object']}"
-            elif memory['type'] == 'time_relation':
-                content_key = f"time_{memory['entity']}_{memory['time_node']}"
-            else:  # location_relation
-                content_key = f"location_{memory['entity']}_{memory['location']}"
-            
-            if content_key not in seen_content:
-                seen_content.add(content_key)
-                unique_memories.append(memory)
-        
-        # 限制结果数量
-        unique_memories = unique_memories[:max_results]
-        
-        # 格式化输出
-        formatted_memories = []
-        for memory in unique_memories:
-            if memory['type'] == 'entity':
-                formatted_memories.append(
-                    f"实体: {memory['name']} (重要性: {memory['importance']:.2f}, 来源: {memory.get('source', 'unknown')})"
-                )
-            elif memory['type'] == 'relation':
-                time_str = f" 时间: {memory['time']}" if memory['time'] else ""
-                location_str = f" 地点: {memory['location']}" if memory['location'] else ""
-                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
-                
-                formatted_memories.append(
-                    f"关系: {memory['subject']} -> {memory['object']}"
-                    f"{action_str}{time_str}{location_str} "
-                    f"(重要性: {memory['importance']:.2f})"
-                )
-            elif memory['type'] == 'time_relation':
-                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
-                formatted_memories.append(
-                    f"时间记忆: {memory['entity']} 在 {memory['time_node']}{action_str} "
-                    f"(重要性: {memory['importance']:.2f})"
-                )
-            elif memory['type'] == 'location_relation':
-                action_str = f" 动作: {memory['action']}" if memory['action'] else ""
-                formatted_memories.append(
-                    f"地点记忆: {memory['entity']} 在 {memory['location']}{action_str} "
-                    f"(重要性: {memory['importance']:.2f})"
-                )
-        
-        result = "\n".join(formatted_memories)
-        logger.info(f"[记忆查询] 基于关键词 {keywords} 找到 {len(formatted_memories)} 条相关记忆")
-        return result
-        
-    except Exception as e:
-        logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
-        return ""
-
-def delete_node_or_relation_by_id(element_id: str) -> Dict[str, Any]:
-    """便捷函数：根据元素ID删除节点或关系"""
-    manager = get_knowledge_graph_manager()
-    return manager.delete_node_or_relation(element_id)
-
-

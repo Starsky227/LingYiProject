@@ -136,13 +136,16 @@ def _extract_keywords_with_jieba(text: str, topK: int = 10) -> List[str]:
         words = pseg.cut(text)
         
         # 基于词性筛选关键词
-        # n:名词, nr:人名, ns:地名, nt:机构名, nz:其他专名, vn:名动词，v:动词, a:形容词
+        # n:名词, nr:人名, ns:地名, nt:机构名, nz:其他专名, vn:名动词，a:形容词
         # 可以根据需要添加更多词性：ad:副形词
-        target_pos = ('n', 'nr', 'ns', 'nt', 'nz', 'vn', 'v', 'a')
+        target_pos = ('n', 'nr', 'ns', 'nt', 'nz', 'vn', 'a')
         keywords = [w.word for w in words if w.flag in target_pos]
         
+
+        keywords2 = jieba.analyse.extract_tags(text, topK=topK, withWeight=False)
+
         # 去重并限制数量
-        unique_keywords = list(set(keywords))
+        unique_keywords = list(set(keywords) | set(keywords2))
         
         return unique_keywords[:topK]
         

@@ -827,7 +827,7 @@
         const EXCLUDED_PROPERTIES = ['significance', 'name', 'created_at', 'last_updated', 'node_type'];
         
         // 图谱数据占位符
-        const graphData = {"nodes": [{"id": 0, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1", "label": "测试", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "测试", "created_at": "2025-12-12T17:26:36.444959", "last_updated": "2025-12-12T17:26:36.444959", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 1, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:2", "label": "北京", "group": "Location", "labels": ["Location"], "properties": {"name": "北京", "node_type": "Location"}, "size": 12, "color": "#FF9800", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 2, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3", "label": "6日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time": "2025年12月6日", "name": "6日", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 3, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:4", "label": "5月", "group": "Time", "labels": ["Time", "Month"], "properties": {"time": "2025年5月", "name": "5月", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 4, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5", "label": "13点", "group": "Time", "labels": ["Time", "Hour"], "properties": {"time": "2025年12月6日13点", "name": "13点", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 5, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6", "label": "12月", "group": "Time", "labels": ["Time", "Month"], "properties": {"time": "2025年12月", "name": "12月", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 6, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7", "label": "13日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time": "2025年12月13日", "name": "13日", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 7, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:8", "label": "聊天", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "聊天", "created_at": "2025-12-13T14:10:18.146839", "last_updated": "2025-12-13T14:10:18.146839", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 8, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10", "label": "苹果", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "苹果", "created_at": "2025-12-13T14:16:59.250920", "last_updated": "2025-12-13T14:16:59.250920", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 9, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11", "label": "13点", "group": "Time", "labels": ["Time", "Hour"], "properties": {"time": "2025年12月13日13点", "name": "13点", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 10, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12", "label": "1日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time": "2025年12月1日", "name": "1日", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 11, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:63", "label": "A", "group": "Entity", "labels": ["Entity"], "properties": {"source": "logs/chat_logs_2025_11_03.txt", "name": "A", "last_updated": "2025-11-04T20:13", "confidence": 0.5}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 12, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:67", "label": "赛车比赛10点开始", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.75, "source": "logs/chat_logs_2025_11_03.txt", "name": "赛车比赛10点开始", "last_updated": "2025-11-04T20:13", "confidence": 0.5}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 13, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:69", "label": "2025年", "group": "Time", "labels": ["Time", "Year"], "properties": {"time_type": "year", "time": "2025年", "source": "logs/chat_logs_2025_11_03.txt", "name": "2025年", "last_updated": "2025-11-04T20:13", "year": 2025, "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 14, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:71", "label": "3日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time_type": "day", "time": "2025年12月3日", "source": "logs/chat_logs_2025_11_03.txt", "name": "3日", "month": 11, "last_updated": "2025-11-04T20:13", "year": 2025, "day": 3, "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 15, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:72", "label": "14点", "group": "Time", "labels": ["Time", "Hour"], "properties": {"time_type": "hour", "time": "2025年12月13日14点", "source": "logs/chat_logs_2025_11_03.txt", "name": "14点", "month": 11, "last_updated": "2025-11-04T20:13", "year": 2025, "hour": 14, "day": 3, "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}], "links": [{"source": 0, "target": 3, "type": "HAPPENED_AT", "properties": {"source": "manual_input", "predicate": "HAPPENED_AT", "created_at": "2025-12-19T17:01:38.779697", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152924803141730305", "source_type": "neo4j"}, {"source": 2, "target": 5, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191363", "source_type": "neo4j"}, {"source": 3, "target": 13, "type": "BELONGS_TO", "properties": {"hierarchy_type": "month_to_year"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191364", "source_type": "neo4j"}, {"source": 4, "target": 2, "type": "BELONGS_TO", "properties": {"hierarchy_type": "hour_to_day"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191365", "source_type": "neo4j"}, {"source": 5, "target": 13, "type": "BELONGS_TO", "properties": {"hierarchy_type": "month_to_year"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191366", "source_type": "neo4j"}, {"source": 6, "target": 5, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191367", "source_type": "neo4j"}, {"source": 7, "target": 9, "type": "HAPPENED_AT", "properties": {"source": "manual_input", "predicate": "HAPPENED_AT", "created_at": "2025-12-13T15:48:15.759418", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965195", "source_type": "neo4j"}, {"source": 8, "target": 15, "type": "HAPPENED_AT", "properties": {"source": "manual_input", "predicate": "HAPPENED_AT", "created_at": "2025-12-13T14:17:13.161929", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152924803141730314", "source_type": "neo4j"}, {"source": 9, "target": 6, "type": "BELONGS_TO", "properties": {"hierarchy_type": "hour_to_day"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191371", "source_type": "neo4j"}, {"source": 10, "target": 5, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191372", "source_type": "neo4j"}, {"source": 11, "target": 1, "type": "HAPPENED_IN", "properties": {"source": "manual_input", "predicate": "HAPPENED_IN", "created_at": "2025-12-19T17:01:26.199570", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917560913478287362", "source_type": "neo4j"}, {"source": 11, "target": 12, "type": "测试", "properties": {"source": "manual_input", "predicate": "测试", "created_at": "2025-12-10T17:41:11.469661", "last_updated": "2025-12-10T17:41:11.469661", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155249170722848831", "source_type": "neo4j"}, {"source": 12, "target": 15, "type": "HAPPENED_AT", "properties": {"importance": 0.75, "source": "neo4j", "predicate": "HAPPENED_AT", "action_context": "告知", "created_at": "2025-11-04T20:13", "last_updated": "2025-12-10T16:43:19.392933", "confidence": 0.75, "directivity": "to_target"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965256", "source_type": "neo4j"}, {"source": 12, "target": 11, "type": "测试", "properties": {"source": "manual_input", "predicate": "测试", "created_at": "2025-12-10T17:41:34.230339", "last_updated": "2025-12-10T17:41:53.214094", "confidence": 0.75, "directivity": "to_target"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1162004570163904579", "source_type": "neo4j"}, {"source": 14, "target": 5, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6919818210850111494", "source_type": "neo4j"}, {"source": 15, "target": 14, "type": "BELONGS_TO", "properties": {"hierarchy_type": "hour_to_day", "created_at": "2025-11-04T20:13"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191432", "source_type": "neo4j"}], "stats": {"total_nodes": 16, "total_links": 16, "node_types": {"Entity": 5, "Location": 1, "Time": 10}, "relation_types": {"HAPPENED_AT": 4, "BELONGS_TO": 9, "HAPPENED_IN": 1, "测试": 2}, "updated_at": "2025-12-19T19:32:01.962551"}, "metadata": {}, "neo4j_connected": true};
+        const graphData = {"nodes": [{"id": 0, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13", "label": "玲依", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 1, "trust": 0.8, "name": "玲依", "created_at": "2025-12-19T19:38:17.028224", "last_updated": "2025-12-19T19:38:17.028224", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 1, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14", "label": "生日", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 1, "name": "生日", "created_at": "2025-12-19T19:39:03.842673", "last_updated": "2025-12-19T19:39:03.842673", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 2, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:15", "label": "2024年", "group": "Time", "labels": ["Time", "Year"], "properties": {"time": "2024年", "name": "2024年", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 3, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:16", "label": "3月", "group": "Time", "labels": ["Time", "Month"], "properties": {"time": "2024年3月", "name": "3月", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 4, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:17", "label": "28日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time": "2024年3月28日", "name": "28日", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 5, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18", "label": "qq12345678", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 0.5, "trust": 0.5, "name": "qq12345678", "created_at": "2025-12-19T19:44:16.352356", "last_updated": "2025-12-19T19:44:16.352356", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 6, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:19", "label": "小明", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "小明", "created_at": "2025-12-19T19:45:24.859016", "last_updated": "2025-12-19T19:45:24.859016", "node_type": "Entity", "note": "称谓"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 7, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20", "label": "聊天群A", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "聊天群A", "created_at": "2025-12-19T19:46:15.930929", "last_updated": "2025-12-19T19:46:15.930929", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 8, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21", "label": "qq22345678", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 0.5, "trust": 0.5, "name": "qq22345678", "created_at": "2025-12-19T19:48:34.030257", "last_updated": "2025-12-19T19:48:34.030257", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 9, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:22", "label": "星空", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "星空", "created_at": "2025-12-19T19:48:45.566991", "last_updated": "2025-12-19T19:48:45.566991", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 10, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:23", "label": "自己", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 1, "name": "自己", "created_at": "2025-12-19T19:52:12.331035", "last_updated": "2025-12-19T19:52:12.331035", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}], "links": [{"source": 0, "target": 10, "type": "是", "properties": {"source": "manual_input", "predicate": "是", "created_at": "2025-12-19T19:52:40.228881", "confidence": 1.0, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152965485071958029", "source_type": "neo4j"}, {"source": 0, "target": 1, "type": "HAS_ACTION", "properties": {"source": "manual_input", "predicate": "HAS_ACTION", "created_at": "2025-12-19T19:39:25.905230", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153001768955674637", "source_type": "neo4j"}, {"source": 0, "target": 7, "type": "存在于", "properties": {"source": "manual_input", "predicate": "存在于", "created_at": "2025-12-19T19:47:23.193424", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153003967978930189", "source_type": "neo4j"}, {"source": 1, "target": 4, "type": "HAPPENED_AT", "properties": {"source": "manual_input", "predicate": "HAPPENED_AT", "created_at": "2025-12-19T19:42:57.116374", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965201", "source_type": "neo4j"}, {"source": 3, "target": 2, "type": "BELONGS_TO", "properties": {"hierarchy_type": "month_to_year"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191376", "source_type": "neo4j"}, {"source": 4, "target": 3, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191377", "source_type": "neo4j"}, {"source": 5, "target": 6, "type": "名字", "properties": {"source": "manual_input", "predicate": "名字", "created_at": "2025-12-19T19:50:42.561541", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185746", "source_type": "neo4j"}, {"source": 5, "target": 8, "type": "认识", "properties": {"source": "manual_input", "predicate": "认识", "created_at": "2025-12-19T19:51:25.386834", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153007266513813522", "source_type": "neo4j"}, {"source": 6, "target": 7, "type": "CONNECTED_TO", "properties": {"source": "manual_input", "predicate": "在……被称为", "created_at": "2025-12-19T19:50:00.242024", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557971", "source_type": "neo4j"}, {"source": 8, "target": 9, "type": "名字", "properties": {"source": "manual_input", "predicate": "名字", "created_at": "2025-12-19T19:50:51.699261", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185749", "source_type": "neo4j"}, {"source": 8, "target": 5, "type": "认识", "properties": {"source": "manual_input", "predicate": "认识", "created_at": "2025-12-19T19:51:25.386834", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155259066327498773", "source_type": "neo4j"}, {"source": 8, "target": 0, "type": "创建了", "properties": {"source": "manual_input", "predicate": "创建了", "created_at": "2025-12-19T19:51:55.226855", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153008366025441301", "source_type": "neo4j"}, {"source": 9, "target": 7, "type": "CONNECTED_TO", "properties": {"source": "manual_input", "predicate": "在……被称为", "created_at": "2025-12-19T19:51:12.012754", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557974", "source_type": "neo4j"}, {"source": 10, "target": 0, "type": "是", "properties": {"source": "manual_input", "predicate": "是", "created_at": "2025-12-19T19:52:45.274100", "confidence": 1.0, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1157469084699328535", "source_type": "neo4j"}], "stats": {"total_nodes": 11, "total_links": 14, "node_types": {"Character": 3, "Entity": 5, "Time": 3}, "relation_types": {"是": 2, "HAS_ACTION": 1, "存在于": 1, "HAPPENED_AT": 1, "BELONGS_TO": 2, "名字": 2, "认识": 2, "CONNECTED_TO": 2, "创建了": 1}, "updated_at": "2025-12-24T16:35:17.762803"}, "metadata": {}, "neo4j_connected": true};
         
         // 全局变量跟踪最近选中的项目列表（节点和关系），最多保留10个
         let recentSelectedNodes = [];
@@ -1167,6 +1167,204 @@
             console.log('显示关系详情 - 原始数据:', d);
             console.log('关系source_type:', d.source_type);
             
+            // 检查是否有多个同向关系
+            const sameDirectionLinks = graphData.links.filter(link => 
+                (link.source.id === d.source.id && link.target.id === d.target.id) ||
+                (link.source.id === d.target.id && link.target.id === d.source.id)
+            );
+            
+            if (sameDirectionLinks.length > 1) {
+                // 有多个同向关系，显示选择框
+                showMultiRelationSelector(event, sameDirectionLinks);
+                return;
+            }
+            
+            // 只有一个关系，直接显示详情
+            showSingleRelationDetails(d);
+        }
+        
+        // 显示多关系选择框
+        function showMultiRelationSelector(event, relations) {
+            // 移除已存在的选择框
+            d3.select('.multi-relation-selector').remove();
+            
+            const mouseX = event.pageX;
+            const mouseY = event.pageY;
+            
+            // 创建选择框容器
+            const selectorDiv = d3.select('body')
+                .append('div')
+                .attr('class', 'multi-relation-selector')
+                .style('position', 'fixed')
+                .style('left', Math.min(mouseX + 10, window.innerWidth - 420) + 'px')
+                .style('top', Math.min(mouseY - 10, window.innerHeight - 320) + 'px')
+                .style('background', '#fff')
+                .style('border', '2px solid #007bff')
+                .style('border-radius', '8px')
+                .style('box-shadow', '0 4px 12px rgba(0,0,0,0.3)')
+                .style('z-index', '10000')
+                .style('min-width', '300px')
+                .style('max-width', '400px')
+                .style('max-height', '300px')
+                .style('overflow-y', 'auto')
+                .style('font-family', 'Arial, sans-serif');
+            
+            // 添加标题栏
+            const headerDiv = selectorDiv.append('div')
+                .style('background', '#f8f9fa')
+                .style('padding', '8px 12px')
+                .style('border-bottom', '1px solid #dee2e6')
+                .style('display', 'flex')
+                .style('justify-content', 'space-between')
+                .style('align-items', 'center');
+            
+            headerDiv.append('span')
+                .style('font-weight', 'bold')
+                .style('font-size', '14px')
+                .style('color', '#495057')
+                .text(`选择关系 (${relations.length}个)`);
+            
+            // 添加关闭按钮
+            headerDiv.append('button')
+                .style('background', 'none')
+                .style('border', 'none')
+                .style('font-size', '18px')
+                .style('color', '#6c757d')
+                .style('cursor', 'pointer')
+                .style('padding', '0')
+                .style('width', '24px')
+                .style('height', '24px')
+                .style('display', 'flex')
+                .style('align-items', 'center')
+                .style('justify-content', 'center')
+                .text('×')
+                .on('click', function(event) {
+                    event.stopPropagation();
+                    closeMutliRelationSelector();
+                })
+                .on('mouseover', function() {
+                    d3.select(this).style('background', '#e9ecef').style('border-radius', '4px');
+                })
+                .on('mouseout', function() {
+                    d3.select(this).style('background', 'none');
+                });
+            
+            // 添加关系列表
+            const listDiv = selectorDiv.append('div')
+                .style('padding', '8px 0');
+            
+            relations.forEach((relation, index) => {
+                const relationDiv = listDiv.append('div')
+                    .style('padding', '8px 12px')
+                    .style('cursor', 'pointer')
+                    .style('border-bottom', index < relations.length - 1 ? '1px solid #f1f3f4' : 'none')
+                    .style('display', 'flex')
+                    .style('flex-direction', 'column')
+                    .style('transition', 'background-color 0.2s')
+                    .on('click', function(event) {
+                        event.stopPropagation();
+                        selectRelationFromList(relation);
+                    })
+                    .on('mouseover', function() {
+                        d3.select(this).style('background', '#f8f9fa');
+                        // 高亮对应的关系线
+                        highlightRelation(relation, true);
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this).style('background', '#fff');
+                        // 取消高亮
+                        highlightRelation(relation, false);
+                    });
+                
+                // 关系类型和方向
+                const typeDiv = relationDiv.append('div')
+                    .style('font-weight', 'bold')
+                    .style('color', '#495057')
+                    .style('margin-bottom', '4px')
+                    .style('font-size', '14px');
+                
+                const sourceNode = graphData.nodes.find(n => n.id === relation.source.id);
+                const targetNode = graphData.nodes.find(n => n.id === relation.target.id);
+                
+                let directionIcon = '→';
+                if (relation.properties?.directivity === 'bidirectional') {
+                    directionIcon = '↔';
+                } else if (relation.properties?.directivity === 'to_A') {
+                    directionIcon = '←';
+                }
+                
+                typeDiv.text(`${relation.type} (${sourceNode?.label || 'Unknown'} ${directionIcon} ${targetNode?.label || 'Unknown'})`);
+                
+                // 关系详细信息
+                const detailsDiv = relationDiv.append('div')
+                    .style('font-size', '12px')
+                    .style('color', '#6c757d');
+                
+                let details = [];
+                if (relation.properties?.source) {
+                    details.push(`来源: ${relation.properties.source}`);
+                }
+                if (relation.properties?.confidence) {
+                    const confidence = parseFloat(relation.properties.confidence);
+                    details.push(`置信度: ${(confidence * 100).toFixed(1)}%`);
+                }
+                if (relation.properties?.created_at) {
+                    const date = new Date(relation.properties.created_at);
+                    details.push(`创建: ${date.toLocaleDateString()}`);
+                }
+                
+                if (details.length > 0) {
+                    detailsDiv.text(details.join(' • '));
+                }
+            });
+            
+            // 点击其他地方关闭选择框
+            setTimeout(() => {
+                d3.select('body').on('click.multiRelationSelector', function(event) {
+                    if (!event.target.closest('.multi-relation-selector')) {
+                        closeMutliRelationSelector();
+                    }
+                });
+            }, 100);
+            
+            // ESC键关闭选择框
+            d3.select('body').on('keydown.multiRelationSelector', function(event) {
+                if (event.key === 'Escape') {
+                    closeMutliRelationSelector();
+                }
+            });
+        }
+        
+        // 关闭多关系选择框
+        function closeMutliRelationSelector() {
+            d3.select('.multi-relation-selector').remove();
+            d3.select('body').on('click.multiRelationSelector', null);
+            d3.select('body').on('keydown.multiRelationSelector', null);
+            // 取消所有关系的高亮
+            container.selectAll('.link')
+                .style('stroke-width', function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke', null);
+        }
+        
+        // 从列表中选择关系
+        function selectRelationFromList(relation) {
+            // 关闭选择框
+            closeMutliRelationSelector();
+            
+            // 显示选中关系的详情
+            showSingleRelationDetails(relation);
+        }
+        
+        // 高亮/取消高亮关系
+        function highlightRelation(relation, highlight) {
+            container.selectAll('.link')
+                .filter(d => d === relation)
+                .style('stroke-width', highlight ? '5px' : function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke', highlight ? '#ff6b6b' : null);
+        }
+        
+        // 显示单个关系详情
+        function showSingleRelationDetails(d) {
             const detailsDiv = document.getElementById("node-details");
             const propertiesDiv = document.getElementById("node-properties");
             const titleDiv = document.getElementById("detail-title");
