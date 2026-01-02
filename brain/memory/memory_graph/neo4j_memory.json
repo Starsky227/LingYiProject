@@ -1,22 +1,39 @@
 {
   "nodes": [
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
       "labels": [
         "Character"
       ],
       "properties": {
-        "significance": 1,
-        "importance": 1,
-        "trust": 0.8,
-        "name": "玲依",
-        "created_at": "2025-12-19T19:38:17.028224",
-        "last_updated": "2025-12-19T19:38:17.028224",
+        "significance": 0.99,
+        "importance": 1.0,
+        "trust": 1,
+        "name": "自我",
+        "context": "reality",
+        "created_at": "2026-01-01T15:39:15.215369",
+        "last_updated": "2026-01-01T19:15:07.917522",
         "node_type": "Character"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1.0,
+        "name": "玲依",
+        "context": "称谓",
+        "created_at": "2026-01-01T15:40:03.551561",
+        "last_updated": "2026-01-01T19:15:07.954844",
+        "node_type": "Entity",
+        "note": "无"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
       "labels": [
         "Entity"
       ],
@@ -24,14 +41,15 @@
         "significance": 1,
         "importance": 1,
         "name": "生日",
-        "created_at": "2025-12-19T19:39:03.842673",
-        "last_updated": "2025-12-19T19:39:03.842673",
+        "context": "无",
+        "created_at": "2026-01-01T19:13:56.344158",
+        "last_updated": "2026-01-01T19:13:56.344158",
         "node_type": "Entity",
         "note": "无"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:15",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
       "labels": [
         "Time",
         "Year"
@@ -44,7 +62,7 @@
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:16",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
       "labels": [
         "Time",
         "Month"
@@ -57,7 +75,7 @@
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:17",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
       "labels": [
         "Time",
         "Day"
@@ -68,271 +86,64 @@
         "node_type": "Time",
         "type": "static"
       }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18",
-      "labels": [
-        "Character"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "trust": 0.5,
-        "name": "qq12345678",
-        "created_at": "2025-12-19T19:44:16.352356",
-        "last_updated": "2025-12-19T19:44:16.352356",
-        "node_type": "Character"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:19",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "小明",
-        "created_at": "2025-12-19T19:45:24.859016",
-        "last_updated": "2025-12-19T19:45:24.859016",
-        "node_type": "Entity",
-        "note": "称谓"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "聊天群A",
-        "created_at": "2025-12-19T19:46:15.930929",
-        "last_updated": "2025-12-19T19:46:15.930929",
-        "node_type": "Entity",
-        "note": "无"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21",
-      "labels": [
-        "Character"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "trust": 0.5,
-        "name": "qq22345678",
-        "created_at": "2025-12-19T19:48:34.030257",
-        "last_updated": "2025-12-19T19:48:34.030257",
-        "node_type": "Character"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:22",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "星空",
-        "created_at": "2025-12-19T19:48:45.566991",
-        "last_updated": "2025-12-19T19:48:45.566991",
-        "node_type": "Entity",
-        "note": "无"
-      }
-    },
-    {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:23",
-      "labels": [
-        "Entity"
-      ],
-      "properties": {
-        "significance": 1,
-        "importance": 1,
-        "name": "自己",
-        "created_at": "2025-12-19T19:52:12.331035",
-        "last_updated": "2025-12-19T19:52:12.331035",
-        "node_type": "Entity",
-        "note": "无"
-      }
     }
   ],
   "relationships": [
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152965485071958029",
-      "type": "是",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:23",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155261265350754314",
+      "type": "名字是",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
       "properties": {
         "source": "manual_input",
-        "predicate": "是",
-        "created_at": "2025-12-19T19:52:40.228881",
-        "confidence": 1.0,
-        "directivity": "to_B"
+        "predicate": "名字是",
+        "created_at": "2026-01-01T19:11:42.935970",
+        "last_updated": "2026-01-01T19:15:07.829647",
+        "confidence": 1.0
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153001768955674637",
-      "type": "HAS_ACTION",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917619187594559500",
+      "type": "HAS_PROPERTY",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
       "properties": {
         "source": "manual_input",
-        "predicate": "HAS_ACTION",
-        "created_at": "2025-12-19T19:39:25.905230",
-        "confidence": 0.75,
-        "directivity": "to_A"
+        "predicate": "HAS_PROPERTY",
+        "created_at": "2026-01-01T19:14:57.769047",
+        "last_updated": "2026-01-01T19:14:57.769047",
+        "confidence": 1
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153003967978930189",
-      "type": "存在于",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "存在于",
-        "created_at": "2025-12-19T19:47:23.193424",
-        "confidence": 0.75,
-        "directivity": "to_A"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965201",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965210",
       "type": "HAPPENED_AT",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:17",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
       "properties": {
         "source": "manual_input",
         "predicate": "HAPPENED_AT",
-        "created_at": "2025-12-19T19:42:57.116374",
-        "confidence": 0.75,
-        "directivity": "to_A"
+        "created_at": "2026-01-01T19:15:50.886438",
+        "last_updated": "2026-01-01T19:15:50.886438",
+        "confidence": 1
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191376",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191385",
       "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:16",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:15",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
       "properties": {
         "hierarchy_type": "month_to_year"
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191377",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191386",
       "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:17",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:16",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
       "properties": {
         "hierarchy_type": "day_to_month"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185746",
-      "type": "名字",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:19",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "名字",
-        "created_at": "2025-12-19T19:50:42.561541",
-        "confidence": 0.75,
-        "directivity": "to_B"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153007266513813522",
-      "type": "认识",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "认识",
-        "created_at": "2025-12-19T19:51:25.386834",
-        "confidence": 0.75,
-        "directivity": "to_B"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557971",
-      "type": "CONNECTED_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:19",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "在……被称为",
-        "created_at": "2025-12-19T19:50:00.242024",
-        "confidence": 0.75,
-        "directivity": "to_B"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185749",
-      "type": "名字",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:22",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "名字",
-        "created_at": "2025-12-19T19:50:51.699261",
-        "confidence": 0.75,
-        "directivity": "to_B"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155259066327498773",
-      "type": "认识",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "认识",
-        "created_at": "2025-12-19T19:51:25.386834",
-        "confidence": 0.75,
-        "directivity": "to_A"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153008366025441301",
-      "type": "创建了",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "创建了",
-        "created_at": "2025-12-19T19:51:55.226855",
-        "confidence": 0.75,
-        "directivity": "to_A"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557974",
-      "type": "CONNECTED_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:22",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "在……被称为",
-        "created_at": "2025-12-19T19:51:12.012754",
-        "confidence": 0.75,
-        "directivity": "to_A"
-      }
-    },
-    {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1157469084699328535",
-      "type": "是",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:23",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "properties": {
-        "source": "manual_input",
-        "predicate": "是",
-        "created_at": "2025-12-19T19:52:45.274100",
-        "confidence": 1.0,
-        "directivity": "to_B"
       }
     }
   ],
@@ -341,5 +152,5 @@
     "neo4j_uri": "neo4j://127.0.0.1:7687",
     "neo4j_database": "neo4j"
   },
-  "updated_at": "2025-12-24T16:35:17.753003"
+  "updated_at": "2026-01-01T19:15:51.156028"
 }

@@ -827,7 +827,7 @@
         const EXCLUDED_PROPERTIES = ['significance', 'name', 'created_at', 'last_updated', 'node_type'];
         
         // 图谱数据占位符
-        const graphData = {"nodes": [{"id": 0, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13", "label": "玲依", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 1, "trust": 0.8, "name": "玲依", "created_at": "2025-12-19T19:38:17.028224", "last_updated": "2025-12-19T19:38:17.028224", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 1, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14", "label": "生日", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 1, "name": "生日", "created_at": "2025-12-19T19:39:03.842673", "last_updated": "2025-12-19T19:39:03.842673", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 2, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:15", "label": "2024年", "group": "Time", "labels": ["Time", "Year"], "properties": {"time": "2024年", "name": "2024年", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 3, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:16", "label": "3月", "group": "Time", "labels": ["Time", "Month"], "properties": {"time": "2024年3月", "name": "3月", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 4, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:17", "label": "28日", "group": "Time", "labels": ["Time", "Day"], "properties": {"time": "2024年3月28日", "name": "28日", "node_type": "Time", "type": "static"}, "size": 12, "color": "#4CAF50", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 5, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:18", "label": "qq12345678", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 0.5, "trust": 0.5, "name": "qq12345678", "created_at": "2025-12-19T19:44:16.352356", "last_updated": "2025-12-19T19:44:16.352356", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 6, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:19", "label": "小明", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "小明", "created_at": "2025-12-19T19:45:24.859016", "last_updated": "2025-12-19T19:45:24.859016", "node_type": "Entity", "note": "称谓"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 7, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:20", "label": "聊天群A", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "聊天群A", "created_at": "2025-12-19T19:46:15.930929", "last_updated": "2025-12-19T19:46:15.930929", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 8, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:21", "label": "qq22345678", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 0.5, "trust": 0.5, "name": "qq22345678", "created_at": "2025-12-19T19:48:34.030257", "last_updated": "2025-12-19T19:48:34.030257", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 9, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:22", "label": "星空", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 0.5, "name": "星空", "created_at": "2025-12-19T19:48:45.566991", "last_updated": "2025-12-19T19:48:45.566991", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 10, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:23", "label": "自己", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 1, "name": "自己", "created_at": "2025-12-19T19:52:12.331035", "last_updated": "2025-12-19T19:52:12.331035", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}], "links": [{"source": 0, "target": 10, "type": "是", "properties": {"source": "manual_input", "predicate": "是", "created_at": "2025-12-19T19:52:40.228881", "confidence": 1.0, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152965485071958029", "source_type": "neo4j"}, {"source": 0, "target": 1, "type": "HAS_ACTION", "properties": {"source": "manual_input", "predicate": "HAS_ACTION", "created_at": "2025-12-19T19:39:25.905230", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153001768955674637", "source_type": "neo4j"}, {"source": 0, "target": 7, "type": "存在于", "properties": {"source": "manual_input", "predicate": "存在于", "created_at": "2025-12-19T19:47:23.193424", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153003967978930189", "source_type": "neo4j"}, {"source": 1, "target": 4, "type": "HAPPENED_AT", "properties": {"source": "manual_input", "predicate": "HAPPENED_AT", "created_at": "2025-12-19T19:42:57.116374", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965201", "source_type": "neo4j"}, {"source": 3, "target": 2, "type": "BELONGS_TO", "properties": {"hierarchy_type": "month_to_year"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191376", "source_type": "neo4j"}, {"source": 4, "target": 3, "type": "BELONGS_TO", "properties": {"hierarchy_type": "day_to_month"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191377", "source_type": "neo4j"}, {"source": 5, "target": 6, "type": "名字", "properties": {"source": "manual_input", "predicate": "名字", "created_at": "2025-12-19T19:50:42.561541", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185746", "source_type": "neo4j"}, {"source": 5, "target": 8, "type": "认识", "properties": {"source": "manual_input", "predicate": "认识", "created_at": "2025-12-19T19:51:25.386834", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153007266513813522", "source_type": "neo4j"}, {"source": 6, "target": 7, "type": "CONNECTED_TO", "properties": {"source": "manual_input", "predicate": "在……被称为", "created_at": "2025-12-19T19:50:00.242024", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557971", "source_type": "neo4j"}, {"source": 8, "target": 9, "type": "名字", "properties": {"source": "manual_input", "predicate": "名字", "created_at": "2025-12-19T19:50:51.699261", "confidence": 0.75, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153006167002185749", "source_type": "neo4j"}, {"source": 8, "target": 5, "type": "认识", "properties": {"source": "manual_input", "predicate": "认识", "created_at": "2025-12-19T19:51:25.386834", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155259066327498773", "source_type": "neo4j"}, {"source": 8, "target": 0, "type": "创建了", "properties": {"source": "manual_input", "predicate": "创建了", "created_at": "2025-12-19T19:51:55.226855", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153008366025441301", "source_type": "neo4j"}, {"source": 9, "target": 7, "type": "CONNECTED_TO", "properties": {"source": "manual_input", "predicate": "在……被称为", "created_at": "2025-12-19T19:51:12.012754", "confidence": 0.75, "directivity": "to_A"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153005067490557974", "source_type": "neo4j"}, {"source": 10, "target": 0, "type": "是", "properties": {"source": "manual_input", "predicate": "是", "created_at": "2025-12-19T19:52:45.274100", "confidence": 1.0, "directivity": "to_B"}, "neo4j_id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1157469084699328535", "source_type": "neo4j"}], "stats": {"total_nodes": 11, "total_links": 14, "node_types": {"Character": 3, "Entity": 5, "Time": 3}, "relation_types": {"是": 2, "HAS_ACTION": 1, "存在于": 1, "HAPPENED_AT": 1, "BELONGS_TO": 2, "名字": 2, "认识": 2, "CONNECTED_TO": 2, "创建了": 1}, "updated_at": "2025-12-24T16:35:17.762803"}, "metadata": {}, "neo4j_connected": true};
+        const graphData = {"nodes": [{"id": 0, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10", "label": "自我", "group": "Character", "labels": ["Character"], "properties": {"significance": 1, "importance": 1, "trust": 1, "name": "自我", "context": "reality", "created_at": "2026-01-01T15:39:15.215369", "last_updated": "2026-01-01T15:39:15.215369", "node_type": "Character"}, "size": 12, "color": "#2196F3", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}, {"id": 1, "neo4j_id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11", "label": "玲依", "group": "Entity", "labels": ["Entity"], "properties": {"significance": 1, "importance": 1, "name": "玲依", "context": "称谓", "created_at": "2026-01-01T15:40:03.551561", "last_updated": "2026-01-01T15:40:03.551561", "node_type": "Entity", "note": "无"}, "size": 15, "color": "#FFD700", "strokeColor": "#00FF00", "strokeWidth": 3, "source": "neo4j"}], "links": [], "stats": {"total_nodes": 2, "total_links": 0, "node_types": {"Character": 1, "Entity": 1}, "relation_types": {}, "updated_at": "2026-01-01T19:05:28.565147"}, "metadata": {}, "neo4j_connected": true};
         
         // 全局变量跟踪最近选中的项目列表（节点和关系），最多保留10个
         let recentSelectedNodes = [];
@@ -1289,7 +1289,7 @@
                 let directionIcon = '→';
                 if (relation.properties?.directivity === 'bidirectional') {
                     directionIcon = '↔';
-                } else if (relation.properties?.directivity === 'to_A') {
+                } else if (relation.properties?.directivity === 'to_startNode') {
                     directionIcon = '←';
                 }
                 
@@ -2201,8 +2201,8 @@
                 `;
             } else {
                 // 已选择两个项目，首先检查是否都是节点类型
-                const item1 = recentSelectedNodes[0];
-                const item2 = recentSelectedNodes[1];
+                const item1 = recentSelectedNodes[1];
+                const item2 = recentSelectedNodes[0];
                 
                 // 检查是否有非节点类型的项目
                 if (item1.type !== 'node' || item2.type !== 'node') {
@@ -2277,7 +2277,7 @@
                 } else {
                     // 检查是否有时间节点，如果有则自动设置关系
                     let defaultPredicate = "";
-                    let defaultDirection = "to_B";
+                    let defaultDirection = "to_endNode";
                     let isTimeRelation = false;
                     let timeNodeLabel = "";
                     let nonTimeNodeLabel = "";
@@ -2285,28 +2285,28 @@
                     if (node1.labels.includes('Time') && node2.labels.includes('Entity')) {
                         // 节点1是时间节点，节点2不是
                         defaultPredicate = "HAPPENED_AT";
-                        defaultDirection = "to_A"; // 节点2 → 节点1（时间节点）
+                        defaultDirection = "to_startNode"; // 节点2 → 节点1（时间节点）
                         isTimeRelation = true;
                         timeNodeLabel = node1.label;
                         nonTimeNodeLabel = node2.label;
                     } else if (node1.labels.includes('Entity') && node2.labels.includes('Time')) {
                         // 节点2是时间节点，节点1不是
                         defaultPredicate = "HAPPENED_AT";
-                        defaultDirection = "to_B"; // 节点1 → 节点2（时间节点）
+                        defaultDirection = "to_endNode"; // 节点1 → 节点2（时间节点）
                         isTimeRelation = true;
                         timeNodeLabel = node2.label;
                         nonTimeNodeLabel = node1.label;
                     } else if (node1.labels.includes('Location') && node2.labels.includes('Entity')) {
                         // 节点1是时间节点，节点2是角色节点
                         defaultPredicate = "HAPPENED_IN";
-                        defaultDirection = "to_A"; // 节点2 → 节点1（时间节点）
+                        defaultDirection = "to_startNode"; // 节点2 → 节点1（时间节点）
                         isTimeRelation = true;
                         timeNodeLabel = node1.label;
                         nonTimeNodeLabel = node2.label;
                     } else if (node1.labels.includes('Entity') && node2.labels.includes('Location')) {
                         // 节点2是时间节点，节点1是角色节点
                         defaultPredicate = "HAPPENED_IN";
-                        defaultDirection = "to_B"; // 节点1 → 节点2（时间节点）
+                        defaultDirection = "to_endNode"; // 节点1 → 节点2（时间节点）
                         isTimeRelation = true;
                         timeNodeLabel = node2.label;
                         nonTimeNodeLabel = node1.label;
@@ -2319,8 +2319,8 @@
                     if (isTimeRelation) {
                         // 时间关系的特殊处理
                         directionOptions = `
-                            <option value="to_B" ${defaultDirection === 'to_B' ? 'selected' : ''}>${node1.label} → ${node2.label}</option>
-                            <option value="to_A" ${defaultDirection === 'to_A' ? 'selected' : ''}>${node2.label} → ${node1.label}</option>
+                            <option value="to_endNode" ${defaultDirection === 'to_endNode' ? 'selected' : ''}>${node1.label} → ${node2.label}</option>
+                            <option value="to_startNode" ${defaultDirection === 'to_startNode' ? 'selected' : ''}>${node2.label} → ${node1.label}</option>
                             <option value="bidirectional">双向关系</option>
                         `;
                         predicateField = `
@@ -2330,8 +2330,8 @@
                     } else {
                         // 普通关系
                         directionOptions = `
-                            <option value="to_B">${node1.label} → ${node2.label}</option>
-                            <option value="to_A">${node2.label} → ${node1.label}</option>
+                            <option value="to_endNode">${node1.label} → ${node2.label}</option>
+                            <option value="to_startNode">${node2.label} → ${node1.label}</option>
                             <option value="bidirectional">双向关系</option>
                         `;
                         predicateField = `
@@ -2501,7 +2501,7 @@
                 }
             });
             
-            // 构建确认消息
+            // 构建确认删除消息
             let confirmMessage = `确认删除以下${recentSelectedNodes.length}个项目？\n\n`;
             confirmMessage += `删除列表：\n`;
             itemDescriptions.forEach((desc, index) => {
@@ -2639,113 +2639,6 @@
             } finally {
                 // 恢复按钮状态
                 const confirmBtn = document.querySelector('.danger-btn');
-                if (confirmBtn) {
-                    confirmBtn.textContent = originalText;
-                    confirmBtn.disabled = false;
-                }
-            }
-        }
-        
-        // 确认链接函数
-        async function confirmLink() {
-            if (recentSelectedNodes.length !== 2) {
-                alert('请先选择两个不同的节点进行链接');
-                return;
-            }
-            
-            const node1 = recentSelectedNodes[0].data;
-            const node2 = recentSelectedNodes[1].data;
-            
-            // 获取表单数据
-            const predicate = document.getElementById('link-predicate').value.trim();
-            const source = document.getElementById('link-source').value.trim();
-            const confidence = parseFloat(document.getElementById('link-confidence').value);
-            const direction = document.getElementById('link-direction').value;
-            
-            // 验证输入
-            if (!predicate) {
-                alert('请输入关系类型');
-                return;
-            }
-            
-            if (!source) {
-                alert('请输入关系来源');
-                return;
-            }
-            
-            if (isNaN(confidence) || confidence < 0 || confidence > 1) {
-                alert('置信度必须是0到1之间的数字');
-                return;
-            }
-            
-            // 构建确认消息
-            let directionText = '';
-            if (direction === 'to_A') {
-                directionText = `${node2.label} → ${node1.label}`;
-            } else if (direction === 'bidirectional') {
-                directionText = `${node1.label} ↔ ${node2.label}`;
-            } else {
-                directionText = `${node1.label} → ${node2.label}`;
-            }
-            
-            const confirmMessage = `确认创建以下链接吗？\n\n` +
-                                 `关系方向：${directionText}\n` +
-                                 `关系类型：${predicate}\n` +
-                                 `关系来源：${source}\n` +
-                                 `置信度：${confidence}\n\n` +
-                                 `此操作将在Neo4j数据库中创建新的关系，确定要继续吗？`;
-            
-            if (!confirm(confirmMessage)) {
-                return;
-            }
-            
-            try {
-                // 显示加载状态
-                const confirmBtn = document.querySelector('.primary-btn');
-                const originalText = confirmBtn.textContent;
-                confirmBtn.textContent = '链接中...';
-                confirmBtn.disabled = true;
-                
-                // 发送链接请求
-                const response = await fetch('/api/create_relation', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        node_a_id: node1.neo4j_id,
-                        node_b_id: node2.neo4j_id,
-                        predicate: predicate,
-                        source: source,
-                        confidence: confidence,
-                        directivity: direction
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // 清空最近选择的节点
-                    recentSelectedNodes = [];
-                    // 隐藏编辑表单
-                    hideEditForms();
-                    // 使用动态更新代替页面刷新
-                    const updateSuccess = await updateGraphData();
-                    if (updateSuccess) {
-                        alert(`链接创建成功！\n\n${directionText}\n关系类型：${predicate}\n\n图谱已自动更新显示最新数据。`);
-                    } else {
-                        alert(`链接创建成功！\n\n图谱数据更新失败，请手动刷新页面。`);
-                    }
-                } else {
-                    alert(`链接创建失败：${result.error || '未知错误'}`);
-                }
-                
-            } catch (error) {
-                console.error('链接操作失败:', error);
-                alert(`链接操作失败：${error.message}`);
-            } finally {
-                // 恢复按钮状态
-                const confirmBtn = document.querySelector('.primary-btn');
                 if (confirmBtn) {
                     confirmBtn.textContent = originalText;
                     confirmBtn.disabled = false;
@@ -2893,8 +2786,8 @@
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="edit-relationship-direction" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">关系方向：</label>
                                 <select id="edit-relationship-direction" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
-                                    <option value="to_B">${sourceNode ? sourceNode.label : 'Unknown'} → ${targetNode ? targetNode.label : 'Unknown'}</option>
-                                    <option value="to_A">${targetNode ? targetNode.label : 'Unknown'} → ${sourceNode ? sourceNode.label : 'Unknown'}</option>
+                                    <option value="to_endNode">${sourceNode ? sourceNode.label : 'Unknown'} → ${targetNode ? targetNode.label : 'Unknown'}</option>
+                                    <option value="to_startNode">${targetNode ? targetNode.label : 'Unknown'} → ${sourceNode ? sourceNode.label : 'Unknown'}</option>
                                     <option value="bidirectional">双向关系</option>
                                 </select>
                             </div>
@@ -2948,14 +2841,14 @@
                     modifiedProperties['source'] = 'manual_input';
                 }
                 
-                const direction = relationshipDirectionInput ? relationshipDirectionInput.value : 'to_B';
+                const direction = relationshipDirectionInput ? relationshipDirectionInput.value : 'to_endNode';
                 
                 // 获取节点信息用于后续反馈
                 const sourceNode = graphData.nodes.find(node => node.id === selectedItem.data.source.id);
                 const targetNode = graphData.nodes.find(node => node.id === selectedItem.data.target.id);
                 
                 let directionText = '';
-                if (direction === 'to_A') {
+                if (direction === 'to_startNode') {
                     directionText = `${targetNode ? targetNode.label : 'Unknown'} → ${sourceNode ? sourceNode.label : 'Unknown'}`;
                 } else if (direction === 'bidirectional') {
                     directionText = `${sourceNode ? sourceNode.label : 'Unknown'} ↔ ${targetNode ? targetNode.label : 'Unknown'}`;
@@ -3139,12 +3032,12 @@
                 return;
             }
             
-            const node1 = recentSelectedNodes[0].data;
-            const node2 = recentSelectedNodes[1].data;
+            const node1 = recentSelectedNodes[1].data;
+            const node2 = recentSelectedNodes[0].data;
             
-            // 构建确认消息
+            // 构建确认链接消息
             let directionText = '';
-            if (direction === 'to_A') {
+            if (direction === 'to_startNode') {
                 directionText = `${node2.label} → ${node1.label}`;
             } else if (direction === 'bidirectional') {
                 directionText = `${node1.label} ↔ ${node2.label}`;
@@ -3172,8 +3065,8 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
-                        node_a_id: node1.neo4j_id,
-                        node_b_id: node2.neo4j_id,
+                        startNode_id: node1.neo4j_id,
+                        endNode_id: node2.neo4j_id,
                         predicate: predicate,
                         source: 'manual_input',
                         confidence: confidence,

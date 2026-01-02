@@ -640,18 +640,18 @@ class KnowledgeGraphManager:
             return None
     
 
-    def create_relation(self, node_a_id: str, node_b_id: str, predicate: str, source: str, confidence: float = 0.5, 
-                        directivity: str = "to_B") -> Optional[str]:
+    def create_relation(self, startNode_id: str, endNode_id: str, predicate: str, source: str, confidence: float = 0.5, 
+                        directivity: str = "single") -> Optional[str]:
         """
         在两个节点之间创建关系
         
         Args:
-            node_a_id: 第一个节点的Neo4j元素ID
-            node_b_id: 第二个节点的Neo4j元素ID
+            startNode_id: 第一个节点的Neo4j元素ID
+            endNode_id: 第二个节点的Neo4j元素ID
             predicate: 关系谓词/类型
             source: 关系来源
             confidence: 置信度 (默认0.5)
-            directivity: 关系方向 (默认'to_B'，即A->B；'to_A'表示B->A；'bidirectional'表示双向)
+            directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
             
         Returns:
             Optional[str]: 成功返回关系ID，失败返回None
@@ -660,7 +660,7 @@ class KnowledgeGraphManager:
             logger.error("Cannot connect nodes: No Neo4j connection")
             return None
         
-        if not all([node_a_id, node_b_id, predicate, source]):
+        if not all([startNode_id, endNode_id, predicate, source]):
             logger.error("Missing required parameters for connecting nodes")
             return None
 
@@ -668,123 +668,108 @@ class KnowledgeGraphManager:
             with self.driver.session() as session:
                 # 首先验证两个节点是否存在
                 validate_query = """
-                OPTIONAL MATCH (a) WHERE elementId(a) = $node_a_id
-                OPTIONAL MATCH (b) WHERE elementId(b) = $node_b_id
+                OPTIONAL MATCH (a) WHERE elementId(a) = $startNode_id
+                OPTIONAL MATCH (b) WHERE elementId(b) = $endNode_id
                 RETURN a IS NOT NULL as a_exists, b IS NOT NULL as b_exists,
                        a.name as a_name, b.name as b_name,
                        labels(a) as a_labels, labels(b) as b_labels
                 """
-                
                 validation_result = session.run(validate_query, 
-                                              node_a_id=node_a_id, 
-                                              node_b_id=node_b_id).single()
+                                              startNode_id=startNode_id, 
+                                              endNode_id=endNode_id).single()
                 
                 if not validation_result["a_exists"]:
-                    logger.error(f"Node A with ID '{node_a_id}' not found")
+                    logger.error(f"Node A with ID '{startNode_id}' not found")
                     return None
                     
                 if not validation_result["b_exists"]:
-                    logger.error(f"Node B with ID '{node_b_id}' not found")
+                    logger.error(f"Node B with ID '{endNode_id}' not found")
                     return None
                 
-                # 根据方向性确定源节点和目标节点
-                if directivity == "to_A":
-                    source_id, target_id = node_b_id, node_a_id
-                    direction_desc = f"{validation_result['b_name']} -> {validation_result['a_name']}"
-                elif directivity == "to_B":
-                    source_id, target_id = node_a_id, node_b_id
-                    direction_desc = f"{validation_result['a_name']} -> {validation_result['b_name']}"
-                elif directivity == "bidirectional":
-                    # 对于双向关系，创建两个单向关系
-                    source_id, target_id = node_a_id, node_b_id
+                # 准备关系描述
+                direction_desc = f"{validation_result['a_name']} -> {validation_result['b_name']}"
+                if directivity == "bidirectional":
                     direction_desc = f"{validation_result['a_name']} <-> {validation_result['b_name']}"
-                else:
-                    logger.error(f"Invalid directivity value: {directivity}")
-                    return None
                 
                 # 处理关系类型名称，确保符合Neo4j关系类型命名规范
                 predicate_safe = predicate.replace(" ", "_").replace("-", "_").upper()
                 if not predicate_safe.replace("_", "").isalnum():
                     predicate_safe = "CONNECTED_TO"  # 回退到通用关系类型
+
+                # 检测相同位置有没有同名关系
+                check_existing_query = """
+                MATCH (a) WHERE elementId(a) = $startNode_id
+                MATCH (b) WHERE elementId(b) = $endNode_id
+                OPTIONAL MATCH (a)-[r]->(b) WHERE r.predicate = $predicate
+                RETURN elementId(r) as existing_relation_id, r.predicate as existing_predicate
+                """
                 
+                existing_result = session.run(check_existing_query, 
+                                            startNode_id=startNode_id, 
+                                            endNode_id=endNode_id, 
+                                            predicate=predicate).single()
+                
+                # 如果已存在相同关系，直接调用modify_relation修改并返回ID
+                if existing_result and existing_result["existing_relation_id"]:
+                    logger.info(f"Relation already exists with ID: {existing_result['existing_relation_id']}")
+                    relationship_id = self.modify_relation(existing_result["existing_relation_id"], predicate, source, confidence, directivity)
+                    return relationship_id
+                
+                # 否则正常创建关系
                 current_time = datetime.now().isoformat()
-                
-                # 删除已存在的相同方向关系，避免重复
-                if directivity == "to_A" or directivity == "bidirectional":
-                    # 删除B->A方向的关系
-                    session.run("""
-                        MATCH (a) WHERE elementId(a) = $node_b_id
-                        MATCH (b) WHERE elementId(b) = $node_a_id
-                        OPTIONAL MATCH (a)-[r]->(b) WHERE r.directivity = 'to_A'
-                        DELETE r
-                    """, node_a_id=node_a_id, node_b_id=node_b_id)
-                    
-                if directivity == "to_B" or directivity == "bidirectional":
-                    # 删除A->B方向的关系
-                    session.run("""
-                        MATCH (a) WHERE elementId(a) = $node_a_id
-                        MATCH (b) WHERE elementId(b) = $node_b_id
-                        OPTIONAL MATCH (a)-[r]->(b) WHERE r.directivity = 'to_B'
-                        DELETE r
-                    """, node_a_id=node_a_id, node_b_id=node_b_id)
-                
-                # 创建关系
                 relationship_id = None
                 
-                if directivity == "to_B" or directivity == "bidirectional":
-                    # 创建 A->B 关系 (to_B)
-                    to_b_query = f"""
-                    MATCH (source) WHERE elementId(source) = $node_a_id
-                    MATCH (target) WHERE elementId(target) = $node_b_id
-                    CREATE (source)-[r:{predicate_safe}]->(target)
-                    SET r.created_at = $created_at,
-                        r.predicate = $predicate,
-                        r.source = $source,
-                        r.confidence = $confidence,
-                        r.directivity = 'to_B'
-                    RETURN elementId(r) as to_b_relationship_id
-                    """
-                    
-                    to_b_result = session.run(to_b_query,
-                                             node_a_id=node_a_id,
-                                             node_b_id=node_b_id,
-                                             predicate=predicate,
-                                             source=source,
-                                             confidence=confidence,
-                                             created_at=current_time)
-                    
-                    to_b_record = to_b_result.single()
-                    if to_b_record:
-                        relationship_id = to_b_record["to_b_relationship_id"]
-                        logger.debug(f"Created to_B relationship")
+                # 创建正向关系
+                forward_query = f"""
+                MATCH (source) WHERE elementId(source) = $startNode_id
+                MATCH (target) WHERE elementId(target) = $endNode_id
+                CREATE (source)-[r:{predicate_safe}]->(target)
+                SET r.created_at = $current_time,
+                    r.last_updated = $current_time,
+                    r.predicate = $predicate,
+                    r.source = $source,
+                    r.confidence = $confidence
+                RETURN elementId(r) as forward_relationship_id
+                """
                 
-                if directivity == "to_A" or directivity == "bidirectional":
-                    # 创建 B->A 关系 (to_A)
-                    to_a_query = f"""
-                    MATCH (source) WHERE elementId(source) = $node_b_id
-                    MATCH (target) WHERE elementId(target) = $node_a_id
+                forward_result = session.run(forward_query,
+                                            startNode_id=startNode_id,
+                                            endNode_id=endNode_id,
+                                            predicate=predicate,
+                                            source=source,
+                                            confidence=confidence,
+                                            current_time=current_time)
+                
+                forward_record = forward_result.single()
+                if forward_record:
+                    relationship_id = forward_record["forward_relationship_id"]
+                    logger.debug(f"Created relationship")
+                
+                if directivity == "bidirectional":
+                    # 创建反向关系
+                    backward_query = f"""
+                    MATCH (source) WHERE elementId(source) = $endNode_id
+                    MATCH (target) WHERE elementId(target) = $startNode_id
                     CREATE (source)-[r:{predicate_safe}]->(target)
-                    SET r.created_at = $created_at,
+                    SET r.created_at = $current_time,
+                        r.last_updated = $current_time,
                         r.predicate = $predicate,
                         r.source = $source,
-                        r.confidence = $confidence,
-                        r.directivity = 'to_A'
-                    RETURN elementId(r) as to_a_relationship_id
+                        r.confidence = $confidence
+                    RETURN elementId(r) as backward_relationship_id
                     """
                     
-                    to_a_result = session.run(to_a_query,
-                                             node_a_id=node_a_id,
-                                             node_b_id=node_b_id,
+                    backward_result = session.run(backward_query,
+                                             startNode_id=startNode_id,
+                                             endNode_id=endNode_id,
                                              predicate=predicate,
                                              source=source,
                                              confidence=confidence,
-                                             created_at=current_time)
+                                             current_time=current_time)
                     
-                    to_a_record = to_a_result.single()
-                    if to_a_record:
-                        if not relationship_id:  # 如果还没有设置关系ID，使用to_A的ID
-                            relationship_id = to_a_record["to_a_relationship_id"]
-                        logger.debug(f"Created to_A relationship")
+                    backward_record = backward_result.single()
+                    if backward_record:
+                        logger.debug(f"Created backward relationship")
                 
                 if relationship_id:
                     logger.info(f"Successfully connected nodes: {direction_desc}")
@@ -794,7 +779,7 @@ class KnowledgeGraphManager:
                     return None
                     
         except Exception as e:
-            logger.error(f"Failed to connect nodes '{node_a_id}' and '{node_b_id}': {e}")
+            logger.error(f"Failed to connect nodes '{startNode_id}' and '{endNode_id}': {e}")
             return None
     
 
@@ -883,7 +868,7 @@ class KnowledgeGraphManager:
     
 
     def modify_relation(self, relation_id: str, predicate: str, source: str, confidence: float = 0.5, 
-                        directivity: str = "to_B") -> Optional[str]:
+                        directivity: str = "single") -> Optional[str]:
         """
         修改关系的属性
         
@@ -892,8 +877,8 @@ class KnowledgeGraphManager:
             predicate: 关系谓词/类型
             source: 关系来源
             confidence: 置信度 (默认0.5)
-            directivity: 关系方向 (默认'to_B'，即A->B；'to_A'表示B->A；'bidirectional'表示双向)
-            
+            directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
+           
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
         """
@@ -916,8 +901,7 @@ class KnowledgeGraphManager:
                 MATCH (a)-[r]->(b) WHERE elementId(r) = $relation_id
                 RETURN elementId(a) as source_node_id, elementId(b) as target_node_id,
                        a.name as source_name, b.name as target_name,
-                       type(r) as rel_type_name, properties(r) as current_properties,
-                       r.directivity as current_directivity
+                       type(r) as rel_type_name, properties(r) as current_properties
                 """
                 
                 check_result = session.run(check_query, relation_id=relation_id).single()
@@ -930,37 +914,40 @@ class KnowledgeGraphManager:
                 target_node_id = check_result["target_node_id"]
                 source_name = check_result["source_name"]
                 target_name = check_result["target_name"]
-                current_directivity = check_result["current_directivity"]
                 
-                # 删除原关系
-                session.run("""
-                    MATCH ()-[r]-() WHERE elementId(r) = $relation_id
-                    DELETE r
-                """, relation_id=relation_id)
+                # 更新现有关系的属性
+                current_time = datetime.now().isoformat()
                 
-                logger.info(f"Deleted original relation {relation_id} between {source_name} and {target_name}")
-            
-            # 使用create_relation方法重新创建关系（在事务外调用以避免嵌套）
-            new_relation_id = self.create_relation(
-                node_a_id=source_node_id,
-                node_b_id=target_node_id,
-                predicate=predicate,
-                source=source,
-                confidence=confidence,
-                directivity=directivity
-            )
-            
-            if new_relation_id:
-                logger.info(f"Successfully modified relation: created new relation {new_relation_id} with predicate '{predicate}' and directivity '{directivity}'")
+                update_query = """
+                MATCH ()-[r]-() WHERE elementId(r) = $relation_id
+                SET r.predicate = $predicate,
+                    r.source = $source,
+                    r.confidence = $confidence,
+                    r.last_updated = $current_time
+                RETURN elementId(r) as updated_relation_id
+                """
                 
-                # 更新关系涉及的两个节点
-                self.update_node(source_node_id, significance=0.99, Increase_importance=True)
-                self.update_node(target_node_id, significance=0.99, Increase_importance=True)
+                update_result = session.run(update_query,
+                                          relation_id=relation_id,
+                                          predicate=predicate,
+                                          source=source,
+                                          confidence=confidence,
+                                          directivity=directivity,
+                                          current_time=current_time)
                 
-                return new_relation_id
-            else:
-                logger.error("Failed to create new relation after deletion")
-                return None
+                update_record = update_result.single()
+                
+                if update_record:
+                    logger.info(f"Successfully updated relation {relation_id} between {source_name} and {target_name}")
+                    
+                    # 更新关系涉及的两个节点
+                    self.update_node(source_node_id, significance=0.99, Increase_importance=True)
+                    self.update_node(target_node_id, significance=0.99, Increase_importance=True)
+                    
+                    return relation_id
+                else:
+                    logger.error(f"Failed to update relation {relation_id}")
+                    return None
                 
         except Exception as e:
             logger.error(f"Failed to modify relation '{relation_id}': {e}")
@@ -1026,12 +1013,12 @@ class KnowledgeGraphManager:
                 
                 # 将时间节点与目标节点关联
                 relation_id = self.create_relation(
-                    node_a_id=node_id,
-                    node_b_id=time_node_id,
+                    startNode_id=node_id,
+                    endNode_id=time_node_id,
                     predicate="HAPPENED_AT",
                     source="set_entity_time",
                     confidence=0.9,
-                    directivity="to_B"
+                    directivity="to_endNode"
                 )
                 
                 if not relation_id:
@@ -1103,12 +1090,12 @@ class KnowledgeGraphManager:
                 
                 # 将地点节点与目标节点关联
                 relation_id = self.create_relation(
-                    node_a_id=node_id,
-                    node_b_id=location_node_id,
+                    startNode_id=node_id,
+                    endNode_id=location_node_id,
                     predicate="HAPPENED_IN",
                     source="set_location",
                     confidence=0.9,
-                    directivity="to_B"
+                    directivity="to_endNode"
                 )
                 
                 if not relation_id:
@@ -1449,14 +1436,14 @@ class KnowledgeGraphManager:
                     logger.error("Failed to create or find subject/object nodes")
                     return None
                 
-                # 创建主体到客体的关系（默认to_B方向）
+                # 创建主体到客体的关系（默认to_endNode方向）
                 main_relation_id = self.create_relation(
-                    node_a_id=subject_id,
-                    node_b_id=object_id,
+                    startNode_id=subject_id,
+                    endNode_id=object_id,
                     predicate=predicate,
                     source=source,
                     confidence=confidence,
-                    directivity="to_B"
+                    directivity="to_endNode"
                 )
                 
                 if not main_relation_id:
@@ -1498,24 +1485,24 @@ class KnowledgeGraphManager:
                     if with_person_id:
                         # 根据directivity决定关系方向
                         if directivity:
-                            # True: 被动参与 (to_B: 客体 -> 同行者)
+                            # True: 被动参与 (to_endNode: 客体 -> 同行者)
                             # 使用"被+原动作"的形式
                             passive_predicate = f"被{predicate}"
-                            with_relation_directivity = "to_B"
+                            with_relation_directivity = "to_endNode"
                             with_relation_id = self.create_relation(
-                                node_a_id=object_id,
-                                node_b_id=with_person_id,
+                                startNode_id=object_id,
+                                endNode_id=with_person_id,
                                 predicate=passive_predicate,
                                 source=source,
                                 confidence=confidence,
                                 directivity=with_relation_directivity
                             )
                         else:
-                            # False: 共事关系 (to_A: 同行者 -> 客体)
-                            with_relation_directivity = "to_A"
+                            # False: 共事关系 (to_startNode: 同行者 -> 客体)
+                            with_relation_directivity = "to_startNode"
                             with_relation_id = self.create_relation(
-                                node_a_id=object_id,
-                                node_b_id=with_person_id,
+                                startNode_id=object_id,
+                                endNode_id=with_person_id,
                                 predicate=predicate,
                                 source=source,
                                 confidence=confidence,

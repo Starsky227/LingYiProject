@@ -866,7 +866,8 @@ def start_api_server():
         def handle_delete_item():
             """删除节点或关系"""
             try:
-                from brain.memory.knowledge_graph_manager import delete_node_or_relation_by_id
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
                 
                 data = request.get_json()
                 element_id = data.get('element_id', '')
@@ -877,7 +878,7 @@ def start_api_server():
                         "error": "元素ID不能为空"
                     }), 400
                 
-                result = delete_node_or_relation_by_id(element_id.strip())
+                result = kg_manager.delete_node_or_relation(element_id.strip())
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -947,7 +948,9 @@ def start_api_server():
                 predicate = data.get('predicate', '')
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
-                directivity = data.get('directivity', 'to_target')
+                directivity = data.get('directivity', 'single')
+                if directivity != 'bidirectional':
+                    directivity = 'single'
                 
                 if not relation_id.strip():
                     return jsonify({
@@ -1016,14 +1019,16 @@ def start_api_server():
                 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
                 
                 data = request.get_json()
-                node_a_id = data.get('node_a_id', '')
-                node_b_id = data.get('node_b_id', '')
+                startNode_id = data.get('startNode_id', '')
+                endNode_id = data.get('endNode_id', '')
                 predicate = data.get('predicate', '')
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
-                directivity = data.get('directivity', 'to_B')
+                directivity = data.get('directivity', 'single')
+                if directivity != 'bidirectional':
+                    directivity = 'single'
                 
-                if not all([node_a_id.strip(), node_b_id.strip(), predicate.strip(), source.strip()]):
+                if not all([startNode_id.strip(), endNode_id.strip(), predicate.strip(), source.strip()]):
                     return jsonify({
                         "success": False,
                         "error": "节点ID、关系类型和来源不能为空"
@@ -1038,8 +1043,8 @@ def start_api_server():
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
                 relationship_id = kg_manager.create_relation(
-                    node_a_id.strip(), 
-                    node_b_id.strip(), 
+                    startNode_id.strip(), 
+                    endNode_id.strip(), 
                     predicate.strip(), 
                     source.strip(), 
                     confidence, 
