@@ -3,7 +3,7 @@
 """
 Memory Graph Viewer
 将 memory_graph.json 中的记忆数据通过 HTML 进行可视化展示
-支持交互式图谱展示、节点详情查看、关系筛选等功能
+支持交互记忆管理：添加，修改，删除节点与关系
 """
 
 import os

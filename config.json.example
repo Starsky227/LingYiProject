@@ -1,6 +1,6 @@
 {
     "system":{
-        "version": "0.3.0",
+        "version": "0.3.1",
         "ai_name": "铃依",
         "debug": true,
         "log_level": "INFO"
