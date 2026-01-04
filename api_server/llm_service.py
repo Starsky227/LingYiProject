@@ -28,7 +28,7 @@ from brain.memory.quintuples_extractor import record_messages_to_memories
 from mcpserver.mcp_manager import get_mcp_manager
 from mcpserver.mcp_registry import get_all_services_info, get_service_statistics
 from system.config import config, is_neo4j_available
-from system.background_analyzer import analyze_intent, extract_keywords, generate_response, tool_call, memory_control, task_completion_check, final_output
+from brain.background_analyzer import analyze_intent, extract_keywords, generate_response, tool_call, memory_control, task_completion_check, final_output
 
 
 # API 配置

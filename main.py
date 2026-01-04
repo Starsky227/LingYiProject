@@ -7,7 +7,7 @@ import os
 import threading
 from PyQt5.QtWidgets import QApplication
 import uvicorn
-from brain.task_manager import task_manager
+from system.task_manager import task_manager
 from system import config
 from ui.chat_ui import ChatUI
 # 从独立服务模块导入模型交互函数与预加载函数

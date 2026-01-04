@@ -32,7 +32,7 @@ from system.config import config
 from openai import AsyncOpenAI, OpenAI
 
 # 导入任务管理器
-from brain.task_manager import task_manager, TaskPriority
+from system.task_manager import task_manager, TaskPriority
 
 # 导入prompt
 DIALOGUE_SUMMARIZER_PROMPT = os.path.join(_project_root, "brain", "memory", "prompt", "dialogue_summarizer.txt")
