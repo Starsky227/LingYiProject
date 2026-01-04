@@ -1,5 +1,5 @@
-# LingYiProject 0.1
-This is a project started by a total beginner, a 3A project: AI coding, AI drawing, AI service.
+# LingYiProject 0.3.1
+This is a project started by a total beginner, a 3A project: AI coding, AI drawing, AI service. Projectstart at 2025/10/1
 这是一个纯萌新打造的AI智能体计划，纯正的3A大作：AI编程，AI立绘，AI聊天。
 
 ### 🎯 重点感谢
@@ -19,14 +19,32 @@ NagaAgent：https://github.com/Xxiii8322766509/NagaAgent
 
 - **操作系统**: Windows 11 （10应该也行？）
 - **Python**: 3.10+ (推荐 3.13)
-- **内存**: 建议 4GB 以上
-- **存储**: 建议 2GB 以上可用空间
+- **内存**: 建议 4GB+ （需要跑neo4j）
+- **存储**: 建议 5GB+ （取决于你需要存多少数据，不过部署要求不高）
+
+
+### 项目框架
+
 
 ### 📋 版本信息
 **现版本内容总结：**
-1. 正常对话
-2. 自定义立绘，路径ui/image（记得修改config.json->ui->image_name）
-3. neo4j知识图谱（但尚不支持自动上传记忆）
+1. 正常对话（这部分随着更新现在已经半死不活了，相信来的各位也不是奔着这部分来的）
+2. neo4j知识图谱（目前主要更新点在此）
+3. 关键词提取，记忆自管理，之后大概会是选择多个模型协同运作（主要是节省token）
+4. 几乎完全重写了记忆存储逻辑（之前的纯ai创作的版本已经基本优化的渣都不剩了）
+5. 更详细的记忆系统说明详见memory文件下的README
+
+**版本0.3.0**
+1. 全面更新neo4j记忆逻辑，现在以全新的时间，地点，角色，实体四种节点为记忆基础。
+2. 基本放弃五元组记忆输入，转交AI进行
+3. 全新的记忆编辑html
+4. 不确定基础的对话功能是否还在运作，当前开发重心转移到记忆系统。
+5. 基本不再继续本地运行，转而使用api，记忆系统当前试用gpt-5-nano
+
+**版本0.2.0**
+1. 重新整理了AI的思维链
+2. 实现了AI的工具调用
+3. 初步进行了记忆系统的尝试，实装log系统
 
 **版本：0.1.0**
 1. 实装了三/五元组提取（参考了Naga）

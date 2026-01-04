@@ -36,3 +36,6 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# config 文件
+config.json

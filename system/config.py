@@ -82,6 +82,20 @@ class APIConfig(BaseModel):
     api_key: str = Field(default="ollama", description="API密钥")
     base_url: str = Field(default="http://localhost:11434/v1", description="API基础URL")
     model: str = Field(default="gemma3:4b", description="模型名称")
+    memory_record_api_key: str = Field(default=None, description="记忆记录API密钥，未设置时使用api_key")
+    memory_record_base_url: str = Field(default=None, description="记忆记录API基础URL，未设置时使用base_url")
+    memory_record_model: str = Field(default=None, description="记忆记录模型名称，未设置时使用model")
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # 如果记忆记录相关配置未设置，则使用默认API配置
+        if self.memory_record_api_key is None:
+            self.memory_record_api_key = self.api_key
+        if self.memory_record_base_url is None:
+            self.memory_record_base_url = self.base_url
+        if self.memory_record_model is None:
+            self.memory_record_model = self.model
+
 
 class APIServerConfig(BaseModel):
     """API服务器相关配置"""
@@ -132,7 +146,6 @@ class Crawl4AIConfig(BaseModel):
     viewport_width: int = Field(default=1920, description="视口宽度")
     viewport_height: int = Field(default=1080, description="视口高度")
 
-
 class LingyiConfig(BaseModel):
     """取自naga的主配置加载"""
     system: SystemConfig = Field(default_factory=SystemConfig)
@@ -148,6 +161,7 @@ class LingyiConfig(BaseModel):
         setup_environment()
         super().__init__(**kwargs)
         self.system.log_dir.mkdir(parents=True, exist_ok=True)  # 确保递归创建日志目录
+
 
 # 全局Neo4j连接状态管理
 _neo4j_connection_tested = False

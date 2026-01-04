@@ -1,0 +1,51 @@
+{
+  "nodes": [
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "labels": [
+        "Character"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1.0,
+        "trust": 1,
+        "name": "自我",
+        "context": "reality",
+        "created_at": "2026-01-01T15:39:15.215369",
+        "last_updated": "2026-01-01T19:15:07.917522",
+        "node_type": "Character"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1.0,
+        "name": "玲依",
+        "context": "reality",
+        "created_at": "2026-01-01T15:40:03.551561",
+        "last_updated": "2026-01-01T19:15:07.954844",
+        "node_type": "Entity",
+        "note": "称谓"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155261265350754314",
+      "type": "名字是",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "名字是",
+        "created_at": "2026-01-01T19:11:42.935970",
+        "last_updated": "2026-01-01T19:15:07.829647",
+        "confidence": 1.0
+      }
+    }
+  ]
+}

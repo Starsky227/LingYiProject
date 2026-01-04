@@ -1,4 +1,4 @@
-请作为记忆管理器，根据接收到的信息，历史信息，以及已有记忆，调整neo4j记忆数据库。
+请作为记忆管理器，根据接收到的信息，历史信息，以及相关记忆，调整neo4j记忆数据库。
 事件描述信息包含：{
   "event": 需要记录的事实/关系/模式的描述,
   "description": [相关的描述，用于辅助评估importance, trust, confidence]
@@ -13,9 +13,10 @@
 
 【节点/关系创建格式】
 nodeType：要调整的节点类型，可选Time, Character, Location, Entity（所有不属于Time, Character, Location的都归于Entity）
-relationType：张三购买了苹果，苹果购买张三不成立则single。张三认识李四，李四认识张三则bidirectional
+relationType：张三购买了一袋苹果，一袋苹果购买张三不成立则single。张三认识李四，李四认识张三则bidirectional
 nodeID/relationId：要调整的节点/关系ID，已有项目直接填写目标ID。新项目拟定一个不重复的代号即可，要求不包含特殊符号，空格以"_"代替。
-对于已有的节点和关系，如需要调整，仅允许修改imporotance, trust, confidence词条，
+对于已有的节点和关系，如需要调整，仅允许修改imporotance, trust, confidence词条。如不需要调整，不要在nodes中写出。
+需特别判断同名节点是否为目标节点，如苹果（note：水果）和苹果（note：品牌）不应是同一节点。
 
 Time时间节点：
 1. 只有Entity实体节点可以链接到Time时间节点，且每个Entity实体节点只能对应一个Time时间节点。
@@ -38,7 +39,7 @@ context: 该节点是基于什么情景下的：是现实reality，还是某个�
   "nodeType": "Location",
   "nodeId": "newNode02",
   "nodeInfo": {
-    "location_name": "北京",
+    "name": "北京",
     "context": "reality现实"
   }
 }
@@ -52,7 +53,7 @@ trust：该角色发言的可信度有多高。
   "nodeType": "Character",
   "nodeId": "newNode03",
   "nodeInfo": {
-    "character_name": "张三",
+    "name": "张三",
     "importance": 0.2,
     "trust": 0.2,
     "context": "reality现实"
@@ -67,7 +68,7 @@ note：该节点描述的是什么：事件 / 行为 / 状态 / 规则 / 物品 
   "nodeType": "Entity",
   "nodeId": "newNode04",
   "nodeInfo": {
-    "Entity_name": "苹果",
+    "name": "苹果",
     "importance": 0.2,
     "context": "reality现实",
     "note": "食物"
@@ -98,3 +99,4 @@ evidence：记录提供该confidence的理由。
   "nodes": [...],
   "relations": [...]
 }
+

@@ -15,7 +15,52 @@ import json
 import logging
 from dataclasses import asdict
 from datetime import datetime
+from litellm import OpenAI
+from system.config import config
 from typing import List, Dict, Any, Optional
+
+# 获取项目根目录
+project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# API 配置
+API_KEY = config.api.api_key
+API_URL = config.api.base_url
+MODEL = config.api.model
+AI_NAME = config.system.ai_name
+USERNAME = config.ui.username
+DEBUG_MODE = config.system.debug
+
+# 初始化 OpenAI 客户端
+client = OpenAI(
+    api_key=API_KEY,
+    base_url=API_URL
+)
+
+def load_prompt_file(filename: str, description: str = "") -> str:
+    """
+    加载提示词文件的通用函数
+    Args:
+        filename: 文件名（如 "1_intent_analyze.txt"）
+        description: 文件描述（用于错误提示）
+    Returns:
+        文件内容字符串，失败时返回空字符串
+    """
+    prompt_path = os.path.join(os.path.dirname(__file__), "prompt", filename)
+    if not os.path.exists(prompt_path):
+        error_msg = f"[错误] {description}提示词文件不存在: {prompt_path}"
+        print(error_msg)
+        return ""
+    
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+        if not content:
+            print(f"[警告] {description}提示词文件为空: {prompt_path}")
+        return content
+
+MEMORY_RECORD_PROMPT = load_prompt_file("memory_record.txt", "记忆存储")
+
 
 # 添加项目根目录到模块搜索路径
 project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -701,7 +746,7 @@ class KnowledgeGraphManager:
                 MATCH (a) WHERE elementId(a) = $startNode_id
                 MATCH (b) WHERE elementId(b) = $endNode_id
                 OPTIONAL MATCH (a)-[r]->(b) WHERE r.predicate = $predicate
-                RETURN elementId(r) as existing_relation_id, r.predicate as existing_predicate
+                RETURN elementId(r) as existing_relation_id, r.predicate as existing_predicate, type(r) as relation_type
                 """
                 
                 existing_result = session.run(check_existing_query, 
@@ -783,7 +828,7 @@ class KnowledgeGraphManager:
             return None
     
 
-    def modify_node(self, node_id: str, updates: dict) -> Optional[str]:
+    def modify_node(self, node_id: str, updates: dict, call: str = "passive") -> Optional[str]:
         """
         用于从客户端直接修改节点的属性。
         
@@ -805,7 +850,49 @@ class KnowledgeGraphManager:
         if not updates or not isinstance(updates, dict):
             logger.error("Updates must be a non-empty dictionary")
             return None
-        
+    
+        try:
+            with self.driver.session() as session:
+                # 首先获取节点当前信息进行验证
+                check_query = """
+                MATCH (n) WHERE elementId(n) = $node_id
+                RETURN labels(n) as node_labels, n.name as node_name, n.node_type as node_type, 
+                       n.context as node_context, properties(n) as current_properties
+                """
+                
+                check_result = session.run(check_query, node_id=node_id).single()
+                
+                if not check_result:
+                    logger.error(f"Node with ID '{node_id}' not found")
+                    return None
+                
+                current_node_type = check_result["node_type"]
+                current_node_name = check_result["node_name"]
+                current_node_context = check_result["node_context"]
+                
+                # 如果nodeType = Time，则拒绝修改
+                if current_node_type == "Time":
+                    logger.warning(f"Cannot modify Time node '{node_id}' - Time nodes are read-only")
+                    return None
+                
+                if call == "passive":
+                    # 被动更改的情况下，如果检测到name，context，nodeType和数据库中不一致，则拒绝并return
+                    if "name" in updates and updates["name"] != current_node_name:
+                        logger.warning(f"Passive modification rejected: name mismatch for node '{node_id}'")
+                        return None
+                    
+                    if "context" in updates and updates["context"] != current_node_context:
+                        logger.warning(f"Passive modification rejected: context mismatch for node '{node_id}'")
+                        return None
+                    
+                    if "node_type" in updates and updates["node_type"] != current_node_type:
+                        logger.warning(f"Passive modification rejected: nodeType mismatch for node '{node_id}'")
+                        return None
+
+        except Exception as e:
+            logger.error(f"Failed to validate node '{node_id}': {e}")
+            return None
+
         try:
             with self.driver.session() as session:
                 # 检查节点是否存在
@@ -914,6 +1001,12 @@ class KnowledgeGraphManager:
                 target_node_id = check_result["target_node_id"]
                 source_name = check_result["source_name"]
                 target_name = check_result["target_name"]
+                rel_type_name = check_result["rel_type_name"]
+                
+                # 如果关系类型是BELONGS_TO，拒绝修改
+                if rel_type_name == "BELONGS_TO":
+                    logger.warning(f"Cannot modify BELONGS_TO relation with ID '{relation_id}' - BELONGS_TO relations are protected")
+                    return None
                 
                 # 更新现有关系的属性
                 current_time = datetime.now().isoformat()
@@ -1518,6 +1611,275 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to write quintuple: {e}")
             return None
 
+    def passive_memory_record(self, work_history, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> None:
+        """
+        记录记忆信息，调用LLM生成结构化的记忆记录
+        
+        Args:
+            work_history: 历史记录，格式严格为：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
+            memory_to_record: 需要记忆的信息，格式：{"event": "", "description": [...]}
+            related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
+            
+        Returns:
+            调整过的和新创建的所有node和relation {"nodes": [...], "relations": [...]}
+            没有则输出{"nodes": [], "relations": []}
+        """
+        # 处理related_memory，将字典格式转换为文本格式
+        if isinstance(related_memory, dict):
+            # 转换为文本格式
+            related_memory_text = f"【请参考以下相关记忆进行决策】\n{str(related_memory)}"
+        else:
+            related_memory_text = "【相关记忆】\n暂无相关记忆，可直接进行处理"
+        
+        # 将related_memory添加进prompt
+        current_prompt = MEMORY_RECORD_PROMPT + "\n" + related_memory_text
+        if DEBUG_MODE:
+            print(f"[DEBUG] 记忆存储接收到prompt: {current_prompt}")
+        
+        # 准备输入数据
+        input_messages = []
+        
+        # 如果有work_history，先添加到最前面
+        if work_history and isinstance(work_history, list):
+            input_messages.extend(work_history)
+        
+        # 添加系统prompt和当前的记忆信息
+        input_messages.extend([
+            {"role": "system", "content": MEMORY_RECORD_PROMPT},
+            {"role": "user", "content": str(memory_to_record)},
+            {"role": "user", "content": related_memory_text}
+        ])
+
+        # 调用模型
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=input_messages,
+            stream=False,
+            temperature=0.1
+        )
+
+        full_response = response.choices[0].message.content
+
+        if DEBUG_MODE:
+            print(f"[DEBUG] 记忆存储模型回应: {full_response}")
+        if not full_response:
+            print(f"[DEBUG] 记忆存储模型未返回响应。")
+            return {"nodes": [], "relations": []}
+        
+        # 提取输出为 json 格式
+        try:
+            # 尝试解析JSON响应
+            if full_response.strip().startswith('```json'):
+                # 移除markdown代码块标记
+                json_start = full_response.find('{')
+                json_end = full_response.rfind('}') + 1
+                json_content = full_response[json_start:json_end]
+            else:
+                json_content = full_response.strip()
+            
+            memory_data = json.loads(json_content)
+            
+            if DEBUG_MODE:
+                print(f"[DEBUG] 解析出的记忆数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            print(f"[错误] 无法解析模型返回的JSON格式: {e}")
+            print(f"[原始响应] {full_response}")
+            return {"nodes": [], "relations": []}
+        except Exception as e:
+            logger.error(f"Error processing response: {e}")
+            return {"nodes": [], "relations": []}
+
+        # 读取nodes中的所有内容，记录在nodelist中
+        nodes_list = memory_data.get("nodes", [])
+        relations_list = memory_data.get("relations", [])
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
+
+        try:
+            with self.driver.session() as session:
+                # 遍历nodelist，处理节点
+                for node in nodes_list:
+                    try:
+                        node_id = node.get("nodeId")
+                        node_type = node.get("nodeType")
+                        node_info = node.get("nodeInfo", {})
+                        
+                        if not node_id or not node_type:
+                            logger.warning(f"Node missing required fields: {node}")
+                            continue
+                        
+                        # 检查节点是否已存在于图谱中
+                        check_query = """
+                        OPTIONAL MATCH (n) WHERE elementId(n) = $node_id
+                        RETURN elementId(n) as existing_id
+                        """
+                        
+                        check_result = session.run(check_query, node_id=node_id).single()
+                        existing_node_id = check_result["existing_id"] if check_result else None
+                        
+                        if existing_node_id:
+                            # 节点存在，调用modify_node修改节点属性
+                            updates = {}
+                            for key, value in node_info.items():
+                                if key not in ["nodeId", "nodeType", "significance"]:  # 排除不应加入的字段
+                                    updates[key] = value
+                            # 处理updates字典
+                            # 排除所有Time时间节点，该节点不遵从modify_node逻辑
+                            if node_type == "Time":
+                                updates = {}
+                            
+                            if updates:
+                                result = self.modify_node(existing_node_id, updates)
+                                if result:
+                                    logger.info(f"Updated existing node: {node_id}")
+                                else:
+                                    logger.warning(f"Failed to update node: {node_id}")
+                        else:
+                            # 节点不存在，根据nodeType调用对应的create_xxx_node
+                            new_node_id = None
+                            
+                            if node_type == "Time":
+                                time_str = node_info.get("time_str", node_info.get("time", ""))
+                                if time_str:
+                                    new_node_id = self.create_time_node(session, time_str)
+                                    
+                            elif node_type == "Character":
+                                name = node_info.get("character_name", node_info.get("name", ""))
+                                importance = node_info.get("importance", 0.5)
+                                trust = node_info.get("trust", 0.5)
+                                context = node_info.get("context", "reality")
+                                if name:
+                                    new_node_id = self.create_character_node(session, name, importance, trust, context)
+                                    
+                            elif node_type == "Location":
+                                name = node_info.get("location_name", node_info.get("name", ""))
+                                context = node_info.get("context", "reality")
+                                if name:
+                                    new_node_id = self.create_location_node(session, name, context)
+                                    
+                            elif node_type == "Entity":
+                                name = node_info.get("entity_name", node_info.get("name", ""))
+                                importance = node_info.get("importance", 0.5)
+                                context = node_info.get("context", "reality")
+                                note = node_info.get("note", "无")
+                                if name:
+                                    new_node_id = self.create_entity_node(session, name, importance, context, note)
+                            
+                            if new_node_id:
+                                logger.info(f"Created new {node_type} node: {node_id} -> {new_node_id}")
+                                
+                                # 更新当前节点的ID为实际的Neo4j节点ID
+                                old_node_id = node["nodeId"]
+                                node["nodeId"] = new_node_id
+                                
+                                # 更新relations_list中所有引用这个节点的关系
+                                for relation in relations_list:
+                                    if relation.get("startNode") == old_node_id:
+                                        relation["startNode"] = new_node_id
+                                    
+                                    if relation.get("endNode") == old_node_id:
+                                        relation["endNode"] = new_node_id
+                            else:
+                                logger.warning(f"Failed to create {node_type} node: {node_id}")
+                                
+                    except Exception as e:
+                        logger.error(f"Error processing node {node}: {e}")
+                        continue
+
+                # 遍历relationlist，处理关系
+                for relation in relations_list:
+                    try:
+                        relation_id = relation.get("relationId")
+                        relation_type = relation.get("relationType", "single")
+                        start_node_id = relation.get("startNode")
+                        end_node_id = relation.get("endNode")
+                        relation_info = relation.get("relationInfo", {})
+                        
+                        if not all([relation_id, start_node_id, end_node_id]):
+                            logger.warning(f"Relation missing required fields: {relation}")
+                            continue
+                        
+                        # 解析关系信息
+                        predicate = relation_info.get("predicate", "CONNECTED_TO")
+                        source = relation_info.get("source", "memory_record")
+                        confidence = float(relation_info.get("confidence", 0.5))
+                        
+                        if not start_node_id or not end_node_id:
+                            logger.warning(f"Could not resolve node IDs for relation {relation_id}: {start_node_id} -> {end_node_id}")
+                            continue
+                        
+                        # 检查关系是否已存在
+                        check_relation_query = """
+                        OPTIONAL MATCH (a)-[r]->(b) 
+                        WHERE elementId(a) = $start_id AND elementId(b) = $end_id 
+                        AND (elementId(r) = $relation_id OR (r.custom_id IS NOT NULL AND r.custom_id = $relation_id))
+                        RETURN elementId(r) as existing_relation_id
+                        """
+                        
+                        check_relation_result = session.run(check_relation_query, 
+                                                           start_id=start_node_id,
+                                                           end_id=end_node_id,
+                                                           relation_id=relation_id).single()
+                        
+                        existing_relation_id = check_relation_result["existing_relation_id"] if check_relation_result else None
+                        
+                        if existing_relation_id:
+                            # 关系存在，调用modify_relation修改关系属性
+                            result = self.modify_relation(existing_relation_id, predicate, source, confidence, relation_type)
+                            if result:
+                                logger.info(f"Updated existing relation: {relation_id}")
+                            else:
+                                logger.warning(f"Failed to update relation: {relation_id}")
+                        else:
+                            # 关系不存在，调用create_relation创建关系
+                            new_relation_id = self.create_relation(
+                                startNode_id=start_node_id,
+                                endNode_id=end_node_id,
+                                predicate=predicate,
+                                source=source,
+                                confidence=confidence,
+                                directivity=relation_type
+                            )
+                                
+                    except Exception as e:
+                        logger.error(f"Error processing relation {relation}: {e}")
+                        continue
+                
+                logger.info(f"Memory record processing completed: {len(nodes_list)} nodes, {len(relations_list)} relations")
+                
+                # 收集处理结果
+                processed_nodes = []
+                processed_relations = []
+                
+                for node in nodes_list:
+                    if node.get("nodeId"):
+                        processed_nodes.append({
+                            "nodeId": node["nodeId"],
+                            "nodeType": node.get("nodeType"),
+                            "action": "processed"
+                        })
+                
+                for relation in relations_list:
+                    if relation.get("relationId"):
+                        processed_relations.append({
+                            "relationId": relation.get("relationId"),
+                            "startNode": relation.get("startNode"),
+                            "endNode": relation.get("endNode"),
+                            "predicate": relation.get("relationInfo", {}).get("predicate", "CONNECTED_TO"),
+                            "action": "processed"
+                        })
+                
+                return {"nodes": processed_nodes, "relations": processed_relations}
+                
+        except Exception as e:
+            logger.error(f"Error during memory record processing: {e}")
+            return {"nodes": [], "relations": []}
+
+
+        
 
     def write_memories_batch(self, triples: List, quintuples: List) -> Dict[str, Any]:
         """批量写入三元组和五元组"""
@@ -1933,8 +2295,6 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to load Neo4j data: {e}")
             print(f"❌ Neo4j数据下载失败: {e}")
             return False
-    
-    def upload_recent_memory(self) -> Dict[str, Any]:
         """将 recent_memory.json 中的记忆上传到 Neo4j
         
         读取 recent_memory.json 文件，将其中的三元组和五元组写入 Neo4j。
@@ -2173,7 +2533,7 @@ class KnowledgeGraphManager:
             return {"nodes": [], "relationships": [], "connected_node_ids": [], "new_node_ids": []}
 
 
-    def _extract_keywords(self, text: str, keywords: List[str]) -> Dict[str, Any]:
+    def _extract_nodes_by_keyword(self, text: str, keywords: List[str]) -> Dict[str, Any]:
         """
         根据输入的关键词列表提取相应的节点及信息。
         
@@ -2318,7 +2678,7 @@ class KnowledgeGraphManager:
             
             # 第一步：通过关键词提取基础节点
             with kg_manager.driver.session() as session:
-                nodes_data = kg_manager._extract_keywords("", keywords)
+                nodes_data = kg_manager._extract_nodes_by_keyword("", keywords)
                 
                 if not nodes_data.get("nodes"):
                     logger.debug("[记忆查询] 未找到匹配的节点")
@@ -2386,11 +2746,6 @@ def clear_all_memory_interactive() -> bool:
     """便捷函数：交互式清空Neo4j中的全部记忆数据"""
     manager = get_knowledge_graph_manager()
     return manager.clear_all_memory()
-
-def upload_recent_memory_to_graph() -> Dict[str, Any]:
-    """便捷函数：将 recent_memory.json 中的记忆上传到 Neo4j"""
-    manager = get_knowledge_graph_manager()
-    return manager.upload_recent_memory()
 
 def load_neo4j_data_to_file() -> bool:
     """便捷函数：检查Neo4j连接并将数据下载到neo4j_memory.json文件"""

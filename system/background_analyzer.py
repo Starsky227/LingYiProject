@@ -212,7 +212,7 @@ def analyze_intent(message_to_proceed: List[Dict], relevant_memories: str) -> Tu
         print(f"[DEBUG] 意图分析模型回应: {full_response}")
 
     if not full_response:
-        return "unknown", "[错误]模型未返回响应"
+        return "unknown", "[错误] 意图分析模型未返回响应"
 
     # 提取为json格式
     if full_response.strip().startswith("```"):
