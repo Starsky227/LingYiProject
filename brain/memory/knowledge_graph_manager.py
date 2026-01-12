@@ -685,7 +685,7 @@ class KnowledgeGraphManager:
     
 
     def create_relation(self, startNode_id: str, endNode_id: str, predicate: str, source: str, confidence: float = 0.5, 
-                        directivity: str = "single") -> Optional[str]:
+                        directivity: str = "single", evidence: str = "") -> Optional[str]:
         """
         在两个节点之间创建关系
         
@@ -696,6 +696,7 @@ class KnowledgeGraphManager:
             source: 关系来源
             confidence: 置信度 (默认0.5)
             directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
+            evidence: 关系证据（为什么设置这个置信度，选填）
             
         Returns:
             Optional[str]: 成功返回关系ID，失败返回None
@@ -756,7 +757,7 @@ class KnowledgeGraphManager:
                 # 如果已存在相同关系，直接调用modify_relation修改并返回ID
                 if existing_result and existing_result["existing_relation_id"]:
                     logger.info(f"Relation already exists with ID: {existing_result['existing_relation_id']}")
-                    relationship_id = self.modify_relation(existing_result["existing_relation_id"], predicate, source, confidence, directivity)
+                    relationship_id = self.modify_relation(existing_result["existing_relation_id"], predicate, source, confidence, directivity, evidence)
                     return relationship_id
                 
                 # 否则正常创建关系
@@ -771,8 +772,9 @@ class KnowledgeGraphManager:
                 SET r.created_at = $current_time,
                     r.last_updated = $current_time,
                     r.predicate = $predicate,
-                    r.source = $source,
-                    r.confidence = $confidence
+                    r.source = [$source],
+                    r.confidence = $confidence,
+                    r.evidence = $evidence
                 RETURN elementId(r) as forward_relationship_id
                 """
                 
@@ -782,6 +784,7 @@ class KnowledgeGraphManager:
                                             predicate=predicate,
                                             source=source,
                                             confidence=confidence,
+                                            evidence=evidence,
                                             current_time=current_time)
                 
                 forward_record = forward_result.single()
@@ -798,8 +801,9 @@ class KnowledgeGraphManager:
                     SET r.created_at = $current_time,
                         r.last_updated = $current_time,
                         r.predicate = $predicate,
-                        r.source = $source,
-                        r.confidence = $confidence
+                        r.source = [$source],
+                        r.confidence = $confidence,
+                        r.evidence = $evidence
                     RETURN elementId(r) as backward_relationship_id
                     """
                     
@@ -809,6 +813,7 @@ class KnowledgeGraphManager:
                                              predicate=predicate,
                                              source=source,
                                              confidence=confidence,
+                                             evidence=evidence,
                                              current_time=current_time)
                     
                     backward_record = backward_result.single()
@@ -906,14 +911,75 @@ class KnowledgeGraphManager:
                     logger.error(f"Node with ID '{node_id}' not found")
                     return None
                 
+                # 获取当前节点的所有属性
+                current_properties = check_result["current_properties"] or {}
+                
                 # 添加当前时间戳到更新中
                 updates["last_updated"] = datetime.now().isoformat()
+                
+                # 定义需要保护的系统属性（不会被删除）
+                protected_properties = {
+                    "created_at", "last_updated", "node_type", "context", "name", 
+                    "significance", "id", "elementId", "labels"
+                }
+                
+                # 检查是否需要更新节点标签
+                new_node_type = updates.get("node_type")
+                current_labels = check_result["node_labels"]
+                
+                # 如果需要更新节点类型，先处理标签更新
+                if new_node_type:
+                    # 定义业务相关的标签
+                    business_labels = ["Entity", "Character", "Location"]
+                    
+                    # 移除现有的业务标签
+                    for label in business_labels:
+                        if label in current_labels:
+                            remove_label_query = f"""
+                            MATCH (n) WHERE elementId(n) = $node_id
+                            REMOVE n:{label}
+                            """
+                            session.run(remove_label_query, node_id=node_id)
+                            logger.debug(f"Removed label '{label}' from node {node_id}")
+                    
+                    # 添加新的业务标签
+                    if new_node_type in business_labels:
+                        add_label_query = f"""
+                        MATCH (n) WHERE elementId(n) = $node_id
+                        SET n:{new_node_type}
+                        """
+                        session.run(add_label_query, node_id=node_id)
+                        logger.debug(f"Added label '{new_node_type}' to node {node_id}")
+                    
+                    # 确保node_type属性和标签一致
+                    updates["node_type"] = new_node_type
+                
+                # 找出需要删除的属性（当前存在但不在updates中且不是保护属性）
+                properties_to_remove = []
+                for prop_name in current_properties.keys():
+                    if (prop_name not in updates and 
+                        prop_name not in protected_properties and 
+                        prop_name != "nodeType"):  # nodeType会转换为node_type
+                        properties_to_remove.append(prop_name)
+                
+                # 删除不需要的属性
+                if properties_to_remove:
+                    remove_props_query = f"""
+                    MATCH (n) WHERE elementId(n) = $node_id
+                    REMOVE {', '.join([f'n.{prop}' for prop in properties_to_remove])}
+                    """
+                    session.run(remove_props_query, node_id=node_id)
+                    logger.debug(f"Removed properties {properties_to_remove} from node {node_id}")
                 
                 # 构建SET子句
                 set_clauses = []
                 params = {"node_id": node_id}
                 
                 for key, value in updates.items():
+                    # 跳过nodeType，因为已经处理为node_type
+                    if key == "nodeType":
+                        continue
+                        
                     # 验证属性名（避免注入攻击）
                     if not key.replace("_", "").isalnum():
                         logger.warning(f"Skipping invalid property name: {key}")
@@ -931,18 +997,28 @@ class KnowledgeGraphManager:
                 update_query = f"""
                 MATCH (n) WHERE elementId(n) = $node_id
                 SET {', '.join(set_clauses)}
-                RETURN properties(n) as updated_properties
+                RETURN properties(n) as updated_properties, labels(n) as updated_labels
                 """
                 
                 result = session.run(update_query, **params)
                 updated_record = result.single()
                 
                 if updated_record:
-                    logger.info(f"Successfully updated node {node_id}")
+                    updated_labels = updated_record["updated_labels"]
+                    logger.info(f"Successfully updated node {node_id} with labels: {updated_labels}")
                     
                     # 更新修改的节点
-                    self.update_node(node_id, significance=0.99, Increase_importance=True)
-                    
+                    self.update_node(node_id, significance=0.99, Increase_importance=False)
+
+                    # 如果当前节点是Location类型，删除不应该有的属性
+                    if "Location" in updated_labels:
+                        location_cleanup_query = """
+                        MATCH (n) WHERE elementId(n) = $node_id
+                        REMOVE n.importance, n.significance
+                        """
+                        session.run(location_cleanup_query, node_id=node_id)
+                        logger.debug(f"Cleaned up importance and significance properties from Location node {node_id}")
+
                     return node_id
                 else:
                     logger.error("Failed to update node")
@@ -954,7 +1030,7 @@ class KnowledgeGraphManager:
     
 
     def modify_relation(self, relation_id: str, predicate: str, source: str, confidence: float = 0.5, 
-                        directivity: str = "single") -> Optional[str]:
+                        directivity: str = "single", evidence: str = "", call: str = "passive") -> Optional[str]:
         """
         修改关系的属性
         
@@ -964,7 +1040,7 @@ class KnowledgeGraphManager:
             source: 关系来源
             confidence: 置信度 (默认0.5)
             directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
-           
+            evidence: 关系证据（为什么设置这个置信度，选填）
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
         """
@@ -1001,20 +1077,59 @@ class KnowledgeGraphManager:
                 source_name = check_result["source_name"]
                 target_name = check_result["target_name"]
                 rel_type_name = check_result["rel_type_name"]
+                current_properties = check_result["current_properties"]
+                current_predicate = current_properties.get("predicate") if current_properties else None
                 
                 # 如果关系类型是BELONGS_TO，拒绝修改
                 if rel_type_name == "BELONGS_TO":
                     logger.warning(f"Cannot modify BELONGS_TO relation with ID '{relation_id}' - BELONGS_TO relations are protected")
                     return None
                 
+                if call == "passive":
+                    # 被动更改的情况下，如果检测到predicate和数据库中不一致，则拒绝并return
+                    if predicate != current_predicate:
+                        logger.warning(f"Cannot modify predicate in passive call mode: current='{current_predicate}', requested='{predicate}'")
+                        return None
+                
                 # 更新现有关系的属性
                 current_time = datetime.now().isoformat()
+                
+                # 处理source合并和置信度计算
+                current_source = current_properties.get("source") if current_properties else []
+                current_confidence = current_properties.get("confidence", 0.5) if current_properties else 0.5
+                
+                # 将字符串格式的source转换为list（向后兼容）
+                if isinstance(current_source, str):
+                    if current_source:
+                        current_source = [s.strip() for s in current_source.split(",") if s.strip()]
+                    else:
+                        current_source = []
+                elif not isinstance(current_source, list):
+                    current_source = []
+                
+                # 合并source列表
+                source_list = current_source.copy() if current_source else []
+                if source not in source_list:
+                    source_list.append(source)
+                    
+                    # 计算新的置信度：new_confidence = (1-(1-old_confidence)*(1-confidence/2))
+                    try:
+                        current_confidence = float(current_confidence)
+                        new_confidence = 1 - (1 - current_confidence) * (1 - confidence / 2)
+                        # 确保置信度在0-1范围内
+                        new_confidence = max(0.0, min(1.0, new_confidence))
+                    except (ValueError, TypeError):
+                        new_confidence = confidence
+                else:
+                    # source已存在，不更新置信度
+                    new_confidence = current_confidence
                 
                 update_query = """
                 MATCH ()-[r]-() WHERE elementId(r) = $relation_id
                 SET r.predicate = $predicate,
-                    r.source = $source,
-                    r.confidence = $confidence,
+                    r.source = $source_list,
+                    r.confidence = $new_confidence,
+                    r.evidence = $evidence,
                     r.last_updated = $current_time
                 RETURN elementId(r) as updated_relation_id
                 """
@@ -1022,8 +1137,9 @@ class KnowledgeGraphManager:
                 update_result = session.run(update_query,
                                           relation_id=relation_id,
                                           predicate=predicate,
-                                          source=source,
-                                          confidence=confidence,
+                                          source_list=source_list,
+                                          new_confidence=new_confidence,
+                                          evidence=evidence,
                                           directivity=directivity,
                                           current_time=current_time)
                 
@@ -1046,7 +1162,7 @@ class KnowledgeGraphManager:
             return None
 
 
-    def set_entity_time(self, node_id: str, time_str: str, source: str = "unknown") -> Optional[str]:
+    def set_entity_time(self, node_id: str, time_str: str, source: str = "unknown", confidence: float = 0.5) -> Optional[str]:
         """
         为节点设置时间属性：
         Entity--HAPPENED_AT->Time
@@ -1108,9 +1224,9 @@ class KnowledgeGraphManager:
                     startNode_id=node_id,
                     endNode_id=time_node_id,
                     predicate="HAPPENED_AT",
-                    source="set_entity_time",
-                    confidence=0.9,
-                    directivity="to_endNode"
+                    source=source,
+                    confidence=confidence,
+                    directivity="single"
                 )
                 
                 if not relation_id:
@@ -1187,7 +1303,7 @@ class KnowledgeGraphManager:
                     predicate="HAPPENED_IN",
                     source="set_location",
                     confidence=0.9,
-                    directivity="to_endNode"
+                    directivity="single"
                 )
                 
                 if not relation_id:
@@ -1535,7 +1651,7 @@ class KnowledgeGraphManager:
                     predicate=predicate,
                     source=source,
                     confidence=confidence,
-                    directivity="to_endNode"
+                    directivity="single"
                 )
                 
                 if not main_relation_id:
@@ -1545,7 +1661,7 @@ class KnowledgeGraphManager:
                 # 处理时间节点（时间节点有特殊规则，可以直接使用）
                 if time:
                     # 使用set_entity_time方法设置时间
-                    result = self.set_entity_time(object_id, time, source=source)
+                    result = self.set_entity_time(object_id, time, source=source, confidence=confidence)
                     if result:
                         logger.debug(f"Set time for object node {object}: {time}")
                     else:
@@ -1610,275 +1726,9 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to write quintuple: {e}")
             return None
 
-    def passive_memory_record(self, work_history, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> None:
-        """
-        记录记忆信息，调用LLM生成结构化的记忆记录
-        
-        Args:
-            work_history: 历史记录，格式严格为：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
-            memory_to_record: 需要记忆的信息，格式：{"event": "", "description": [...]}
-            related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
-            
-        Returns:
-            调整过的和新创建的所有node和relation {"nodes": [...], "relations": [...]}
-            没有则输出{"nodes": [], "relations": []}
-        """
-        # 处理related_memory，将字典格式转换为文本格式
-        if isinstance(related_memory, dict):
-            # 转换为文本格式
-            related_memory_text = f"【请参考以下相关记忆进行决策】\n{str(related_memory)}"
-        else:
-            related_memory_text = "【相关记忆】\n暂无相关记忆，可直接进行处理"
-        
-        # 将related_memory添加进prompt
-        current_prompt = MEMORY_RECORD_PROMPT + "\n" + related_memory_text
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储接收到prompt: {current_prompt}")
-        
-        # 准备输入数据
-        input_messages = []
-        
-        # 如果有work_history，先添加到最前面
-        if work_history and isinstance(work_history, list):
-            input_messages.extend(work_history)
-        
-        # 添加系统prompt和当前的记忆信息
-        input_messages.extend([
-            {"role": "system", "content": MEMORY_RECORD_PROMPT},
-            {"role": "user", "content": str(memory_to_record)},
-            {"role": "user", "content": related_memory_text}
-        ])
 
-        # 调用模型
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=input_messages,
-            stream=False,
-            temperature=0.1
-        )
 
-        full_response = response.choices[0].message.content
-
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储模型回应: {full_response}")
-        if not full_response:
-            print(f"[DEBUG] 记忆存储模型未返回响应。")
-            return {"nodes": [], "relations": []}
-        
-        # 提取输出为 json 格式
-        try:
-            # 尝试解析JSON响应
-            if full_response.strip().startswith('```json'):
-                # 移除markdown代码块标记
-                json_start = full_response.find('{')
-                json_end = full_response.rfind('}') + 1
-                json_content = full_response[json_start:json_end]
-            else:
-                json_content = full_response.strip()
-            
-            memory_data = json.loads(json_content)
-            
-            if DEBUG_MODE:
-                print(f"[DEBUG] 解析出的记忆数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
                 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            print(f"[错误] 无法解析模型返回的JSON格式: {e}")
-            print(f"[原始响应] {full_response}")
-            return {"nodes": [], "relations": []}
-        except Exception as e:
-            logger.error(f"Error processing response: {e}")
-            return {"nodes": [], "relations": []}
-
-        # 读取nodes中的所有内容，记录在nodelist中
-        nodes_list = memory_data.get("nodes", [])
-        relations_list = memory_data.get("relations", [])
-        
-        if DEBUG_MODE:
-            print(f"[DEBUG] 处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
-
-        try:
-            with self.driver.session() as session:
-                # 遍历nodelist，处理节点
-                for node in nodes_list:
-                    try:
-                        node_id = node.get("nodeId")
-                        node_type = node.get("nodeType")
-                        node_info = node.get("nodeInfo", {})
-                        
-                        if not node_id or not node_type:
-                            logger.warning(f"Node missing required fields: {node}")
-                            continue
-                        
-                        # 检查节点是否已存在于图谱中
-                        check_query = """
-                        OPTIONAL MATCH (n) WHERE elementId(n) = $node_id
-                        RETURN elementId(n) as existing_id
-                        """
-                        
-                        check_result = session.run(check_query, node_id=node_id).single()
-                        existing_node_id = check_result["existing_id"] if check_result else None
-                        
-                        if existing_node_id:
-                            # 节点存在，调用modify_node修改节点属性
-                            updates = {}
-                            for key, value in node_info.items():
-                                if key not in ["nodeId", "nodeType", "significance"]:  # 排除不应加入的字段
-                                    updates[key] = value
-                            # 处理updates字典
-                            # 排除所有Time时间节点，该节点不遵从modify_node逻辑
-                            if node_type == "Time":
-                                updates = {}
-                            
-                            if updates:
-                                result = self.modify_node(existing_node_id, updates)
-                                if result:
-                                    logger.info(f"Updated existing node: {node_id}")
-                                else:
-                                    logger.warning(f"Failed to update node: {node_id}")
-                        else:
-                            # 节点不存在，根据nodeType调用对应的create_xxx_node
-                            new_node_id = None
-                            
-                            if node_type == "Time":
-                                time_str = node_info.get("time_str", node_info.get("time", ""))
-                                if time_str:
-                                    new_node_id = self.create_time_node(session, time_str)
-                                    
-                            elif node_type == "Character":
-                                name = node_info.get("character_name", node_info.get("name", ""))
-                                importance = node_info.get("importance", 0.5)
-                                trust = node_info.get("trust", 0.5)
-                                context = node_info.get("context", "reality")
-                                if name:
-                                    new_node_id = self.create_character_node(session, name, importance, trust, context)
-                                    
-                            elif node_type == "Location":
-                                name = node_info.get("location_name", node_info.get("name", ""))
-                                context = node_info.get("context", "reality")
-                                if name:
-                                    new_node_id = self.create_location_node(session, name, context)
-                                    
-                            elif node_type == "Entity":
-                                name = node_info.get("entity_name", node_info.get("name", ""))
-                                importance = node_info.get("importance", 0.5)
-                                context = node_info.get("context", "reality")
-                                note = node_info.get("note", "无")
-                                if name:
-                                    new_node_id = self.create_entity_node(session, name, importance, context, note)
-                            
-                            if new_node_id:
-                                logger.info(f"Created new {node_type} node: {node_id} -> {new_node_id}")
-                                
-                                # 更新当前节点的ID为实际的Neo4j节点ID
-                                old_node_id = node["nodeId"]
-                                node["nodeId"] = new_node_id
-                                
-                                # 更新relations_list中所有引用这个节点的关系
-                                for relation in relations_list:
-                                    if relation.get("startNode") == old_node_id:
-                                        relation["startNode"] = new_node_id
-                                    
-                                    if relation.get("endNode") == old_node_id:
-                                        relation["endNode"] = new_node_id
-                            else:
-                                logger.warning(f"Failed to create {node_type} node: {node_id}")
-                                
-                    except Exception as e:
-                        logger.error(f"Error processing node {node}: {e}")
-                        continue
-
-                # 遍历relationlist，处理关系
-                for relation in relations_list:
-                    try:
-                        relation_id = relation.get("relationId")
-                        relation_type = relation.get("relationType", "single")
-                        start_node_id = relation.get("startNode")
-                        end_node_id = relation.get("endNode")
-                        relation_info = relation.get("relationInfo", {})
-                        
-                        if not all([relation_id, start_node_id, end_node_id]):
-                            logger.warning(f"Relation missing required fields: {relation}")
-                            continue
-                        
-                        # 解析关系信息
-                        predicate = relation_info.get("predicate", "CONNECTED_TO")
-                        source = relation_info.get("source", "memory_record")
-                        confidence = float(relation_info.get("confidence", 0.5))
-                        
-                        if not start_node_id or not end_node_id:
-                            logger.warning(f"Could not resolve node IDs for relation {relation_id}: {start_node_id} -> {end_node_id}")
-                            continue
-                        
-                        # 检查关系是否已存在
-                        check_relation_query = """
-                        OPTIONAL MATCH (a)-[r]->(b) 
-                        WHERE elementId(a) = $start_id AND elementId(b) = $end_id 
-                        AND (elementId(r) = $relation_id OR (r.custom_id IS NOT NULL AND r.custom_id = $relation_id))
-                        RETURN elementId(r) as existing_relation_id
-                        """
-                        
-                        check_relation_result = session.run(check_relation_query, 
-                                                           start_id=start_node_id,
-                                                           end_id=end_node_id,
-                                                           relation_id=relation_id).single()
-                        
-                        existing_relation_id = check_relation_result["existing_relation_id"] if check_relation_result else None
-                        
-                        if existing_relation_id:
-                            # 关系存在，调用modify_relation修改关系属性
-                            result = self.modify_relation(existing_relation_id, predicate, source, confidence, relation_type)
-                            if result:
-                                logger.info(f"Updated existing relation: {relation_id}")
-                            else:
-                                logger.warning(f"Failed to update relation: {relation_id}")
-                        else:
-                            # 关系不存在，调用create_relation创建关系
-                            new_relation_id = self.create_relation(
-                                startNode_id=start_node_id,
-                                endNode_id=end_node_id,
-                                predicate=predicate,
-                                source=source,
-                                confidence=confidence,
-                                directivity=relation_type
-                            )
-                                
-                    except Exception as e:
-                        logger.error(f"Error processing relation {relation}: {e}")
-                        continue
-                
-                logger.info(f"Memory record processing completed: {len(nodes_list)} nodes, {len(relations_list)} relations")
-                
-                # 收集处理结果
-                processed_nodes = []
-                processed_relations = []
-                
-                for node in nodes_list:
-                    if node.get("nodeId"):
-                        processed_nodes.append({
-                            "nodeId": node["nodeId"],
-                            "nodeType": node.get("nodeType"),
-                            "action": "processed"
-                        })
-                
-                for relation in relations_list:
-                    if relation.get("relationId"):
-                        processed_relations.append({
-                            "relationId": relation.get("relationId"),
-                            "startNode": relation.get("startNode"),
-                            "endNode": relation.get("endNode"),
-                            "predicate": relation.get("relationInfo", {}).get("predicate", "CONNECTED_TO"),
-                            "action": "processed"
-                        })
-                
-                return {"nodes": processed_nodes, "relations": processed_relations}
-                
-        except Exception as e:
-            logger.error(f"Error during memory record processing: {e}")
-            return {"nodes": [], "relations": []}
-
-
-        
 
     def write_memories_batch(self, triples: List, quintuples: List) -> Dict[str, Any]:
         """批量写入三元组和五元组"""

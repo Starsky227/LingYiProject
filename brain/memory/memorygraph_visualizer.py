@@ -433,7 +433,7 @@ def create_time_node_api(time_str: str) -> Dict[str, Any]:
             "created_node": None
         }
 
-def create_character_node_api(character_name: str, trust: float = 0.5, importance: float = 0.5) -> Dict[str, Any]:
+def create_character_node_api(character_name: str, trust: float = 0.5, importance: float = 0.5, context: str = "reality现实") -> Dict[str, Any]:
     """
     API函数：创建角色节点
     
@@ -441,6 +441,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
         character_name: 角色名称
         trust: 信任度 (0-1)
         importance: 重要性 (0-1)
+        context: 上下文环境 (默认"reality现实")
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -459,7 +460,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
         
         # 创建角色节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_character_node(session, character_name, importance, trust)
+            result_node = kg_manager.create_character_node(session, character_name, importance, trust, context)
             
             if result_node:
                 logger.info(f"Successfully created character node: {result_node}")
@@ -484,7 +485,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
             "created_node": None
         }
 
-def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str = "无") -> Dict[str, Any]:
+def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str = "无", context: str = "reality现实") -> Dict[str, Any]:
     """
     API函数：创建实体节点
     
@@ -492,6 +493,7 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
         entity_name: 实体名称
         importance: 重要程度 (0-1)
         note: 备注 (默认"无")
+        context: 上下文环境 (默认"reality现实")
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -510,7 +512,7 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
         
         # 创建实体节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_entity_node(session, entity_name, importance, note)
+            result_node = kg_manager.create_entity_node(session, entity_name, importance, context, note)
             
             if result_node:
                 logger.info(f"Successfully created entity node: {result_node}")
@@ -535,12 +537,13 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
             "created_node": None
         }
 
-def create_location_node_api(location_name: str) -> Dict[str, Any]:
+def create_location_node_api(location_name: str, context: str = "reality现实") -> Dict[str, Any]:
     """
     API函数：创建地点节点
     
     Args:
         location_name: 地点名称
+        context: 上下文环境 (默认"reality现实")
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -559,7 +562,7 @@ def create_location_node_api(location_name: str) -> Dict[str, Any]:
         
         # 创建地点节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_location_node(session, location_name)
+            result_node = kg_manager.create_location_node(session, location_name, context)
             
             if result_node:
                 logger.info(f"Successfully created location node: {result_node}")
@@ -718,6 +721,7 @@ def start_api_server():
                 character_name = data.get('character_name', '')
                 trust = data.get('trust', 0.5)
                 importance = data.get('importance', 0.5)
+                context = data.get('context', 'reality现实')
                 
                 if not character_name.strip():
                     return jsonify({
@@ -725,7 +729,7 @@ def start_api_server():
                         "error": "角色名称不能为空"
                     }), 400
                 
-                result = create_character_node_api(character_name.strip(), trust, importance)
+                result = create_character_node_api(character_name.strip(), trust, importance, context)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -746,6 +750,7 @@ def start_api_server():
                 entity_name = data.get('entity_name', '')
                 importance = data.get('importance', 0.5)
                 note = data.get('note', '无')
+                context = data.get('context', 'reality现实')
                 
                 if not entity_name.strip():
                     return jsonify({
@@ -753,7 +758,7 @@ def start_api_server():
                         "error": "实体名称不能为空"
                     }), 400
                 
-                result = create_entity_node_api(entity_name.strip(), importance, note)
+                result = create_entity_node_api(entity_name.strip(), importance, note, context)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -772,6 +777,7 @@ def start_api_server():
             try:
                 data = request.get_json()
                 location_name = data.get('location_name', '')
+                context = data.get('context', 'reality现实')
                 
                 if not location_name.strip():
                     return jsonify({
@@ -779,7 +785,7 @@ def start_api_server():
                         "error": "地点名称不能为空"
                     }), 400
                 
-                result = create_location_node_api(location_name.strip())
+                result = create_location_node_api(location_name.strip(), context)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -892,8 +898,8 @@ def start_api_server():
                     "error": str(e)
                 }), 500
         
-        @app.route('/api/modify_item', methods=['POST'])
-        def handle_modify_item():
+        @app.route('/api/modify_node', methods=['POST'])
+        def handle_modify_node():
             """修改节点或关系的属性"""
             try:
                 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
@@ -916,7 +922,7 @@ def start_api_server():
                 
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
-                result = kg_manager.modify_node_or_relation(element_id.strip(), updates)
+                result = kg_manager.modify_node(element_id.strip(), updates, call="active")
                 
                 if result:
                     return jsonify({
@@ -949,6 +955,7 @@ def start_api_server():
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
                 directivity = data.get('directivity', 'single')
+                evidence = data.get('evidence', '')
                 if directivity != 'bidirectional':
                     directivity = 'single'
                 
@@ -990,7 +997,9 @@ def start_api_server():
                     predicate.strip(), 
                     source.strip(), 
                     confidence, 
-                    directivity
+                    directivity,
+                    evidence,
+                    call="active"
                 )
                 
                 if result:
@@ -1025,6 +1034,7 @@ def start_api_server():
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
                 directivity = data.get('directivity', 'single')
+                evidence = data.get('evidence', 'user manual input.')
                 if directivity != 'bidirectional':
                     directivity = 'single'
                 
@@ -1048,7 +1058,8 @@ def start_api_server():
                     predicate.strip(), 
                     source.strip(), 
                     confidence, 
-                    directivity
+                    directivity,
+                    evidence
                 )
                 
                 if relationship_id:

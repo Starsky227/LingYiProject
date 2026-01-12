@@ -1,6 +1,38 @@
 {
   "nodes": [
     {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
+      "labels": [
+        "Character"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1.0,
+        "trust": 1,
+        "name": "创造者",
+        "context": "reality",
+        "created_at": "2026-01-04T14:53:33.225798",
+        "last_updated": "2026-01-04T14:57:53.825410",
+        "node_type": "Character"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1,
+        "name": "星空",
+        "context": "名字",
+        "created_at": "2026-01-04T14:54:59.425698",
+        "last_updated": "2026-01-04T14:58:11.281012",
+        "node_type": "Entity",
+        "note": "网名"
+      }
+    },
+    {
       "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
       "labels": [
         "Character"
@@ -12,7 +44,7 @@
         "name": "自我",
         "context": "reality",
         "created_at": "2026-01-01T15:39:15.215369",
-        "last_updated": "2026-01-01T19:15:07.917522",
+        "last_updated": "2026-01-04T13:23:34.673790",
         "node_type": "Character"
       }
     },
@@ -25,15 +57,105 @@
         "significance": 0.99,
         "importance": 1.0,
         "name": "玲依",
-        "context": "reality",
+        "context": "称谓",
         "created_at": "2026-01-01T15:40:03.551561",
-        "last_updated": "2026-01-01T19:15:07.954844",
+        "last_updated": "2026-01-04T13:23:34.685583",
         "node_type": "Entity",
-        "note": "称谓"
+        "note": "无"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1.0,
+        "name": "生日",
+        "context": "无",
+        "created_at": "2026-01-01T19:13:56.344158",
+        "last_updated": "2026-01-04T13:23:17.960224",
+        "node_type": "Entity",
+        "note": "无"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
+      "labels": [
+        "Time",
+        "Year"
+      ],
+      "properties": {
+        "time": "2024年",
+        "name": "2024年",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
+      "labels": [
+        "Time",
+        "Month"
+      ],
+      "properties": {
+        "time": "2024年3月",
+        "name": "3月",
+        "node_type": "Time",
+        "type": "static"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
+      "labels": [
+        "Time",
+        "Day"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "time": "2024年3月28日",
+        "importance": 0.55,
+        "name": "28日",
+        "last_updated": "2026-01-04T13:23:03.373774",
+        "node_type": "Time",
+        "type": "static"
       }
     }
   ],
   "relationships": [
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1153012764071952389",
+      "type": "创造了",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "properties": {
+        "source": [
+          "manual_input"
+        ],
+        "predicate": "创造了",
+        "evidence": "user manual input",
+        "created_at": "2026-01-04T14:54:21.705497",
+        "last_updated": "2026-01-04T14:54:21.705497",
+        "confidence": 1
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917621386617815046",
+      "type": "HAS_NAME",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:5",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6",
+      "properties": {
+        "source": [
+          "manual_input"
+        ],
+        "predicate": "HAS_IDENTITY",
+        "evidence": "user manual input",
+        "created_at": "2026-01-04T14:55:21.424978",
+        "last_updated": "2026-01-04T14:57:53.776205",
+        "confidence": 1
+      }
+    },
     {
       "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1155261265350754314",
       "type": "名字是",
@@ -41,10 +163,57 @@
       "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
       "properties": {
         "source": "manual_input",
-        "predicate": "名字是",
+        "predicate": "HAS_NAME",
+        "evidence": "",
         "created_at": "2026-01-01T19:11:42.935970",
-        "last_updated": "2026-01-01T19:15:07.829647",
+        "last_updated": "2026-01-04T13:23:34.618450",
         "confidence": 1.0
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917619187594559500",
+      "type": "HAS_PROPERTY",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:10",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "HAS_PROPERTY",
+        "evidence": "",
+        "created_at": "2026-01-01T19:14:57.769047",
+        "last_updated": "2026-01-04T13:23:17.921610",
+        "confidence": 1.0
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965210",
+      "type": "HAPPENED_AT",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
+      "properties": {
+        "source": "manual_input",
+        "predicate": "HAPPENED_AT",
+        "evidence": "",
+        "created_at": "2026-01-01T19:15:50.886438",
+        "last_updated": "2026-01-04T13:23:03.009395",
+        "confidence": 1.0
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191385",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
+      "properties": {
+        "hierarchy_type": "month_to_year"
+      }
+    },
+    {
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191386",
+      "type": "BELONGS_TO",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
+      "properties": {
+        "hierarchy_type": "day_to_month"
       }
     }
   ]

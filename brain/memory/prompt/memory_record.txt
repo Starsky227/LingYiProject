@@ -15,7 +15,7 @@
 nodeType：要调整的节点类型，可选Time, Character, Location, Entity（所有不属于Time, Character, Location的都归于Entity）
 relationType：张三购买了一袋苹果，一袋苹果购买张三不成立则single。张三认识李四，李四认识张三则bidirectional
 nodeID/relationId：要调整的节点/关系ID，已有项目直接填写目标ID。新项目拟定一个不重复的代号即可，要求不包含特殊符号，空格以"_"代替。
-对于已有的节点和关系，如需要调整，仅允许修改imporotance, trust, confidence词条。如不需要调整，不要在nodes中写出。
+对于已有的节点和关系，如需要调整，仅允许修改imporotance, trust, confidence, source词条。如不需要调整，不要在nodes中写出。
 需特别判断同名节点是否为目标节点，如苹果（note：水果）和苹果（note：品牌）不应是同一节点。
 
 Time时间节点：
@@ -63,7 +63,7 @@ trust：该角色发言的可信度有多高。
 Entity实体节点：
 1. 可以和任意节点相连。
 2. 无法归类于角色，时间，地点的都为此类。
-note：该节点描述的是什么：事件 / 行为 / 状态 / 规则 / 物品 / 组织 / 概念
+note：该节点描述的是什么：事件 / 行为 / 状态 / 规则 / 物品 / 组织 / 概念，也可以记录一些辅助说明的内容。
 {
   "nodeType": "Entity",
   "nodeId": "newNode04",
@@ -76,7 +76,7 @@ note：该节点描述的是什么：事件 / 行为 / 状态 / 规则 / 物品 
 }
 
 Relation关系：
-relationType：张三购买了苹果，苹果购买张三不成立则single。张三认识李四，李四认识张三则bidirectional
+relationType：single代表单向关系，张三购买了苹果，苹果并未购买张三。bidirectional代表双向关系，张三认识李四，李四同样认识张三则
 predicate：发生于什么时间HAPPENED_AT，发生于什么地点HAPPENED_IN，或者其他关系类型（如：购买，邀请，是…的名字）
 source：该消息的消息源，可能是某个character，某个网址/影视作品，某个群聊/直播间，某个文件，或者其他
 evidence：记录提供该confidence的理由。
