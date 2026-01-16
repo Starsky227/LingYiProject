@@ -22,9 +22,9 @@ if project_root not in sys.path:
 from system.config import config
 
 # API 配置
-API_KEY = config.api.api_key
-API_URL = config.api.base_url
-MODEL = config.api.model
+API_KEY = config.api.memory_record_api_key
+API_URL = config.api.memory_record_base_url
+MODEL = config.api.memory_record_model
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端
@@ -185,19 +185,6 @@ class MemoryWriter:
             
             extract_events = json.loads(json_content)
             
-            # 检测并确保格式为列表
-            if not isinstance(extract_events, list):
-                if isinstance(extract_events, dict):
-                    # 如果是单个字典，包装为列表
-                    extract_events = [extract_events]
-                    if DEBUG_MODE:
-                        print(f"[DEBUG] 将单个字典转换为列表格式")
-                else:
-                    # 如果既不是列表也不是字典，设为空列表
-                    extract_events = []
-                    if DEBUG_MODE:
-                        print(f"[DEBUG] 未识别的格式，设置为空列表: {type(extract_events)}")
-            
             if DEBUG_MODE:
                 print(f"[DEBUG] 解析出的记忆数据: {json.dumps(extract_events, ensure_ascii=False, indent=2)}")
                 
@@ -320,7 +307,7 @@ class MemoryWriter:
 
         # 如果没有kg_manager实例，则仅返回解析的数据
         if not self.kg_manager:
-            return memory_data
+            return {"nodes": [], "relations": []}
 
         # 读取nodes中的所有内容，记录在nodelist中
         nodes_list = memory_data.get("nodes", [])

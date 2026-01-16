@@ -6,239 +6,569 @@ import os
 import sys
 import json
 import re
-from typing import List, Dict, Optional
+import logging
+import logging
 
-# 添加项目根目录到路径
-PROJECT_ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+# 添加项目根目录到Python路径（必须在导入项目模块之前）
+project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
-from system.config import config
 from openai import OpenAI
+from system.config import config
+from typing import Any, List, Dict, Optional
 
-# 初始化 OpenAI 客户端用于关键词提取
+# API 配置
+API_KEY = config.api.memory_record_api_key
+API_URL = config.api.memory_record_base_url
+MODEL = config.api.memory_record_model
+DEBUG_MODE = config.system.debug
+
+# 初始化 OpenAI 客户端
 client = OpenAI(
-    api_key=config.api.api_key,
-    base_url=config.api.base_url
+    api_key=API_KEY,
+    base_url=API_URL
 )
 
+logger = logging.getLogger(__name__)
 
-def extract_keywords_with_model(user_question: str, recent_context: List[str] = None) -> List[str]:
+
+def load_prompt_file(filename: str, description: str = "") -> str:
     """
-    使用模型提取关键词并查询知识图谱
+    加载提示词文件的通用函数
+    Args:
+        filename: 文件名（如 "memory_record.txt"）
+        description: 文件描述（用于错误提示）
+    Returns:
+        文件内容字符串，失败时返回空字符串
+    """
+    prompt_path = os.path.join(os.path.dirname(__file__), "prompt", filename)
+    if not os.path.exists(prompt_path):
+        error_msg = f"[错误] {description}提示词文件不存在: {prompt_path}"
+        print(error_msg)
+        return ""
+    
+    with open(prompt_path, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+        if not content:
+            print(f"[警告] {description}提示词文件为空: {prompt_path}")
+        return content
+
+KEYWORD_EXTRACT_PROMPT = load_prompt_file("keyword_extract.txt", "关键词提取")
+MEMORY_FILTER_PROMPT = load_prompt_file("memory_filter.txt", "事件提取")
+
+
+def extract_keyword_from_text(chat_history: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    提取关键词供后续使用。
+
+    输入：
+        chat_history：聊天历史记录，格式严格为：[{"role": "user", "content": f"[{timestamp}] <{name}> {content}"}, ...]
+    输出：
+        ["关键词1", "关键词2", ...]
+    """
+    # 确保event_text中所有的role都是"user"
+    for message in chat_history:
+        message["role"] = "user"
+    
+    # 准备输入数据
+    input_messages = [{"role": "system", "content": KEYWORD_EXTRACT_PROMPT}]
+    input_messages.extend(chat_history)
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 模型思考中……")
+    
+    # 调用模型
+    response = client.responses.create(
+        model=MODEL,
+        input=input_messages,
+        reasoning={"effort": "low"},
+        text={"verbosity": "low"}
+    )
+
+    full_response = response.output_text
+
+    if not full_response:
+        print(f"[错误] 关键词提取模型未返回响应。")
+        return {"topic": [], "keywords": []}
+    
+    # 提取输出为 json 格式
+    try:
+        # 尝试解析JSON响应
+        json_content = full_response.strip()
+        
+        result = json.loads(json_content)
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 提取的关键词: {json.dumps(result, ensure_ascii=False, indent=2)}")
+    
+    except json.JSONDecodeError as e:
+        print(f"[错误] 无法解析模型返回的JSON格式: {e}")
+        print(f"[原始响应] {full_response}")
+        return {"topic": [], "keywords": []}
+    except Exception as e:
+        return {"topic": [], "keywords": []}
+    
+    return result
+
+
+def _filter_related_nodes(nodes: Dict[str, Any], topic: str) -> Dict[str, Any]:
+    """
+    让AI对每个节点进行判断，是否为当前话题需要的记忆信息
+    
+    输入：
+    [
+        "node_id":{
+            "ids": {
+                "node_id": reached_node_id,
+                "relation_id": reached_node["rel_id"]
+            },
+            "relation": {
+                "type": reached_node["rel_type"],
+                "from": reached_node["start_node_name"],
+                "to": reached_node["end_node_name"]
+            },
+            "node_to_evaluate": {node properties}
+        }
+    ]
+    """
+    if not nodes:
+        return {"nodes": [], "relationships": []}
+    
+    # 准备输入数据
+    input_messages = [{"role": "system", "content": MEMORY_FILTER_PROMPT}]
+
+    # 将nodes中的ids，和relation+node_to_evaluate分作两个list储存，确保顺序对应。
+    ids_list = []
+    evaluation_data = []
+    
+    for node_id, node_data in nodes.items():
+        ids_list.append(node_data["ids"])
+        evaluation_data.append({
+            "relation": node_data["relation"],
+            "node_to_evaluate": node_data["node_to_evaluate"]
+        })
+    
+    # 将relation+node_to_evaluate的部分以[{"relation": {}, "node_to_evaluate": {}}, ...]的格式转为str
+    evaluation_content = json.dumps(evaluation_data, ensure_ascii=False, indent=2)
+    
+    # 将该内容加入input_message
+    input_messages.append({
+        "role": "user", 
+        "content": f"话题: {topic}\n\n需要筛选的记忆数据:\n{evaluation_content}"
+    })
+
+    if DEBUG_MODE:
+        print(f"[DEBUG] 模型收到 {len(evaluation_data)} 条待筛选的记忆数据。")
+    
+    # 调用模型
+    response = client.responses.create(
+        model=MODEL,
+        input=input_messages,
+        reasoning={"effort": "low"},
+        text={"verbosity": "low"}
+    )
+
+    full_response = response.output_text
+
+    if not full_response:
+        print(f"[错误] 记忆筛选模型未返回响应。")
+        return {"nodes": [], "relationships": []}
+    
+    # 提取输出为 json 格式
+    try:
+        # 尝试解析JSON响应
+        json_content = full_response.strip()
+        
+        memory_filter = json.loads(json_content)
+    
+    except json.JSONDecodeError as e:
+        print(f"[错误] 无法解析模型返回的JSON格式: {e}")
+        print(f"[原始响应] {full_response}")
+        return {"nodes": [], "relationships": []}
+    except Exception as e:
+        return {"nodes": [], "relationships": []}
+
+    # 根据memory_filter结果筛选，将nodes中对应的内容保留/抹去
+    filtered_nodes = []
+    filtered_relationships = []
+    filtered_evaluation_data = []
+    
+    # memory_filter应该是一个布尔值列表，对应每个节点是否保留
+    if isinstance(memory_filter, list) and len(memory_filter) == len(ids_list):
+        for i, keep_node in enumerate(memory_filter):
+            if keep_node:  # 如果AI判断该节点相关，则保留
+                node_ids = ids_list[i]
+                # 根据node_id和relation_id从原始数据中获取完整信息
+                # 这里需要从调用方传入的nodes_to_add和relations_to_add中获取
+                filtered_nodes.append(node_ids["node_id"])
+                filtered_relationships.append(node_ids["relation_id"])
+                filtered_evaluation_data.append(evaluation_data[i]["node_to_evaluate"].get("name"))
+    
+    if DEBUG_MODE:
+        print(f"[DEBUG] 增加关联记忆: {filtered_evaluation_data}")
+    
+    return {
+        "filtered_node_ids": filtered_nodes,
+        "filtered_relation_ids": filtered_relationships
+    }
+
+
+
+def _filter_node_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
+    """过滤节点属性，隐去指定的系统属性"""
+
+    if not properties:
+        return {}
+    
+    # 需要隐去的属性列表
+    hidden_properties = {
+        "significance", "importance", "created_at", "last_updated", "trust"
+    }
+    
+    # 返回过滤后的属性
+    filtered_props = {}
+    for key, value in properties.items():
+        if key not in hidden_properties:
+            filtered_props[key] = value
+    
+    return filtered_props
+
+
+def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], topic: str = "") -> Dict[str, Any]:
+    """
+    根据根据节点id提取节点内容。
+    输入：
+    nodes_data->来自上一次该函数的产出。
+    输出：
+    Dict[str, Any]:
+        {"nodes": [所有的节点字典],
+        "relationships": [节点字典对应的联系],
+        "outer_node_ids": [新增的节点字典]}
+    """
+    if not nodes_data:
+        return {"nodes": [], "relationships": [], "outer_node_ids": []}
+    
+    try:
+        # 存储所有节点和关系
+        all_nodes_list = nodes_data.get("nodes", [])
+        all_relationships_list = nodes_data.get("relationships", [])
+        nodes_to_read = nodes_data.get("outer_node_ids", [])
+        
+        # 转换为字典格式便于去重和查找
+        all_nodes = {node["id"]: node for node in all_nodes_list}
+        all_relationships = {rel["id"]: rel for rel in all_relationships_list}
+        
+        # 如果没有新节点需要读取，直接返回原数据
+        if not nodes_to_read:
+            return {
+                "nodes": all_nodes_list,
+                "relationships": all_relationships_list,
+                "outer_node_ids": []
+            }
+        
+        # 查询nodes_to_read连接的所有节点和关系
+        nodes_to_add = {}
+        relations_to_add = {}
+        memories_to_be_viewed = {}
+        for node_id in nodes_to_read:
+            # 查询该节点及其所有连接的节点和关系
+            query = """
+            MATCH (root) WHERE elementId(root) = $node_id
+            OPTIONAL MATCH (root)-[r]-(connected)
+            RETURN 
+                elementId(root) as root_id, labels(root) as root_labels, properties(root) as root_properties,
+                elementId(connected) as connected_id, labels(connected) as connected_labels, properties(connected) as connected_properties,
+                elementId(r) as rel_id, type(r) as rel_type, 
+                elementId(startNode(r)) as rel_start, elementId(endNode(r)) as rel_end,
+                properties(r) as rel_properties,
+                startNode(r).name as start_node_name, endNode(r).name as end_node_name
+            """
+            
+            connected_nodes = session.run(query, node_id=node_id)
+            
+            for reached_node in connected_nodes:
+                # 将查询结果存储到nodes_to_add和relations_to_add中以便后续处理
+                reached_node_id = reached_node["connected_id"]
+                if reached_node_id and reached_node_id not in all_nodes:
+                    nodes_to_add[reached_node_id] = {
+                        "id": reached_node_id,
+                        "labels": reached_node["connected_labels"] or [],
+                        "properties": dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {}
+                    }
+                    rel_id = reached_node["rel_id"]
+                    relations_to_add[rel_id] = {
+                        "id": rel_id,
+                        "type": reached_node["rel_type"],
+                        "start_node": reached_node["rel_start"],
+                        "end_node": reached_node["rel_end"],
+                        "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
+                    }
+                    # 将节点关系转换为文字版交由AI审阅，省略不需要的属性
+                    memories_to_be_viewed[reached_node_id] = {
+                        "ids": {
+                            "node_id": reached_node_id,
+                            "relation_id": reached_node["rel_id"]
+                        },
+                        "relation": {
+                            "type": reached_node["rel_type"],
+                            "from": reached_node["start_node_name"],
+                            "to": reached_node["end_node_name"]
+                        },
+                        "node_to_evaluate": _filter_node_properties(reached_node["connected_properties"])
+                    }
+        
+        print(f"新发现节点: {len(nodes_to_add)}个")
+        
+        # 根据topic筛选相关节点
+        if topic and memories_to_be_viewed:
+            filtered_nodes_relation = _filter_related_nodes(memories_to_be_viewed, topic)
+            filtered_node_ids = filtered_nodes_relation.get("filtered_node_ids", [])
+            filtered_relation_ids = filtered_nodes_relation.get("filtered_relation_ids", [])
+        else:
+            # 如果没有topic，保留所有节点
+            filtered_node_ids = list(nodes_to_add.keys())
+            filtered_relation_ids = list(relations_to_add.keys())
+        
+        # 根据筛选出的node_id和relation_id从nodes_to_add和relations_to_add中取出对应的内容加入all_nodes和all_relationships
+        outer_node_ids = []
+        for node_id in filtered_node_ids:
+            if node_id in nodes_to_add:
+                all_nodes[node_id] = nodes_to_add[node_id]
+                outer_node_ids.append(node_id)
+        
+        for relation_id in filtered_relation_ids:
+            if relation_id in relations_to_add:
+                all_relationships[relation_id] = relations_to_add[relation_id]
+        
+        if DEBUG_MODE:
+            print(f"[DEBUG] 筛选后保留 {len(outer_node_ids)} 个节点，{len(filtered_relation_ids)} 个关系")
+        
+        # 转换为列表格式
+        nodes_list = list(all_nodes.values())
+        relationships_list = list(all_relationships.values())
+
+        return {
+            "nodes": nodes_list,
+            "relationships": relationships_list,
+            "outer_node_ids": outer_node_ids
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to extract connected nodes: {e}")
+        return {"nodes": [], "relationships": [], "outer_node_ids": []}
+
+
+def _extract_nodes_by_keyword(kg_manager, keywords: List[str]) -> Dict[str, Any]:
+    """
+    根据输入的关键词列表提取相应的节点及信息。
     
     Args:
-        user_question: 用户问题
-        recent_context: 最近的上下文消息列表
+        kg_manager: KnowledgeGraphManager实例
+        text: 输入文本
+        keywords: 预定义的关键词列表
         
-    Returns:
-        提取的关键词列表
+    Returns Dict[str, Any]:
+        {"nodes": [所有的节点字典],
+        "relationships": [节点字典对应的联系],
+        "outer_node_ids": [新增的节点字典]}
     """
+    if not kg_manager._ensure_connection():
+        logger.error("Cannot extract keywords: No Neo4j connection")
+        return {"nodes": [], "relationships": [], "outer_node_ids": []}
+    
+    if not keywords:
+        logger.error("No keywords provided for extraction")
+        return {"nodes": [], "relationships": [], "outer_node_ids": []}
+    
     try:
-        context_str = "\n".join(recent_context) if recent_context else "无上下文"
-        prompt = (
-            f"基于以下上下文和用户问题，提取与知识图谱相关的关键词（如人物、物体、关系、实体类型），"
-            f"仅以列表的形式返回核心关键词，避免无关词。返回 JSON 格式的关键词列表：\n"
-            f"上下文：\n{context_str}\n"
-            f"问题：{user_question}\n"
-            f"输出格式：```json\n[]\n```"
-        )
+        nodes_dict = {}  # 使用字典避免重复节点
         
-        response = client.chat.completions.create(
-            model=config.api.model,
-            messages=[{"role": "user", "content": prompt}],
-            stream=False,
-            temperature=0.3,  # 降低温度以获得更一致的结果
-        )
-        
-        content = response.choices[0].message.content
-        # 调试输出模型返回的原始内容，便于排查格式或解析问题
-        print(f"[关键词模型输出] {content!r}")
-        if not content:
-            return []
-        
-        # 提取JSON部分
-        json_match = re.search(r'```json\s*(\[.*?\])\s*```', content, re.DOTALL)
-        if json_match:
-            try:
-                keywords = json.loads(json_match.group(1))
-                # 确保返回的是字符串列表
-                return [str(keyword).strip() for keyword in keywords if keyword and str(keyword).strip()]
-            except json.JSONDecodeError as e:
-                print(f"[关键词提取] JSON解析失败: {e}")
-                return []
-        else:
-            # 如果没有找到JSON格式，尝试从文本中提取
-            lines = content.split('\n')
-            keywords = []
-            for line in lines:
-                line = line.strip()
-                if line and not line.startswith(('基于', '关键词', '提取', '输出')):
-                    # 移除标点符号和数字前缀
-                    clean_line = re.sub(r'^\d+[\.\)]\s*', '', line)
-                    clean_line = re.sub(r'[^\w\s]', '', clean_line).strip()
-                    if clean_line:
-                        keywords.append(clean_line)
-            return keywords[:10]  # 限制关键词数量
+        with kg_manager.driver.session() as session:
+            for keyword in keywords:
+                if not keyword or not keyword.strip():
+                    continue
+                    
+                keyword = keyword.strip()
+                logger.debug(f"Searching for keyword: {keyword}")
+                
+                # 1. 对于每个关键词首先尝试精确匹配 - 查找名称完全匹配的节点
+                exact_match_query = """
+                MATCH (n)
+                WHERE n.name = $keyword
+                RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                """
+                
+                exact_results = session.run(exact_match_query, keyword=keyword)
+                exact_matches = list(exact_results)
+                
+                if exact_matches:
+                    logger.debug(f"Found {len(exact_matches)} exact matches for '{keyword}'")
+                    for record in exact_matches:
+                        node_id = record["id"]
+                        if node_id not in nodes_dict:
+                            nodes_dict[node_id] = {
+                                "id": node_id,
+                                "labels": record["labels"] or [],
+                                "properties": dict(record["properties"]) if record["properties"] else {}
+                            }
+                else:
+                    # 2. 如果精确匹配没有结果，进行模糊匹配
+                    logger.debug(f"No exact matches for '{keyword}', trying fuzzy matching")
+                    
+                    # 模糊匹配 - 查找名称包含关键词的节点
+                    fuzzy_match_query = """
+                    MATCH (n)
+                    WHERE n.name CONTAINS $keyword
+                    RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                    LIMIT 5
+                    """
+                    
+                    fuzzy_results = session.run(fuzzy_match_query, keyword=keyword)
+                    fuzzy_matches = list(fuzzy_results)
+                    
+                    if fuzzy_matches:
+                        logger.debug(f"Found {len(fuzzy_matches)} fuzzy matches for '{keyword}'")
+                        for record in fuzzy_matches:
+                            node_id = record["id"]
+                            if node_id not in nodes_dict:
+                                nodes_dict[node_id] = {
+                                    "id": node_id,
+                                    "labels": record["labels"] or [],
+                                    "properties": dict(record["properties"]) if record["properties"] else {}
+                                }
+                    else:
+                        logger.debug(f"No matches found for keyword: '{keyword}'")
+            
+            # 转换为列表格式
+            nodes_list = list(nodes_dict.values())
+            outer_node_ids = [node["id"] for node in nodes_list]
+            node_names = [node["properties"].get("name", "") for node in nodes_list]
+            
+            if DEBUG_MODE: 
+                print(f"找到起点记忆：{node_names}")
+            
+            return {
+                "nodes": nodes_list,
+                "relationships": [],
+                "outer_node_ids": outer_node_ids
+            }
             
     except Exception as e:
-        print(f"[关键词提取错误] {e}")
-        # 回退到简单的关键词提取
-        return extract_simple_keywords(user_question)
+        logger.error(f"Failed to extract keywords '{keywords}': {e}")
+        return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def extract_simple_keywords(text: str) -> List[str]:
+def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_results: int = 50) -> Dict[str, Any]:
     """
-    简单的关键词提取（作为备用方案）
-    
+    通过_extract_keywords获得基础节点数据。
+    而后通过反复调用_expand_memory_grabbed获取相关联的节点和关系。
+    当总节点数超过max_results时停止，输出最多max_results个节点的记忆信息字符串。
+
     Args:
-        text: 输入文本
-        
-    Returns:
-        关键词列表
-    """
-    # 移除标点符号并分词
-    words = re.findall(r'\b\w+\b', text.lower())
-    # 过滤掉常见的停用词和短词
-    stop_words = {'的', '了', '在', '是', '我', '你', '他', '她', '它', '我们', '你们', '他们', 
-                 '这', '那', '这个', '那个', '什么', '怎么', '为什么', '哪里', 'when', 'what', 
-                 'how', 'why', 'where', 'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at',
-                 '有', '会', '能', '可以', '应该', '需要', '想要', '希望', '觉得', '认为'}
-    keywords = [word for word in words if len(word) > 1 and word not in stop_words]
-    return keywords[:5]  # 限制关键词数量
-
-
-def query_relevant_memories(message_content: str, recent_context: List[str] = None, max_results: int = 5) -> str:
-    """
-    根据消息内容查询相关的记忆信息
-    
-    Args:
-        message_content: 任何角色的消息内容
-        recent_context: 最近的上下文消息列表
+        keywords: 已提取的关键词列表
         max_results: 最大返回结果数
         
-    Returns:
-        格式化的记忆信息字符串
+    Returns Dict[str, Any]:
+        {"nodes": [
+            {"id": "节点ID",
+            "labels": ["节点标签1", "节点标签2"],
+            "properties": {property1: value1, property2: value2}}
+        ],
+        "relationships": [
+            {"id": "关系ID",
+            "type": "关系类型",
+            "start_node": "起始节点ID",
+            "end_node": "结束节点ID",
+            "properties": {property1: value1, property2: value2}}
+        ]}
     """
     try:
         # 首先检查全局Neo4j可用性
         from system.config import is_neo4j_available
         if not is_neo4j_available():
-            return ""
+            return {"nodes": [], "relationships": []}
             
         kg_manager = get_knowledge_graph_manager()
         if not kg_manager.connected:
-            return ""
-        
-        # 使用模型提取关键词
-        keywords = extract_keywords_with_model(message_content, recent_context)
+            return {"nodes": [], "relationships": []}
         
         if not keywords:
-            print("[记忆查询] 未提取到关键词")
-            return ""
+            logger.error("[记忆查询] 关键词列表为空")
+            return {"nodes": [], "relationships": []}
         
-        print(f"[记忆查询] 提取的关键词: {keywords}")
-        
-        memories = []
-        
+        if DEBUG_MODE:
+            print(f"[记忆查询] 使用{len(keywords)}个关键词。")
+
+        # 第一步：通过关键词提取基础节点
         with kg_manager.driver.session() as session:
-            # 查询实体节点
-            for keyword in keywords[:3]:  # 限制关键词数量避免查询过多
-                # 查询包含关键词的实体
-                entity_query = """
-                MATCH (e:Entity)
-                WHERE toLower(e.name) CONTAINS $keyword
-                RETURN e.name as entity, 
-                       e.source as source,
-                       e.importance as importance,
-                       e.confidence as confidence
-                ORDER BY e.importance DESC, e.confidence DESC
-                LIMIT 3
-                """
+            nodes_data = _extract_nodes_by_keyword(kg_manager, keywords)
+            
+            if not nodes_data.get("nodes"):
+                logger.error("[记忆查询] 未找到匹配的节点")
+                return {"nodes": [], "relationships": []}
+            
+            if DEBUG_MODE:
+                print(f"[记忆查询] 初始找到 {len(nodes_data['nodes'])} 个节点")
+            
+            # 第二步：反复扩展连接的节点，直到达到最大数量限制
+            expansion_rounds = 0
+            max_expansion_rounds = 3  # 限制扩展轮数避免过度查询
+            
+            while (len(nodes_data.get("nodes", [])) < max_results and 
+                   nodes_data.get("outer_node_ids") and 
+                   expansion_rounds < max_expansion_rounds):
                 
-                result = session.run(entity_query, keyword=keyword.lower())
-                for record in result:
-                    entity_info = {
-                        'type': 'entity',
-                        'name': record['entity'],
-                        'source': record['source'],
-                        'importance': record.get('importance', 0.5),
-                        'confidence': record.get('confidence', 0.5)
-                    }
-                    memories.append(entity_info)
+                expansion_rounds += 1
+                if DEBUG_MODE:
+                    print(f"[记忆查询] 第 {expansion_rounds} 轮扩展，当前节点数: {len(nodes_data['nodes'])}")
+                
+                # 扩展连接的节点
+                nodes_data = _expand_memory_grabbed(session, nodes_data, topic)
+                
+                # 如果节点数量超过限制，截断到最大数量
+                if len(nodes_data.get("nodes", [])) > max_results:
+                    nodes_data["nodes"] = nodes_data["nodes"][:max_results]
+                    nodes_data["outer_node_ids"] = []  # 停止进一步扩展
+                    if DEBUG_MODE:
+                        print(f"[记忆查询] 节点数量超过限制，截断到 {max_results} 个")
+                    break
             
-            # 查询相关的五元组关系
-            relation_query = """
-            MATCH (s:Entity)-[r]->(o:Entity)
-            WHERE toLower(s.name) CONTAINS $keyword OR toLower(o.name) CONTAINS $keyword
-            RETURN s.name as subject,
-                   type(r) as relation_type,
-                   r.action as action,
-                   o.name as object,
-                   r.time as time,
-                   r.location as location,
-                   r.importance as importance,
-                   r.source as source
-            ORDER BY r.importance DESC, r.confidence DESC
-            LIMIT 5
-            """
+            # 直接返回节点和关系数据
+            result = {
+                "nodes": nodes_data.get("nodes", []),
+                "relationships": nodes_data.get("relationships", [])
+            }
             
-            for keyword in keywords[:2]:
-                result = session.run(relation_query, keyword=keyword.lower())
-                for record in result:
-                    relation_info = {
-                        'type': 'relation',
-                        'subject': record['subject'],
-                        'action': record.get('action', record['relation_type']),
-                        'object': record['object'],
-                        'time': record.get('time'),
-                        'location': record.get('location'),
-                        'importance': record.get('importance', 0.5),
-                        'source': record.get('source', 'unknown')
-                    }
-                    memories.append(relation_info)
-        
-        # 格式化记忆信息
-        if not memories:
-            print("[记忆查询] 未找到相关记忆")
-            return ""
-        
-        memory_text = "相关记忆信息：\n"
-        for i, memory in enumerate(memories[:max_results], 1):
-            if memory['type'] == 'entity':
-                memory_text += f"{i}. 实体：{memory['name']} (来源：{memory['source']})\n"
-            elif memory['type'] == 'relation':
-                time_str = f" 时间：{memory['time']}" if memory['time'] else ""
-                location_str = f" 地点：{memory['location']}" if memory['location'] else ""
-                memory_text += f"{i}. 关系：{memory['subject']} {memory['action']} {memory['object']}{time_str}{location_str} (来源：{memory['source']})\n"
-        
-        print(f"[记忆查询] 找到 {len(memories)} 条相关记忆")
-        return memory_text
+            if DEBUG_MODE:
+                print(f"[记忆查询] 成功返回 {len(result['nodes'])} 个节点，{len(result['relationships'])} 个关系")
+            return result
         
     except Exception as e:
-        print(f"[记忆查询错误] {e}")
-        return ""
+        logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
+        return {"nodes": [], "relationships": []}
 
 
-def test_memory_search():
-    """测试记忆搜索功能"""
-    print("测试记忆搜索功能...")
-    
-    # 测试关键词提取
-    test_question = "你还记得昨天我们聊过的关于Python编程的内容吗？"
-    test_context = ["我想学习Python", "Python是一种编程语言", "可以用来做数据分析"]
-    
-    print(f"测试问题: {test_question}")
-    print(f"测试上下文: {test_context}")
-    
-    keywords = extract_keywords_with_model(test_question, test_context)
-    print(f"提取的关键词: {keywords}")
-    
-    # 测试记忆查询
-    memories = query_relevant_memories(test_question, test_context)
-    print(f"查询结果:\n{memories}")
 
 
 if __name__ == "__main__":
-    test_memory_search()
+    test_message = [{"role": "user", "content": f"[2026_1_12T20:30] <A> 荒星殖民有哪些种族？"}]
+
+    extract_result = extract_keyword_from_text(test_message)
+    test_topic = extract_result.get("topic", [])
+    test_key_word = extract_result.get("keywords", [])
+    test_key_word.append("自我")  # 手动添加关键词以测试
+
+    result = relevant_memories_by_keywords(test_key_word, test_topic)
+
+    # 保存result到json文件供调试查看
+    try:
+        memory_frag_path = os.path.join(os.path.dirname(__file__), "memory_graph", "memory_frag_for_test.json")
+        os.makedirs(os.path.dirname(memory_frag_path), exist_ok=True)
+        with open(memory_frag_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+        logger.debug(f"[记忆查询] 结果已保存到: {memory_frag_path}")
+    except Exception as save_e:
+        logger.warning(f"[警告] 保存结果到文件失败: {save_e}")
+    

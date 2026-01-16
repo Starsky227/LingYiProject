@@ -1029,8 +1029,84 @@ class KnowledgeGraphManager:
             return None
     
 
+    def _reverse_relation_direction(self, relation_id: str) -> str:
+        """令关系的指向反转"""
+        if not self._ensure_connection():
+            logger.error("Cannot reverse relation direction: No Neo4j connection")
+            return None
+        
+        if not relation_id or not relation_id.strip():
+            logger.error("Relation ID cannot be empty")
+            return None
+        
+        try:
+            with self.driver.session() as session:
+                # 查询原关系的所有信息
+                query_relation = """
+                MATCH (start)-[r]->(end) WHERE elementId(r) = $relation_id
+                RETURN elementId(start) as start_node_id, elementId(end) as end_node_id,
+                       type(r) as rel_type_name, properties(r) as rel_properties,
+                       start.name as start_name, end.name as end_name
+                """
+                
+                result = session.run(query_relation, relation_id=relation_id).single()
+                
+                if not result:
+                    logger.error(f"Relation with ID '{relation_id}' not found")
+                    return None
+                
+                # 获取关系信息
+                start_node_id = result["start_node_id"]
+                end_node_id = result["end_node_id"]
+                rel_type_name = result["rel_type_name"]
+                rel_properties = result["rel_properties"] or {}
+                start_name = result["start_name"]
+                end_name = result["end_name"]
+                
+                # 检查是否为受保护的关系类型
+                if rel_type_name == "BELONGS_TO":
+                    logger.warning(f"Cannot reverse BELONGS_TO relation - protected relation type")
+                    return None
+                
+                # 删除原关系并创建反向关系的事务
+                reverse_query = f"""
+                MATCH (start) WHERE elementId(start) = $start_node_id
+                MATCH (end) WHERE elementId(end) = $end_node_id
+                MATCH (start)-[old_r:{rel_type_name}]->(end) WHERE elementId(old_r) = $relation_id
+                WITH start, end, old_r, properties(old_r) as old_props
+                DELETE old_r
+                CREATE (end)-[new_r:{rel_type_name}]->(start)
+                SET new_r = old_props
+                RETURN elementId(new_r) as new_relation_id
+                """
+                
+                reverse_result = session.run(reverse_query,
+                                           start_node_id=start_node_id,
+                                           end_node_id=end_node_id,
+                                           relation_id=relation_id)
+                
+                reverse_record = reverse_result.single()
+                
+                if reverse_record:
+                    new_relation_id = reverse_record["new_relation_id"]
+                    logger.info(f"Successfully reversed relation direction: {start_name} -> {end_name} became {end_name} -> {start_name}")
+                    
+                    # 更新相关节点的significance
+                    self.update_node(start_node_id, significance=0.99, Increase_importance=True)
+                    self.update_node(end_node_id, significance=0.99, Increase_importance=True)
+                    
+                    return new_relation_id
+                else:
+                    logger.error("Failed to reverse relation direction")
+                    return None
+                
+        except Exception as e:
+            logger.error(f"Failed to reverse relation direction for '{relation_id}': {e}")
+            return None
+
+
     def modify_relation(self, relation_id: str, predicate: str, source: str, confidence: float = 0.5, 
-                        directivity: str = "single", evidence: str = "", call: str = "passive") -> Optional[str]:
+                        directivity: str = "to_endNode", evidence: str = "", call: str = "passive") -> Optional[str]:
         """
         修改关系的属性
         
@@ -1039,7 +1115,7 @@ class KnowledgeGraphManager:
             predicate: 关系谓词/类型
             source: 关系来源
             confidence: 置信度 (默认0.5)
-            directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
+            directivity: 关系方向 (默认'to_endNode'，'bidirectional'表示双向)
             evidence: 关系证据（为什么设置这个置信度，选填）
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
@@ -1072,8 +1148,8 @@ class KnowledgeGraphManager:
                     logger.error(f"Relation with ID '{relation_id}' not found")
                     return None
                 
-                source_node_id = check_result["source_node_id"]
-                target_node_id = check_result["target_node_id"]
+                start_node = check_result["source_node_id"]
+                end_node = check_result["target_node_id"]
                 source_name = check_result["source_name"]
                 target_name = check_result["target_name"]
                 rel_type_name = check_result["rel_type_name"]
@@ -1124,6 +1200,12 @@ class KnowledgeGraphManager:
                     # source已存在，不更新置信度
                     new_confidence = current_confidence
                 
+                if directivity == "to_startNode":
+                    relation_id = self._reverse_relation_direction(relation_id)
+
+                if directivity != "bidirectional":
+                    directivity = "single"
+
                 update_query = """
                 MATCH ()-[r]-() WHERE elementId(r) = $relation_id
                 SET r.predicate = $predicate,
@@ -1147,10 +1229,6 @@ class KnowledgeGraphManager:
                 
                 if update_record:
                     logger.info(f"Successfully updated relation {relation_id} between {source_name} and {target_name}")
-                    
-                    # 更新关系涉及的两个节点
-                    self.update_node(source_node_id, significance=0.99, Increase_importance=True)
-                    self.update_node(target_node_id, significance=0.99, Increase_importance=True)
                     
                     return relation_id
                 else:

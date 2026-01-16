@@ -956,8 +956,6 @@ def start_api_server():
                 confidence = data.get('confidence', 0.5)
                 directivity = data.get('directivity', 'single')
                 evidence = data.get('evidence', '')
-                if directivity != 'bidirectional':
-                    directivity = 'single'
                 
                 if not relation_id.strip():
                     return jsonify({
@@ -1033,8 +1031,12 @@ def start_api_server():
                 predicate = data.get('predicate', '')
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
-                directivity = data.get('directivity', 'single')
+                directivity = data.get('directivity', 'to_endNode')
                 evidence = data.get('evidence', 'user manual input.')
+                if directivity == 'to_startNode':
+                    temp = startNode_id
+                    startNode_id = endNode_id
+                    endNode_id = temp
                 if directivity != 'bidirectional':
                     directivity = 'single'
                 
