@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-记忆写入功能模块
-负责处理记忆的被动记录和测试功能
+记忆写入功能模块，负责汇总消息内容，并将有价值的信息储存以节点形式储存至neo4j。
+调用方式：
+    event_extractor.passive_event_extraction_from_message(
+        recent_message=recent_messages,
+        related_memory=related_memory
+    )
+不会返回任何内容，自动将记忆节点上传至neo4j图谱中。
 """
 
 import os
@@ -63,7 +68,7 @@ logger = logging.getLogger(__name__)
 class ConversationContext:
     """会话上下文管理器，用于记录对话历史和事件提取结果"""
     
-    def __init__(self, session_id: str, max_messages: int = 40):
+    def __init__(self, session_id: str, max_messages: int = 25):
         self.session_id = session_id
         self.messages = deque(maxlen=max_messages)
         self.extracted_events = deque(maxlen=10)  # 记录提取的事件
@@ -73,7 +78,8 @@ class ConversationContext:
         """添加对话消息"""
         self.messages.append({
             "role": role,
-            "content": content
+            "content": content,
+            "time": datetime.now().isoformat(),
         })
         self.last_updated = datetime.now()
 
@@ -81,7 +87,8 @@ class ConversationContext:
         """记录提取的事件数据"""
         self.extracted_events.append({
             "event_data": event_data,
-            "session_id": self.session_id
+            "session_id": self.session_id,
+            "time": datetime.now().isoformat(),
         })
         self.last_updated = datetime.now()
 
@@ -114,59 +121,57 @@ class MemoryWriter:
         self.conversation_context = conversation_context
     
     
-    def passive_event_extraction_from_message(self, event_text: Dict[str, Any], related_memory: Dict[str, Any]) -> Dict[str, Any]:
+    def passive_event_extraction_from_message(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any]) -> None:
         """
         阅读群消息，判断是否值得记忆，并提取需要记忆的事件信息
         
-        Args: 
-            event_text：聊天历史记录，格式严格为：[{"role": "user", "content": f"[{timestamp}] <{name}> {content}"}, ...]
-                注：即便是assistant的发言，也应以user的角色出现，因为这里的assistant并非AI本体，而是记忆系统。
+        Args:
+            recent_message: 最近的消息列表，格式：[{"role": "user", "content": "...", "time": "..."}, ...]
             related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
-        调用：passive_memory_record函数，输入
-            memory_to_record: 需要记忆的信息，格式：{"event": "", "description": [...]}
-        Returns：
-            None
         """
+
+        # 准备输入数据
+        input_messages = [{"role": "system", "content": EVENT_EXTRACT_PROMPT}]
+        
         # 处理related_memory，将字典格式转换为文本格式
         if isinstance(related_memory, dict):
             # 转换为文本格式
             related_memory_text = f"【请参考以下相关记忆进行决策】\n{str(related_memory)}"
         else:
             related_memory_text = "【相关记忆】\n暂无相关记忆，可直接进行处理"
-        
-        # 确保event_text中所有的role都是"user"
-        for message in event_text:
-            message["role"] = "user"
-        
-        # 准备输入数据
-        input_messages = [{"role": "system", "content": EVENT_EXTRACT_PROMPT}]
-        
-        # 添加处理过的事件extracted_event
-        if self.conversation_context:
-            extracted_events = self.conversation_context.get_extracted_events()
-            for extracted_event in extracted_events:
-                event_data = extracted_event.get('event_data', {})
-                if event_data and 'event' in event_data:
-                    input_messages.append({
-                        "role": "assistant", 
-                        "content": event_data['event']
-                    })
-                    print(f"[DEBUG] 添加已提取事件到输入: {event_data['event']}")
-                
         input_messages.append({"role": "user", "content": related_memory_text})
 
-        # 添加系统prompt和当前的记忆信息
-        input_messages.extend(event_text)
+        # 使用传入的 recent_message 参数构建消息段落
+        if recent_message:
+            # 构建消息段落
+            messages_paragraph = "【历史消息】\n"
+            
+            if len(recent_message) > 1:
+                # 有多条消息，前面的作为历史消息
+                for msg in recent_message[:-1]:
+                    messages_paragraph += msg.get("content", "") + "\n"
+                
+                messages_paragraph += "\n【最新消息】\n"
+                messages_paragraph += recent_message[-1].get("content", "")
+            else:
+                # 只有一条消息
+                messages_paragraph = "【历史消息】\n暂无历史消息\n\n【最新消息】\n"
+                messages_paragraph += recent_message[0].get("content", "")
+        else:
+            # 没有消息
+            messages_paragraph = "【历史消息】\n暂无历史消息\n\n【最新消息】\n暂无消息"
+        
+        input_messages.append({"role": "user", "content": messages_paragraph})
 
         # 调用模型
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=MODEL,
-            messages=input_messages,
-            stream=False,
-            temperature=0.2
+            input=input_messages,
+            reasoning={"effort": "low"},
+            text={"verbosity": "low"},
         )
 
-        full_response = response.choices[0].message.content
+        full_response = response.output_text
 
         if not full_response:
             print(f"[错误] 记忆存储模型未返回响应。")
@@ -183,55 +188,45 @@ class MemoryWriter:
             else:
                 json_content = full_response.strip()
             
-            extract_events = json.loads(json_content)
+            extract_event = json.loads(json_content)
             
             if DEBUG_MODE:
-                print(f"[DEBUG] 解析出的记忆数据: {json.dumps(extract_events, ensure_ascii=False, indent=2)}")
+                print(f"[DEBUG] 解析出的事件数据: {json.dumps(extract_event, ensure_ascii=False, indent=2)}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON response: {e}")
             print(f"[错误] 无法解析模型返回的JSON格式: {e}")
             print(f"[原始响应] {full_response}")
-            return {"nodes": [], "relations": []}
+            return
         except Exception as e:
             logger.error(f"Error processing response: {e}")
-            return []
+            return
 
-        # 记录提取的事件数据到上下文中
-        if self.conversation_context:
-            for event in extract_events:
-                self.conversation_context.add_extracted_event(event)
-        
-        # 如果有有效的事件数据，可以继续处理记忆记录
-        if extract_events and len(extract_events) > 0:
-            if DEBUG_MODE:
-                print(f"[DEBUG] 提取到 {len(extract_events)} 个事件，准备进行记忆记录")
-            
-            # 对每个提取的事件调用记忆记录功能
-            results = []
-            for event in extract_events:
-                if isinstance(event, dict) and 'event' in event and 'description' in event:
-                    # 调用passive_memory_record进行实际的记忆存储
-                    result = self.passive_memory_record_test(
-                        work_history=[],  # 可以根据需要传入对话历史
-                        memory_to_record=event,
-                        related_memory=related_memory
+        # 检查提取的事件数据是否有效
+        if extract_event and isinstance(extract_event, dict):
+            if 'event' in extract_event and extract_event['event']:
+                if DEBUG_MODE:
+                    print(f"[DEBUG] 提取到事件: {extract_event.get('event', '')}")
+                
+                # 调用记忆记录功能
+                if 'event' in extract_event and 'description' in extract_event:
+                    self.passive_memory_record(
+                        memory_to_record=extract_event,
+                        related_memory=related_memory,
                     )
-                    results.append(result)
-            
-            return results
+            else:
+                if DEBUG_MODE:
+                    print("[DEBUG] 事件字段为空，跳过记忆记录")
         else:
             if DEBUG_MODE:
                 print("[DEBUG] 未提取到有效事件，跳过记忆记录")
-            return []
 
     
-    def passive_memory_record(self, work_history, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> Dict[str, Any]:
+    def passive_memory_record(self, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> None:
         """
         记录记忆信息，调用LLM生成结构化的记忆记录
         
         Args:
-            work_history: 历史记录，格式严格为：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
             memory_to_record: 需要记忆的信息，格式：{"event": "", "description": [...]}
             related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
             
@@ -251,11 +246,7 @@ class MemoryWriter:
         
         # 准备输入数据
         input_messages = []
-        
-        # 如果有work_history，先添加到最前面
-        if work_history and isinstance(work_history, list):
-            input_messages.extend(work_history)
-        
+
         # 添加系统prompt和当前的记忆信息
         input_messages.extend([
             {"role": "system", "content": MEMORY_RECORD_PROMPT},
@@ -264,24 +255,18 @@ class MemoryWriter:
         ])
 
         # 调用模型
-        response = client.chat.completions.create(
+        response = client.responses.create(
             model=MODEL,
-            messages=input_messages,
-            stream=False,
-            temperature=0.1
+            input=input_messages,
+            reasoning={"effort": "medium"},
+            text={"verbosity": "low"},
         )
 
-        full_response = response.choices[0].message.content
-
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储模型回应: {full_response}")
-        if not full_response:
-            print(f"[DEBUG] 记忆存储模型未返回响应。")
-            return None
+        full_response = response.output_text
 
         if not full_response:
             print(f"[错误] 记忆存储模型未返回响应。")
-            return {"nodes": [], "relations": []}
+            return
         
         # 提取输出为 json 格式
         try:
@@ -300,23 +285,24 @@ class MemoryWriter:
             logger.error(f"Failed to parse JSON response: {e}")
             print(f"[错误] 无法解析模型返回的JSON格式: {e}")
             print(f"[原始响应] {full_response}")
-            return {"nodes": [], "relations": []}
+            return
         except Exception as e:
             logger.error(f"Error processing response: {e}")
-            return {"nodes": [], "relations": []}
+            return
 
         # 如果没有kg_manager实例，则仅返回解析的数据
         if not self.kg_manager:
-            return {"nodes": [], "relations": []}
+            return
 
         # 读取nodes中的所有内容，记录在nodelist中
         nodes_list = memory_data.get("nodes", [])
         relations_list = memory_data.get("relations", [])
         
         if DEBUG_MODE:
+            print(f"[DEBUG] 记忆存储模型返回数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
             print(f"[DEBUG] 处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
 
-        try:
+        '''try:
             with self.kg_manager.driver.session() as session:
                 # 遍历nodelist，处理节点
                 for node in nodes_list:
@@ -496,76 +482,7 @@ class MemoryWriter:
                 
         except Exception as e:
             logger.error(f"Error during memory record processing: {e}")
-            return {"nodes": [], "relations": []}
-
-    def passive_memory_record_test(self, work_history, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> None:
-        """
-        记录记忆信息，调用LLM生成结构化的记忆记录（测试版本）
-        
-        Args:
-            work_history: 历史记录，格式严格为：[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...]
-            memory_to_record: 需要记忆的信息，格式：{"event": "", "description": [...]}
-            related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
-            
-        Returns:
-            None
-        """
-        # 处理related_memory，将字典格式转换为文本格式
-        if isinstance(related_memory, dict):
-            # 转换为文本格式
-            related_memory_text = f"【请参考以下相关记忆进行决策】\n{str(related_memory)}"
-        else:
-            related_memory_text = "【相关记忆】\n暂无相关记忆，可直接进行处理"
-        
-        # 准备输入数据
-        input_messages = []
-        
-        # 如果有work_history，先添加到最前面
-        if work_history and isinstance(work_history, list):
-            input_messages.extend(work_history)
-        
-        # 添加系统prompt和当前的记忆信息
-        # 添加系统prompt和当前的记忆信息
-        input_messages.extend([
-            {"role": "system", "content": MEMORY_RECORD_PROMPT},
-            {"role": "user", "content": related_memory_text},
-            {"role": "user", "content": str(memory_to_record)}
-        ])
-
-        # 调用模型
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=input_messages,
-            stream=False,
-            temperature=0.1
-        )
-
-        full_response = response.choices[0].message.content
-
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储模型回应: {full_response}")
-        if not full_response:
-            print(f"[DEBUG] 记忆存储模型未返回响应。")
-            return None
-        
-        # 提取输出为 json 格式
-        try:
-            # 尝试解析JSON响应
-            if full_response.strip().startswith('```json'):
-                # 移除markdown代码块标记
-                json_start = full_response.find('{')
-                json_end = full_response.rfind('}') + 1
-                json_content = full_response[json_start:json_end]
-            else:
-                json_content = full_response.strip()
-            
-            memory_data = json.loads(json_content)
-            
-            return None
-
-        except Exception as e:
-            logger.error(f"Error during memory record processing: {e}")
-            return None
+            return {"nodes": [], "relations": []}'''
 
 
 def test_passive_memory_record():
@@ -577,8 +494,6 @@ def test_passive_memory_record():
     memory_writer = MemoryWriter(kg_manager)
     
     # 测试数据
-    work_history = []
-    
     memory_to_record = {}
     
     related_memory = {
@@ -592,10 +507,9 @@ def test_passive_memory_record():
         print(f"描述详情: {len(memory_to_record['description'])} 个属性")
         
         # 调用被测试的函数
-        memory_writer.passive_memory_record_test(
-            work_history=work_history,
+        memory_writer.passive_memory_record(
             memory_to_record=memory_to_record,
-            related_memory=related_memory
+            related_memory=related_memory,
         )
         
         print("记忆写入测试完成!")
@@ -648,15 +562,12 @@ def test_passive_event_extraction():
         print("回车键结束当前轮次输入")
         
         event_text = []
-        while True:
-            user_input = input("输入对话记录: ").strip()
-            if user_input.lower() in ['quit', 'exit']:
-                print("退出测试...")
-                return
-            if user_input == '':
-                break
-            # 将用户输入转换为所需格式
-            event_text.append({"role": "user", "content": user_input})
+        user_input = input("输入对话记录: ").strip()
+        if user_input.lower() in ['quit', 'exit']:
+            print("退出测试...")
+            return
+        # 将用户输入转换为所需格式
+        event_text.append({"role": "user", "content": user_input})
         
         # 将消息添加到上下文中
         for msg in event_text:
@@ -665,24 +576,16 @@ def test_passive_event_extraction():
         try:
             print("开始测试事件提取功能...")
             
+            # 从 session_context 获取消息历史
+            recent_messages = session_context.get_context()
+            
             # 调用被测试的函数
-            results = event_extractor.passive_event_extraction_from_message(
-                event_text=event_text,
+            event_extractor.passive_event_extraction_from_message(
+                recent_message=recent_messages,
                 related_memory=related_memory
             )
             
             print("事件提取测试完成!")
-            
-            # 显示结果
-            if results:
-                print(f"成功处理 {len(results)} 个事件记录结果")
-            
-            # 显示上下文中记录的事件
-            extracted_events = session_context.get_extracted_events()
-            if extracted_events:
-                print(f"上下文中记录了 {len(extracted_events)} 个提取事件")
-                for i, event in enumerate(extracted_events):
-                    print(f"  事件 {i+1}: {event['event_data'].get('event', '未知事件')}")
             
             print()
             print("=" * 50)

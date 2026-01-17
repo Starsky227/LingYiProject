@@ -1,6 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 相关记忆搜索模块 - 基于关键词提取和知识图谱查询来检索相关记忆
+调用方法：
+    recent_message = [{"role": "user", "content": f"[YYYY_MM_DDTHH:MM:SS:XX] <发言人> 发言内容"}]
+        prompt默认为此格式但格式不严格要求。
+    extract_result = extract_keyword_from_text(recent_message)
+提取结果：
+    提取出和主体相关的记忆节点，格式为：
+    {noeds: [...], relationships: [...]}
 """
 import os
 import sys
@@ -59,22 +66,22 @@ KEYWORD_EXTRACT_PROMPT = load_prompt_file("keyword_extract.txt", "关键词提�
 MEMORY_FILTER_PROMPT = load_prompt_file("memory_filter.txt", "事件提取")
 
 
-def extract_keyword_from_text(chat_history: Dict[str, Any]) -> Dict[str, Any]:
+def extract_keyword_from_text(recent_message: Dict[str, Any]) -> Dict[str, Any]:
     """
     提取关键词供后续使用。
 
     输入：
-        chat_history：聊天历史记录，格式严格为：[{"role": "user", "content": f"[{timestamp}] <{name}> {content}"}, ...]
+        recent_message：最近消息，格式严格为：[{"role": "user", "content": f"[{timestamp}] <{name}> {content}"}, ...]
     输出：
         ["关键词1", "关键词2", ...]
     """
     # 确保event_text中所有的role都是"user"
-    for message in chat_history:
+    for message in recent_message:
         message["role"] = "user"
     
     # 准备输入数据
     input_messages = [{"role": "system", "content": KEYWORD_EXTRACT_PROMPT}]
-    input_messages.extend(chat_history)
+    input_messages.extend(recent_message)
 
     if DEBUG_MODE:
         print(f"[DEBUG] 模型思考中……")
@@ -167,7 +174,7 @@ def _filter_related_nodes(nodes: Dict[str, Any], topic: str) -> Dict[str, Any]:
         model=MODEL,
         input=input_messages,
         reasoning={"effort": "low"},
-        text={"verbosity": "low"}
+        text={"verbosity": "low"},
     )
 
     full_response = response.output_text
@@ -501,6 +508,8 @@ def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_resu
         if DEBUG_MODE:
             print(f"[记忆查询] 使用{len(keywords)}个关键词。")
 
+        keywords.append("自我")
+
         # 第一步：通过关键词提取基础节点
         with kg_manager.driver.session() as session:
             nodes_data = _extract_nodes_by_keyword(kg_manager, keywords)
@@ -557,10 +566,9 @@ if __name__ == "__main__":
 
     extract_result = extract_keyword_from_text(test_message)
     test_topic = extract_result.get("topic", [])
-    test_key_word = extract_result.get("keywords", [])
-    test_key_word.append("自我")  # 手动添加关键词以测试
+    test_keywords = extract_result.get("keywords", [])
 
-    result = relevant_memories_by_keywords(test_key_word, test_topic)
+    result = relevant_memories_by_keywords(test_keywords, test_topic)
 
     # 保存result到json文件供调试查看
     try:
