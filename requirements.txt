@@ -1,3 +1,4 @@
+commentjson>=0.9.0
 crawl4ai>=0.7.4
 fastapi>=0.116.2
 flask>=3.1.0

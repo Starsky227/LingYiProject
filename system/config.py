@@ -1,5 +1,5 @@
 import os
-import json
+import commentjson as json
 from pathlib import Path
 from typing import Callable, List
 
@@ -88,12 +88,12 @@ class APIConfig(BaseModel):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # 如果记忆记录相关配置未设置，则使用默认API配置
-        if self.memory_record_api_key is None:
+        # 如果记忆记录相关配置任意一个未设置，则全部使用默认API配置（三个配置联动）
+        if (self.memory_record_api_key is None or 
+            self.memory_record_base_url is None or 
+            self.memory_record_model is None):
             self.memory_record_api_key = self.api_key
-        if self.memory_record_base_url is None:
             self.memory_record_base_url = self.base_url
-        if self.memory_record_model is None:
             self.memory_record_model = self.model
 
 

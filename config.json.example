@@ -1,0 +1,59 @@
+{
+    "system":{
+        "version": "0.3.3",
+        "ai_name": "铃依",
+        "debug": true,
+        "log_level": "INFO"
+    },
+    "api":{
+        "api_key": "ollama", // 你的sdk，必填！
+        "base_url": "http://localhost:11434/v1", // 模型的url，必填！
+        "model": "gemma3:4b", // 你用的模型型号，必填！
+        "memory_record_api_key": "sk-AAAA", // 不填默认为主模型
+        "memory_record_base_url": "https://api.openai.com/v1", // 不填默认为主模型
+        "memory_record_model": "gpt-5-nano-2025-08-07" // 不填默认为主模型
+    },
+    "api_server": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8000,
+        "auto_start": true
+    },
+    "agentserver": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8001,
+        "auto_start": true
+    },
+    "mcpserver": {
+        "enabled": true,
+        "host": "127.0.0.1",
+        "port": 8003,
+        "auto_start": true
+    },
+    "grag": {
+        "enabled": true,
+        "auto_extract": true,
+        "context_length": 5,
+        "similarity_threshold": 0.6,
+        "neo4j_uri": "neo4j://127.0.0.1:7687",
+        "neo4j_user": "neo4j",
+        "neo4j_password": "your_password_here", // 你给neo4j设置的密码
+        "neo4j_database": "neo4j",
+        "extraction_timeout": 12,
+        "extraction_retries": 2,
+        "base_timeout": 15
+    },
+    "ui":{
+        "username": "星空",
+        "text_size": "10",
+        "image_name": "LingYi_img.png"
+    },
+    "crawl4ai": {
+        "headless": true,
+        "timeout": 30000,
+        "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "viewport_width": 1280,
+        "viewport_height": 720
+    }
+}
