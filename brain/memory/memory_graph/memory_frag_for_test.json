@@ -1,35 +1,67 @@
 {
   "nodes": [
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:2",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:0",
       "labels": [
         "Entity"
       ],
       "properties": {
         "significance": 0.99,
-        "importance": 0.8,
-        "name": "荒星殖民",
+        "importance": 1,
+        "name": "生日",
         "context": "reality现实",
-        "created_at": "2026-01-15T15:20:55.195990",
-        "last_updated": "2026-01-15T15:22:07.572199",
+        "created_at": "2026-01-15T14:36:11.551180",
+        "last_updated": "2026-01-18T17:35:28.483103",
         "node_type": "Entity",
-        "note": "线上跑团，剧本名称"
+        "note": "无"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
       "labels": [
         "Entity"
       ],
       "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "种族",
-        "context": "荒星殖民",
-        "created_at": "2026-01-15T15:24:02.129771",
-        "last_updated": "2026-01-15T15:24:02.129771",
+        "significance": 0.99,
+        "importance": 1,
+        "name": "生日",
+        "context": "reality现实",
+        "created_at": "2026-01-01T19:13:56.344158",
+        "last_updated": "2026-01-18T17:35:05.543235",
         "node_type": "Entity",
-        "note": "种族"
+        "note": "自己的生日"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1,
+        "name": "星空",
+        "context": "reality现实",
+        "created_at": "2026-01-15T14:38:52.253637",
+        "last_updated": "2026-01-18T17:35:33.139016",
+        "node_type": "Entity",
+        "note": "名称，昵称，日常的称呼"
+      }
+    },
+    {
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:11",
+      "labels": [
+        "Entity"
+      ],
+      "properties": {
+        "significance": 0.99,
+        "importance": 1,
+        "name": "玲依",
+        "context": "reality现实",
+        "created_at": "2026-01-01T15:40:03.551561",
+        "last_updated": "2026-01-18T17:35:14.340897",
+        "node_type": "Entity",
+        "note": "自己的名字"
       }
     },
     {
@@ -39,111 +71,89 @@
       ],
       "properties": {
         "significance": 0.99,
-        "importance": 1.0,
+        "importance": 1,
         "trust": 1,
         "name": "自我",
-        "context": "reality",
+        "context": "reality现实",
         "created_at": "2026-01-01T15:39:15.215369",
-        "last_updated": "2026-01-15T15:12:58.708342",
+        "last_updated": "2026-01-18T17:35:18.748137",
         "node_type": "Character"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
       "labels": [
-        "Entity"
+        "Time",
+        "Day"
       ],
       "properties": {
         "significance": 0.99,
-        "importance": 0.5,
-        "name": "人族",
-        "context": "荒星殖民",
-        "created_at": "2026-01-15T15:25:18.274865",
-        "last_updated": "2026-01-15T15:31:39.666255",
-        "node_type": "Entity",
-        "note": "温度：6，16，26，36\n抗性：没有抗性。\n战斗：没有天生武器，但可以使用大多数装备。\n特性：没有什么特别的强项或弱点。"
+        "time": "2024年3月28日",
+        "importance": 0.55,
+        "name": "28日",
+        "last_updated": "2026-01-04T13:23:03.373774",
+        "node_type": "Time",
+        "type": "static"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
       "labels": [
-        "Entity"
+        "Time",
+        "Month"
       ],
       "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "机械族",
-        "context": "荒星殖民",
-        "created_at": "2026-01-15T15:37:02.289013",
-        "last_updated": "2026-01-15T15:37:02.289013",
-        "node_type": "Entity",
-        "note": "通常被称为失控机械，对所有异族有敌意。\n温度：-150，0，150，300。\n抗性：钢铁浇筑的躯体带来了较强的锐器/钝器抗性。\n战斗：通常具备战刀/充能步枪/更强力的科技武器。\n特性：会受到emp类电磁脉冲的严重影响，但注意！经历连续的脉冲失能欧可能会短暂恢复战斗力。"
+        "time": "2024年3月",
+        "name": "3月",
+        "node_type": "Time",
+        "type": "static"
       }
     },
     {
-      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14",
+      "id": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
       "labels": [
-        "Entity"
+        "Time",
+        "Year"
       ],
       "properties": {
-        "significance": 1,
-        "importance": 0.5,
-        "name": "虫族",
-        "context": "荒星殖民",
-        "created_at": "2026-01-15T15:42:52.887778",
-        "last_updated": "2026-01-15T15:42:52.887778",
-        "node_type": "Entity",
-        "note": "群居在地底的生物，对所有地表生物有敌意。\n温度：-10，10，30，50，低于最低温度只会冻僵，不会致死。\n抗性：坚硬的甲壳有不错的锐器抗性/一定的钝器抗性。\n战斗：通常用口器或利爪攻击，偶尔有变异虫族具备其他攻击方式。\n特性：喜欢生活在地下，挖掘能力很强。族群拥有王虫领袖，王虫死亡则族群死亡。"
+        "time": "2024年",
+        "name": "2024年",
+        "node_type": "Time",
+        "type": "static"
       }
     }
   ],
   "relationships": [
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191367",
-      "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:7",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:6917532326175965210",
+      "type": "HAPPENED_AT",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:12",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
       "properties": {
-        "source": [
-          "manual_input"
-        ],
-        "predicate": "BELONGS_TO",
-        "evidence": "user manual input",
-        "created_at": "2026-01-15T15:25:40.108073",
-        "last_updated": "2026-01-15T15:25:40.108073",
-        "confidence": 0.75
+        "source": "manual_input",
+        "predicate": "HAPPENED_AT",
+        "evidence": "",
+        "created_at": "2026-01-01T19:15:50.886438",
+        "last_updated": "2026-01-04T13:23:03.009395",
+        "confidence": 1.0
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191373",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191386",
       "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:13",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:26",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
       "properties": {
-        "source": [
-          "manual_input"
-        ],
-        "predicate": "BELONGS_TO",
-        "evidence": "user manual input",
-        "created_at": "2026-01-15T15:37:18.899041",
-        "last_updated": "2026-01-15T15:37:18.899041",
-        "confidence": 0.75
+        "hierarchy_type": "day_to_month"
       }
     },
     {
-      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191374",
+      "id": "5:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:1152958888002191385",
       "type": "BELONGS_TO",
-      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:14",
-      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:3",
+      "start_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:25",
+      "end_node": "4:6ea3cedf-e5d0-43f4-b62f-4e98c69936e3:24",
       "properties": {
-        "source": [
-          "manual_input"
-        ],
-        "predicate": "BELONGS_TO",
-        "evidence": "user manual input",
-        "created_at": "2026-01-15T15:43:07.011087",
-        "last_updated": "2026-01-15T15:43:07.011087",
-        "confidence": 0.75
+        "hierarchy_type": "month_to_year"
       }
     }
   ]

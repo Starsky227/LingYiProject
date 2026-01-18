@@ -85,17 +85,19 @@ class APIConfig(BaseModel):
     memory_record_api_key: str = Field(default=None, description="记忆记录API密钥，未设置时使用api_key")
     memory_record_base_url: str = Field(default=None, description="记忆记录API基础URL，未设置时使用base_url")
     memory_record_model: str = Field(default=None, description="记忆记录模型名称，未设置时使用model")
+    embedding_api_key: str = Field(default=None, description="嵌入向量API密钥，未设置时使用api_key")
+    embedding_base_url: str = Field(default=None, description="嵌入向量API基础URL，未设置时使用base_url")
+    embedding_model: str = Field(default="text-embedding-3-small", description="嵌入向量模型名称")
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # 如果记忆记录相关配置任意一个未设置，则全部使用默认API配置（三个配置联动）
         if (self.memory_record_api_key is None or 
-            self.memory_record_base_url is None or 
-            self.memory_record_model is None):
+            self.memory_record_base_url is None):
             self.memory_record_api_key = self.api_key
             self.memory_record_base_url = self.base_url
+        if self.memory_record_model is None:
             self.memory_record_model = self.model
-
 
 class APIServerConfig(BaseModel):
     """API服务器相关配置"""

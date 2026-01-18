@@ -24,9 +24,9 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # API 配置
-API_KEY = config.api.api_key
-API_URL = config.api.base_url
-MODEL = config.api.model
+API_KEY = config.api.embedding_api_key
+API_URL = config.api.embedding_base_url
+MODEL = config.api.embedding_model
 AI_NAME = config.system.ai_name
 USERNAME = config.ui.username
 DEBUG_MODE = config.system.debug
@@ -149,6 +149,40 @@ class KnowledgeGraphManager:
             return self._connect()
         return True
 
+    def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        使用embedding模型生成文本向量
+        
+        Args:
+            text: 要计算向量的文本内容
+            
+        Returns:
+            Optional[List[float]]: 计算得到的向量，失败返回None
+        """
+        if not text or not text.strip():
+            logger.warning("Cannot generate embedding for empty text")
+            return None
+            
+        try:
+            logger.debug(f"Generating embedding for text: {text[:100]}...")
+            response = client.embeddings.create(
+                input=text,
+                model=MODEL,
+                dimensions=384,
+            )
+            
+            if response and response.data and len(response.data) > 0:
+                embedding = response.data[0].embedding
+                logger.debug(f"Successfully generated embedding with dimension: {len(embedding)}")
+                return embedding
+            else:
+                logger.error("Embedding API returned empty response")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to generate embedding: {e}")
+            return None
+
     def create_time_node(self, session, time_str: str) -> Optional[str]:
         """
         创建时间节点并建立层次关系
@@ -191,16 +225,22 @@ class KnowledgeGraphManager:
 
                 # 创建年份节点 - 只记录到年份
                 year_time_str = f"{year}年"  # 只记录年份
+                
+                # 生成embedding（使用time字段）
+                year_embedding = self._generate_embedding(year_time_str)
+                
                 result = session.run(
                     """
                     MERGE (y:Time:Year {name: $year_name, time: $year_time_str})
                     SET y.node_type = 'Time',
-                        y.type = $time_type
+                        y.type = $time_type,
+                        y.embedding = $embedding
                     RETURN elementId(y) as node_id
                 """,
                     year_name=year_name,
                     year_time_str=year_time_str,
                     time_type=time_type,
+                    embedding=year_embedding,
                 )
                 record = result.single()
                 if record:
@@ -221,16 +261,21 @@ class KnowledgeGraphManager:
                     else:
                         month_time_str = f"{year}年{month}月"  # static类型记录年月
 
+                    # 生成embedding（使用time字段）
+                    month_embedding = self._generate_embedding(month_time_str)
+
                     result = session.run(
                         """
                         MERGE (m:Time:Month {name: $month_name, time: $month_time_str})
                         SET m.node_type = 'Time',
-                            m.type = $time_type
+                            m.type = $time_type,
+                            m.embedding = $embedding
                         RETURN elementId(m) as node_id
                     """,
                         month_name=month_name,
                         month_time_str=month_time_str,
                         time_type=time_type,
+                        embedding=month_embedding,
                     )
                     record = result.single()
                     if record:
@@ -267,16 +312,21 @@ class KnowledgeGraphManager:
                         if year_match:
                             day_time_str = f"{year}年{month}月{day}日"
 
+                    # 生成embedding（使用time字段）
+                    day_embedding = self._generate_embedding(day_time_str)
+
                     result = session.run(
                         """
                         MERGE (d:Time:Day {name: $day_name, time: $day_time_str})
                         SET d.node_type = 'Time',
-                            d.type = $time_type
+                            d.type = $time_type,
+                            d.embedding = $embedding
                         RETURN elementId(d) as node_id
                     """,
                         day_name=day_name,
                         day_time_str=day_time_str,
                         time_type=time_type,
+                        embedding=day_embedding,
                     )
                     record = result.single()
                     if record:
@@ -334,13 +384,17 @@ class KnowledgeGraphManager:
                                     f"{year}年{month}月第{week_number}周星期{weekday}"
                                 )
 
+                        # 生成embedding（使用time字段）
+                        weekday_embedding = self._generate_embedding(day_time_str)
+
                         result = session.run(
                             """
                             MERGE (d:Time:WeekDay {name: $day_name, time: $day_time_str})
                             SET d.node_type = 'Time',
                                 d.type = $time_type,
                                 d.week_number = $week_number,
-                                d.weekday = $weekday
+                                d.weekday = $weekday,
+                                d.embedding = $embedding
                             RETURN elementId(d) as node_id
                         """,
                             day_name=day_name,
@@ -348,6 +402,7 @@ class KnowledgeGraphManager:
                             time_type=time_type,
                             week_number=week_number,
                             weekday=weekday,
+                            embedding=weekday_embedding,
                         )
                         record = result.single()
                         if record:
@@ -386,16 +441,21 @@ class KnowledgeGraphManager:
                         if year_match:
                             hour_time_str = f"{year}年{month}月{day}日{hour}点"
 
+                # 生成embedding（使用time字段）
+                hour_embedding = self._generate_embedding(hour_time_str)
+
                 result = session.run(
                     """
                     MERGE (h:Time:Hour {name: $hour_name, time: $hour_time_str})
                     SET h.node_type = 'Time',
-                        h.type = $time_type
+                        h.type = $time_type,
+                        h.embedding = $embedding
                     RETURN elementId(h) as node_id
                 """,
                     hour_name=hour_name,
                     hour_time_str=hour_time_str,
                     time_type=time_type,
+                    embedding=hour_embedding,
                 )
                 record = result.single()
                 if record:
@@ -484,16 +544,21 @@ class KnowledgeGraphManager:
                 # 创建SubHour节点
                 sub_hour_time_str = time_str
 
+                # 生成embedding（使用time字段）
+                subhour_embedding = self._generate_embedding(sub_hour_time_str)
+
                 result = session.run(
                     """
                     MERGE (sh:Time:SubHour {name: $sub_hour_name, time: $sub_hour_time_str})
                     SET sh.node_type = 'Time',
-                        sh.type = $time_type
+                        sh.type = $time_type,
+                        sh.embedding = $embedding
                     RETURN elementId(sh) as node_id
                 """,
                     sub_hour_name=sub_hour_name,
                     sub_hour_time_str=sub_hour_time_str,
                     time_type=time_type,
+                    embedding=subhour_embedding,
                 )
                 record = result.single()
                 if record:
@@ -529,15 +594,20 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to create time node '{time_str}': {e}")
             # 回退到创建通用时间节点
             try:
+                # 生成embedding（使用time字段）
+                fallback_embedding = self._generate_embedding(time_str)
+                
                 result = session.run(
                     """
                     MERGE (t:Time {name: $time, time: $time})
                     SET t.node_type = 'Time',
-                        t.type = $time_type
+                        t.type = $time_type,
+                        t.embedding = $embedding
                     RETURN elementId(t) as node_id
                 """,
                     time=time_str,
                     time_type=time_type,
+                    embedding=fallback_embedding,
                 )
                 record = result.single()
                 if record:
@@ -601,6 +671,9 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
+            # 生成embedding（使用name字段）
+            character_embedding = self._generate_embedding(name)
+
             result = session.run(
                 """
                 CREATE (c:Character {name: $name})
@@ -610,7 +683,8 @@ class KnowledgeGraphManager:
                     c.trust = $trust,
                     c.context = $context,
                     c.last_updated = $last_updated,
-                    c.significance = 1
+                    c.significance = 1,
+                    c.embedding = $embedding
                 RETURN elementId(c) as node_id
             """,
                 name=name,
@@ -619,6 +693,7 @@ class KnowledgeGraphManager:
                 context=context,
                 created_at=current_time,
                 last_updated=current_time,
+                embedding=character_embedding,
             )
 
             record = result.single()
@@ -660,19 +735,24 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
+            # 生成embedding（使用name字段）
+            location_embedding = self._generate_embedding(name)
+
             result = session.run(
                 """
                 CREATE (l:Location {name: $name})
                 SET l.node_type = 'Location',
                     l.context = $context,
                     l.created_at = $created_at,
-                    l.last_updated = $last_updated
+                    l.last_updated = $last_updated,
+                    l.embedding = $embedding
                 RETURN elementId(l) as node_id
             """,
                 name=name,
                 context=context,
                 created_at=current_time,
                 last_updated=current_time,
+                embedding=location_embedding,
             )
 
             record = result.single()
@@ -719,6 +799,9 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
+            # 生成embedding（使用name字段）
+            entity_embedding = self._generate_embedding(name)
+
             result = session.run(
                 """
                 CREATE (e:Entity {name: $name})
@@ -728,7 +811,8 @@ class KnowledgeGraphManager:
                     e.context = $context,
                     e.note = $note,
                     e.last_updated = $last_updated,
-                    e.significance = 1
+                    e.significance = 1,
+                    e.embedding = $embedding
                 RETURN elementId(e) as node_id
             """,
                 name=name,
@@ -737,6 +821,7 @@ class KnowledgeGraphManager:
                 note=note,
                 created_at=current_time,
                 last_updated=current_time,
+                embedding=entity_embedding,
             )
 
             record = result.single()
@@ -1126,9 +1211,38 @@ class KnowledgeGraphManager:
 
                 if updated_record:
                     updated_labels = updated_record["updated_labels"]
+                    updated_properties = updated_record["updated_properties"]
                     logger.info(
                         f"Successfully updated node {node_id} with labels: {updated_labels}"
                     )
+
+                    # 重新计算并更新embedding向量
+                    try:
+                        # 根据节点类型决定使用哪个字段生成embedding
+                        embedding_text = None
+                        if 'Time' in updated_labels:
+                            # Time节点使用time字段
+                            embedding_text = updated_properties.get('time')
+                        else:
+                            # 其他节点使用name字段
+                            embedding_text = updated_properties.get('name')
+                        
+                        # 生成新的embedding
+                        if embedding_text:
+                            new_embedding = self._generate_embedding(embedding_text)
+                            
+                            if new_embedding:
+                                # 更新embedding到数据库
+                                update_embedding_query = """
+                                MATCH (n) WHERE elementId(n) = $node_id
+                                SET n.embedding = $embedding
+                                """
+                                session.run(update_embedding_query, node_id=node_id, embedding=new_embedding)
+                                logger.debug(f"Successfully updated embedding for node {node_id}")
+                            else:
+                                logger.warning(f"Failed to generate embedding for node {node_id}")
+                    except Exception as embed_error:
+                        logger.warning(f"Failed to update embedding for node {node_id}: {embed_error}")
 
                     # 更新修改的节点
                     self.update_node(
@@ -2670,370 +2784,6 @@ class KnowledgeGraphManager:
                 "quintuples_uploaded": 0,
             }
 
-    def _extract_connected_nodes(
-        self, session, nodes_data: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        根据根据节点id提取节点内容。
-        输入：
-        nodes_data->来自上一次该函数的产出。
-        输出：
-        {"nodes": [
-            {"id": "节点ID",
-            "labels": ["节点标签1", "节点标签2"],
-            "properties": {property1: value1, property2: value2}}
-        ],
-        "relationships": [
-            {"id": "关系ID",
-            "type": "关系类型",
-            "start_node": "起始节点ID",
-            "end_node": "结束节点ID",
-            "properties": {property1: value1, property2: value2}}
-        ],
-        "connected_node_ids": [node_id1, node_id2, ...],
-        "new_node_ids": [node_id3, node_id4, ...]  # 仅包含新提取的节点ID}
-        """
-        if not nodes_data:
-            return {
-                "nodes": [],
-                "relationships": [],
-                "connected_node_ids": [],
-                "new_node_ids": [],
-            }
-
-        try:
-            # 存储所有节点和关系
-            all_nodes_list = nodes_data.get("nodes", [])
-            all_relationships_list = nodes_data.get("relationships", [])
-            connected_node_ids = set(
-                nodes_data.get("connected_node_ids", [])
-                + nodes_data.get("new_node_ids", [])
-            )
-            nodes_to_read = nodes_data.get("new_node_ids", [])
-            new_node_ids = set()
-
-            # 转换为字典格式便于去重和查找
-            all_nodes = {node["id"]: node for node in all_nodes_list}
-            all_relationships = {rel["id"]: rel for rel in all_relationships_list}
-
-            # 如果没有新节点需要读取，直接返回原数据
-            if not nodes_to_read:
-                return {
-                    "nodes": all_nodes_list,
-                    "relationships": all_relationships_list,
-                    "connected_node_ids": list(connected_node_ids),
-                    "new_node_ids": [],
-                }
-
-            # 查询nodes_to_read连接的所有节点和关系
-            for node_id in nodes_to_read:
-                # 查询该节点及其所有连接的节点和关系
-                query = """
-                MATCH (root) WHERE elementId(root) = $node_id
-                OPTIONAL MATCH (root)-[r]-(connected)
-                RETURN 
-                    elementId(root) as root_id, labels(root) as root_labels, properties(root) as root_properties,
-                    elementId(connected) as connected_id, labels(connected) as connected_labels, properties(connected) as connected_properties,
-                    elementId(r) as rel_id, type(r) as rel_type, 
-                    elementId(startNode(r)) as rel_start, elementId(endNode(r)) as rel_end,
-                    properties(r) as rel_properties
-                """
-
-                result = session.run(query, node_id=node_id)
-
-                for record in result:
-                    # 添加连接的节点（跳过根节点本身，因为它已经在之前的数据中了）
-                    connected_id = record["connected_id"]
-                    if (
-                        connected_id
-                        and connected_id not in all_nodes
-                        and connected_id not in connected_node_ids
-                    ):
-                        all_nodes[connected_id] = {
-                            "id": connected_id,
-                            "labels": record["connected_labels"] or [],
-                            "properties": dict(record["connected_properties"])
-                            if record["connected_properties"]
-                            else {},
-                        }
-                        new_node_ids.add(connected_id)
-
-                    # 添加关系
-                    rel_id = record["rel_id"]
-                    if rel_id and rel_id not in all_relationships:
-                        all_relationships[rel_id] = {
-                            "id": rel_id,
-                            "type": record["rel_type"],
-                            "start_node": record["rel_start"],
-                            "end_node": record["rel_end"],
-                            "properties": dict(record["rel_properties"])
-                            if record["rel_properties"]
-                            else {},
-                        }
-
-            # 从new_node_ids中移除所有原本就存在的connected_node_ids，确保只包含真正新发现的节点
-            original_connected_ids = set(
-                nodes_data.get("connected_node_ids", [])
-                + nodes_data.get("new_node_ids", [])
-            )
-            new_node_ids = new_node_ids - original_connected_ids
-
-            # 更新连接的节点ID集合
-            connected_node_ids.update(new_node_ids)
-
-            # 转换为列表格式
-            nodes_list = list(all_nodes.values())
-            relationships_list = list(all_relationships.values())
-            connected_node_ids_list = list(connected_node_ids)
-            new_node_ids_list = list(new_node_ids)
-
-            logger.debug(
-                f"Extracted {len(new_node_ids)} new nodes, {len(relationships_list)} total relationships from {len(nodes_to_read)} root nodes"
-            )
-
-            return {
-                "nodes": nodes_list,
-                "relationships": relationships_list,
-                "connected_node_ids": connected_node_ids_list,
-                "new_node_ids": new_node_ids_list,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to extract connected nodes: {e}")
-            return {
-                "nodes": [],
-                "relationships": [],
-                "connected_node_ids": [],
-                "new_node_ids": [],
-            }
-
-    def _extract_nodes_by_keyword(
-        self, text: str, keywords: List[str]
-    ) -> Dict[str, Any]:
-        """
-        根据输入的关键词列表提取相应的节点及信息。
-
-        Args:
-            text: 输入文本
-            keywords: 预定义的关键词列表
-
-        Returns Dict[str, Any]:
-            {"nodes": [
-                {"id": "节点ID",
-                "labels": ["节点标签1", "节点标签2"],
-                "properties": {property1: value1, property2: value2}}
-            ],
-            "relationships": [],
-            "connected_node_ids": [],
-            "new_node_ids": [node_id3, node_id4, ...]}
-        """
-        if not self._ensure_connection():
-            logger.error("Cannot extract keywords: No Neo4j connection")
-            return {
-                "nodes": [],
-                "relationships": [],
-                "connected_node_ids": [],
-                "new_node_ids": [],
-            }
-
-        if not keywords:
-            logger.debug("No keywords provided for extraction")
-            return {
-                "nodes": [],
-                "relationships": [],
-                "connected_node_ids": [],
-                "new_node_ids": [],
-            }
-
-        try:
-            nodes_dict = {}  # 使用字典避免重复节点
-
-            with self.driver.session() as session:
-                for keyword in keywords:
-                    if not keyword or not keyword.strip():
-                        continue
-
-                    keyword = keyword.strip()
-                    logger.debug(f"Searching for keyword: {keyword}")
-
-                    # 1. 首先尝试精确匹配 - 查找名称完全匹配的节点
-                    exact_match_query = """
-                    MATCH (n)
-                    WHERE n.name = $keyword
-                    RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
-                    """
-
-                    exact_results = session.run(exact_match_query, keyword=keyword)
-                    exact_matches = list(exact_results)
-
-                    if exact_matches:
-                        logger.debug(
-                            f"Found {len(exact_matches)} exact matches for '{keyword}'"
-                        )
-                        for record in exact_matches:
-                            node_id = record["id"]
-                            if node_id not in nodes_dict:
-                                nodes_dict[node_id] = {
-                                    "id": node_id,
-                                    "labels": record["labels"] or [],
-                                    "properties": dict(record["properties"])
-                                    if record["properties"]
-                                    else {},
-                                }
-                    else:
-                        # 2. 如果精确匹配没有结果，进行模糊匹配
-                        logger.debug(
-                            f"No exact matches for '{keyword}', trying fuzzy matching"
-                        )
-
-                        # 模糊匹配 - 查找名称包含关键词的节点
-                        fuzzy_match_query = """
-                        MATCH (n)
-                        WHERE n.name CONTAINS $keyword
-                        RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
-                        LIMIT 5
-                        """
-
-                        fuzzy_results = session.run(fuzzy_match_query, keyword=keyword)
-                        fuzzy_matches = list(fuzzy_results)
-
-                        if fuzzy_matches:
-                            logger.debug(
-                                f"Found {len(fuzzy_matches)} fuzzy matches for '{keyword}'"
-                            )
-                            for record in fuzzy_matches:
-                                node_id = record["id"]
-                                if node_id not in nodes_dict:
-                                    nodes_dict[node_id] = {
-                                        "id": node_id,
-                                        "labels": record["labels"] or [],
-                                        "properties": dict(record["properties"])
-                                        if record["properties"]
-                                        else {},
-                                    }
-                        else:
-                            logger.debug(f"No matches found for keyword: '{keyword}'")
-
-                # 转换为列表格式
-                nodes_list = list(nodes_dict.values())
-                new_node_ids = [node["id"] for node in nodes_list]
-
-                logger.info(
-                    f"Extracted {len(nodes_list)} nodes from {len(keywords)} keywords"
-                )
-
-                return {
-                    "nodes": nodes_list,
-                    "relationships": [],  # 初始状态没有关系，需要后续调用_extract_connected_nodes获取
-                    "connected_node_ids": [],
-                    "new_node_ids": new_node_ids,
-                }
-
-        except Exception as e:
-            logger.error(f"Failed to extract keywords '{keywords}': {e}")
-            return {
-                "nodes": [],
-                "relationships": [],
-                "connected_node_ids": [],
-                "new_node_ids": [],
-            }
-
-    def relevant_memories_by_keywords(
-        keywords: List[str], max_results: int = 50
-    ) -> Dict[str, Any]:
-        """
-        通过_extract_keywords获得基础节点数据。
-        而后通过反复调用_extract_connected_nodes获取相关联的节点和关系。
-        当总节点数超过max_results时停止，输出最多max_results个节点的记忆信息字符串。
-
-        Args:
-            keywords: 已提取的关键词列表
-            max_results: 最大返回结果数
-
-        Returns Dict[str, Any]:
-            {"nodes": [
-                {"id": "节点ID",
-                "labels": ["节点标签1", "节点标签2"],
-                "properties": {property1: value1, property2: value2}}
-            ],
-            "relationships": [
-                {"id": "关系ID",
-                "type": "关系类型",
-                "start_node": "起始节点ID",
-                "end_node": "结束节点ID",
-                "properties": {property1: value1, property2: value2}}
-            ]}
-        """
-        try:
-            # 首先检查全局Neo4j可用性
-            from system.config import is_neo4j_available
-
-            if not is_neo4j_available():
-                return {"nodes": [], "relationships": []}
-
-            kg_manager = get_knowledge_graph_manager()
-            if not kg_manager.connected:
-                return {"nodes": [], "relationships": []}
-
-            if not keywords:
-                logger.debug("[记忆查询] 关键词列表为空")
-                return {"nodes": [], "relationships": []}
-
-            logger.debug(f"[记忆查询] 使用关键词: {keywords}")
-
-            # 第一步：通过关键词提取基础节点
-            with kg_manager.driver.session() as session:
-                nodes_data = kg_manager._extract_nodes_by_keyword("", keywords)
-
-                if not nodes_data.get("nodes"):
-                    logger.debug("[记忆查询] 未找到匹配的节点")
-                    return {"nodes": [], "relationships": []}
-
-                logger.debug(f"[记忆查询] 初始找到 {len(nodes_data['nodes'])} 个节点")
-
-                # 第二步：反复扩展连接的节点，直到达到最大数量限制
-                expansion_rounds = 0
-                max_expansion_rounds = 3  # 限制扩展轮数避免过度查询
-
-                while (
-                    len(nodes_data.get("nodes", [])) < max_results
-                    and nodes_data.get("new_node_ids")
-                    and expansion_rounds < max_expansion_rounds
-                ):
-                    expansion_rounds += 1
-                    logger.debug(
-                        f"[记忆查询] 第 {expansion_rounds} 轮扩展，当前节点数: {len(nodes_data['nodes'])}"
-                    )
-
-                    # 扩展连接的节点
-                    nodes_data = kg_manager._extract_connected_nodes(
-                        session, nodes_data
-                    )
-
-                    # 如果节点数量超过限制，截断到最大数量
-                    if len(nodes_data.get("nodes", [])) > max_results:
-                        nodes_data["nodes"] = nodes_data["nodes"][:max_results]
-                        nodes_data["new_node_ids"] = []  # 停止进一步扩展
-                        logger.debug(
-                            f"[记忆查询] 节点数量超过限制，截断到 {max_results} 个"
-                        )
-                        break
-
-                # 直接返回节点和关系数据
-                result = {
-                    "nodes": nodes_data.get("nodes", []),
-                    "relationships": nodes_data.get("relationships", []),
-                }
-
-                logger.info(
-                    f"[记忆查询] 成功返回 {len(result['nodes'])} 个节点，{len(result['relationships'])} 个关系"
-                )
-                return result
-
-        except Exception as e:
-            logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
-            return {"nodes": [], "relationships": []}
-
 
 # 全局实例
 _kg_manager = None
@@ -3069,11 +2819,3 @@ def load_neo4j_data_to_file() -> bool:
     """便捷函数：检查Neo4j连接并将数据下载到neo4j_memory.json文件"""
     manager = get_knowledge_graph_manager()
     return manager.download_neo4j_data()
-
-
-def relevant_memories_by_keywords(
-    keywords: List[str], max_results: int = 50
-) -> Dict[str, Any]:
-    """便捷函数：通过关键词查询相关记忆"""
-    manager = get_knowledge_graph_manager()
-    return manager.relevant_memories_by_keywords(keywords, max_results)

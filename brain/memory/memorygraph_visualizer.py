@@ -29,7 +29,7 @@ sys.path.insert(0, project_root)
 
 from system.config import config
 from system.config import is_neo4j_available
-from brain.memory.memory_download_from_neo4j import update_memory_graph_file, Neo4jConnector
+from brain.memory.memory_download_from_neo4j import Neo4jConnector
 from brain.memory.knowledge_graph_manager import load_neo4j_data_to_file, get_knowledge_graph_manager
 
 logger = logging.getLogger(__name__)

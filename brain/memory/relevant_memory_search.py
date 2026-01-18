@@ -30,6 +30,9 @@ from typing import Any, List, Dict, Optional
 API_KEY = config.api.memory_record_api_key
 API_URL = config.api.memory_record_base_url
 MODEL = config.api.memory_record_model
+EMB_API_KEY = config.api.embedding_api_key
+EMB_API_URL = config.api.embedding_base_url
+EMB_MODEL = config.api.embedding_model
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端
@@ -65,6 +68,104 @@ def load_prompt_file(filename: str, description: str = "") -> str:
 KEYWORD_EXTRACT_PROMPT = load_prompt_file("keyword_extract.txt", "关键词提取")
 MEMORY_FILTER_PROMPT = load_prompt_file("memory_filter.txt", "事件提取")
 
+def generate_embedding(text: str) -> Optional[List[float]]:
+    """
+    使用embedding模型生成文本向量
+    
+    Args:
+        text: 要计算向量的文本内容
+        
+    Returns:
+        Optional[List[float]]: 计算得到的向量，失败返回None
+    """
+    if not text or not text.strip():
+        logger.warning("Cannot generate embedding for empty text")
+        return None
+        
+    try:
+        logger.debug(f"Generating embedding for text: {text[:100]}...")
+        response = client.embeddings.create(
+            input=text,
+            model=EMB_MODEL,
+            dimensions=384,
+        )
+        
+        if response and response.data and len(response.data) > 0:
+            embedding = response.data[0].embedding
+            logger.debug(f"Successfully generated embedding with dimension: {len(embedding)}")
+            return embedding
+        else:
+            logger.error("Embedding API returned empty response")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Failed to generate embedding: {e}")
+        return None
+
+def search_nodes_by_embedding(text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+    """
+    通过embedding向量相似度搜索节点
+    
+    Args:
+        text: 要搜索的文本
+        top_k: 返回最相似的前k个节点
+        
+    Returns:
+        List[Dict[str, Any]]: 匹配的节点列表，包含id, name和相似度分数
+    """
+    try:
+        from system.config import is_neo4j_available
+        if not is_neo4j_available():
+            logger.warning("Neo4j不可用")
+            return []
+            
+        kg_manager = get_knowledge_graph_manager()
+        if not kg_manager.connected:
+            logger.warning("知识图谱未连接")
+            return []
+        
+        # 生成查询文本的embedding
+        query_embedding = generate_embedding(text)
+        if not query_embedding:
+            logger.error("无法生成embedding向量")
+            return []
+        
+        # 使用Neo4j的向量相似度搜索
+        with kg_manager.driver.session() as session:
+            # 查询所有有embedding的节点，计算余弦相似度
+            query = """
+            MATCH (n)
+            WHERE n.embedding IS NOT NULL
+            WITH n, 
+                 reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | 
+                     dot + n.embedding[i] * $query_embedding[i]) as dot_product,
+                 sqrt(reduce(sum = 0.0, i IN range(0, size(n.embedding)-1) | 
+                     sum + n.embedding[i] * n.embedding[i])) as norm1,
+                 sqrt(reduce(sum = 0.0, i IN range(0, size($query_embedding)-1) | 
+                     sum + $query_embedding[i] * $query_embedding[i])) as norm2
+            WITH n, dot_product / (norm1 * norm2) as similarity
+            WHERE similarity > 0.5
+            RETURN elementId(n) as id, n.name as name, similarity
+            ORDER BY similarity DESC
+            LIMIT $top_k
+            """
+            
+            results = session.run(query, query_embedding=query_embedding, top_k=top_k)
+            
+            matches = []
+            for record in results:
+                matches.append({
+                    "id": record["id"],
+                    "name": record["name"],
+                    "similarity": record["similarity"]
+                })
+            
+            return matches
+            
+    except Exception as e:
+        logger.error(f"Embedding搜索失败: {e}")
+        return []
+
 
 def extract_keyword_from_text(recent_message: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -98,7 +199,7 @@ def extract_keyword_from_text(recent_message: Dict[str, Any]) -> Dict[str, Any]:
 
     if not full_response:
         print(f"[错误] 关键词提取模型未返回响应。")
-        return {"topic": [], "keywords": []}
+        return {"summary": [], "keywords": []}
     
     # 提取输出为 json 格式
     try:
@@ -113,14 +214,14 @@ def extract_keyword_from_text(recent_message: Dict[str, Any]) -> Dict[str, Any]:
     except json.JSONDecodeError as e:
         print(f"[错误] 无法解析模型返回的JSON格式: {e}")
         print(f"[原始响应] {full_response}")
-        return {"topic": [], "keywords": []}
+        return {"summary": [], "keywords": []}
     except Exception as e:
-        return {"topic": [], "keywords": []}
+        return {"summary": [], "keywords": []}
     
     return result
 
 
-def _filter_related_nodes(nodes: Dict[str, Any], topic: str) -> Dict[str, Any]:
+def _filter_related_nodes(nodes: Dict[str, Any], summary: str) -> Dict[str, Any]:
     """
     让AI对每个节点进行判断，是否为当前话题需要的记忆信息
     
@@ -163,7 +264,7 @@ def _filter_related_nodes(nodes: Dict[str, Any], topic: str) -> Dict[str, Any]:
     # 将该内容加入input_message
     input_messages.append({
         "role": "user", 
-        "content": f"话题: {topic}\n\n需要筛选的记忆数据:\n{evaluation_content}"
+        "content": f"话题: {summary}\n\n需要筛选的记忆数据:\n{evaluation_content}"
     })
 
     if DEBUG_MODE:
@@ -231,7 +332,7 @@ def _filter_node_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
     
     # 需要隐去的属性列表
     hidden_properties = {
-        "significance", "importance", "created_at", "last_updated", "trust"
+        "significance", "importance", "created_at", "last_updated", "trust", "embedding",
     }
     
     # 返回过滤后的属性
@@ -243,7 +344,20 @@ def _filter_node_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
     return filtered_props
 
 
-def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], topic: str = "") -> Dict[str, Any]:
+def _remove_embedding(properties: Dict[str, Any]) -> Dict[str, Any]:
+    """只移除节点的embedding属性，保留其他所有属性"""
+    
+    if not properties:
+        return {}
+    
+    # 创建属性副本并移除embedding
+    filtered_props = dict(properties)
+    filtered_props.pop("embedding", None)
+    
+    return filtered_props
+
+
+def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "") -> Dict[str, Any]:
     """
     根据根据节点id提取节点内容。
     输入：
@@ -302,7 +416,7 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], topic: str = "")
                     nodes_to_add[reached_node_id] = {
                         "id": reached_node_id,
                         "labels": reached_node["connected_labels"] or [],
-                        "properties": dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {}
+                        "properties": _remove_embedding(dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {})
                     }
                     rel_id = reached_node["rel_id"]
                     relations_to_add[rel_id] = {
@@ -328,13 +442,13 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], topic: str = "")
         
         print(f"新发现节点: {len(nodes_to_add)}个")
         
-        # 根据topic筛选相关节点
-        if topic and memories_to_be_viewed:
-            filtered_nodes_relation = _filter_related_nodes(memories_to_be_viewed, topic)
+        # 根据summary筛选相关节点
+        if summary and memories_to_be_viewed:
+            filtered_nodes_relation = _filter_related_nodes(memories_to_be_viewed, summary)
             filtered_node_ids = filtered_nodes_relation.get("filtered_node_ids", [])
             filtered_relation_ids = filtered_nodes_relation.get("filtered_relation_ids", [])
         else:
-            # 如果没有topic，保留所有节点
+            # 如果没有summary，保留所有节点
             filtered_node_ids = list(nodes_to_add.keys())
             filtered_relation_ids = list(relations_to_add.keys())
         
@@ -418,35 +532,55 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str]) -> Dict[str, Any]
                             nodes_dict[node_id] = {
                                 "id": node_id,
                                 "labels": record["labels"] or [],
-                                "properties": dict(record["properties"]) if record["properties"] else {}
+                                "properties": _remove_embedding(dict(record["properties"]) if record["properties"] else {})
                             }
                 else:
-                    # 2. 如果精确匹配没有结果，进行模糊匹配
-                    logger.debug(f"No exact matches for '{keyword}', trying fuzzy matching")
+                    # 2. 如果精确匹配没有结果，使用embedding进行语义匹配
+                    if DEBUG_MODE:
+                        print(f"无法精准匹配 '{keyword}', 进行embedding模糊匹配")
                     
-                    # 模糊匹配 - 查找名称包含关键词的节点
-                    fuzzy_match_query = """
-                    MATCH (n)
-                    WHERE n.name CONTAINS $keyword
-                    RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
-                    LIMIT 5
-                    """
+                    # 生成关键词的embedding向量
+                    keyword_embedding = generate_embedding(keyword)
                     
-                    fuzzy_results = session.run(fuzzy_match_query, keyword=keyword)
-                    fuzzy_matches = list(fuzzy_results)
-                    
-                    if fuzzy_matches:
-                        logger.debug(f"Found {len(fuzzy_matches)} fuzzy matches for '{keyword}'")
-                        for record in fuzzy_matches:
-                            node_id = record["id"]
-                            if node_id not in nodes_dict:
-                                nodes_dict[node_id] = {
-                                    "id": node_id,
-                                    "labels": record["labels"] or [],
-                                    "properties": dict(record["properties"]) if record["properties"] else {}
-                                }
+                    if keyword_embedding:
+                        # 使用embedding向量相似度进行语义匹配
+                        semantic_match_query = """
+                        MATCH (n)
+                        WHERE n.embedding IS NOT NULL
+                        WITH n, 
+                             reduce(dot = 0.0, i IN range(0, size(n.embedding)-1) | 
+                                 dot + n.embedding[i] * $keyword_embedding[i]) as dot_product,
+                             sqrt(reduce(sum = 0.0, i IN range(0, size(n.embedding)-1) | 
+                                 sum + n.embedding[i] * n.embedding[i])) as norm1,
+                             sqrt(reduce(sum = 0.0, i IN range(0, size($keyword_embedding)-1) | 
+                                 sum + $keyword_embedding[i] * $keyword_embedding[i])) as norm2
+                        WITH n, dot_product / (norm1 * norm2) as similarity
+                        WHERE similarity > 0.6
+                        RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties, similarity
+                        ORDER BY similarity DESC
+                        LIMIT 5
+                        """
+                        
+                        semantic_results = session.run(semantic_match_query, keyword_embedding=keyword_embedding)
+                        semantic_matches = list(semantic_results)
+                        
+                        if semantic_matches:
+                            for record in semantic_matches:
+                                node_id = record["id"]
+                                if node_id not in nodes_dict:
+                                    node_name = record["properties"].get("name", "Unknown") if record["properties"] else "Unknown"
+                                    similarity = record["similarity"]
+                                    if DEBUG_MODE:
+                                        print(f"  - Matched '{node_name}' with similarity {similarity:.3f}")
+                                    nodes_dict[node_id] = {
+                                        "id": node_id,
+                                        "labels": record["labels"] or [],
+                                        "properties": _remove_embedding(dict(record["properties"]) if record["properties"] else {})
+                                    }
+                        else:
+                            print(f"No semantic matches found for keyword: '{keyword}'")
                     else:
-                        logger.debug(f"No matches found for keyword: '{keyword}'")
+                        logger.warning(f"Failed to generate embedding for keyword: '{keyword}'")
             
             # 转换为列表格式
             nodes_list = list(nodes_dict.values())
@@ -467,7 +601,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str]) -> Dict[str, Any]
         return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_results: int = 50) -> Dict[str, Any]:
+def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50) -> Dict[str, Any]:
     """
     通过_extract_keywords获得基础节点数据。
     而后通过反复调用_expand_memory_grabbed获取相关联的节点和关系。
@@ -510,7 +644,7 @@ def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_resu
 
         keywords.append("自我")
 
-        # 第一步：通过关键词提取基础节点
+        # 第一步：提取基础节点
         with kg_manager.driver.session() as session:
             nodes_data = _extract_nodes_by_keyword(kg_manager, keywords)
             
@@ -534,7 +668,7 @@ def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_resu
                     print(f"[记忆查询] 第 {expansion_rounds} 轮扩展，当前节点数: {len(nodes_data['nodes'])}")
                 
                 # 扩展连接的节点
-                nodes_data = _expand_memory_grabbed(session, nodes_data, topic)
+                nodes_data = _expand_memory_grabbed(session, nodes_data, summary)
                 
                 # 如果节点数量超过限制，截断到最大数量
                 if len(nodes_data.get("nodes", [])) > max_results:
@@ -562,13 +696,13 @@ def relevant_memories_by_keywords(keywords: List[str], topic: str = "", max_resu
 
 
 if __name__ == "__main__":
-    test_message = [{"role": "user", "content": f"[2026_1_12T20:30] <A> 荒星殖民有哪些种族？"}]
+    test_message = [{"role": "user", "content": f"[2026_1_12T20:30] <星空> 玲依你知道我的出生日期吗？"}]
 
     extract_result = extract_keyword_from_text(test_message)
-    test_topic = extract_result.get("topic", [])
+    test_summary = extract_result.get("summary", [])
     test_keywords = extract_result.get("keywords", [])
 
-    result = relevant_memories_by_keywords(test_keywords, test_topic)
+    result = get_relevant_memories(test_keywords, test_summary)
 
     # 保存result到json文件供调试查看
     try:
