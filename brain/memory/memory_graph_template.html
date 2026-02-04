@@ -702,8 +702,6 @@
             <div class="controls">
                 <button class="control-button refresh-controls" onclick="smartRefresh()">🔄 刷新</button>
                 <button class="control-button zoom-controls" onclick="resetZoom()">重置</button>
-                <button class="control-button filter-controls" onclick="toggleNodeLabels()">节点标签</button>
-                <button class="control-button filter-controls" onclick="toggleLinkLabels()">关系标签</button>
                 <button class="control-button edit-controls" id="edit-button">节点编辑</button>
             </div>
             
@@ -770,9 +768,9 @@
                         <span class="button-icon">🗑️</span>
                         <span class="button-text">删除</span>
                     </button>
-                    <button class="edit-function-button quintuple-btn" onclick="showQuintupleForm()">
+                    <button class="edit-function-button save-btn" onclick="showSaveForm()">
                         <span class="button-icon">🌐</span>
-                        <span class="button-text">五元组</span>
+                        <span class="button-text">迁移</span>
                     </button>
                 </div>
             </div>
@@ -786,9 +784,9 @@
     <script>
         // 存储类型颜色配置常量
         const STORAGE_TYPE_COLORS = {
-            local: '#856404',    // 黄色（仅本地）
-            neo4j: '#155724',    // 绿色（仅Neo4j）
-            both: '#0c5460'      // 蓝色（本地+Neo4j）
+            local: '#f39c12',    // 明亮黄色（仅本地）
+            neo4j: '#27ae60',    // 明亮绿色（仅Neo4j）
+            both: '#3498db'      // 明亮蓝色（本地+Neo4j）
         };
         
         // 获取存储类型对应的颜色
@@ -835,6 +833,13 @@
         // 删除模式状态变量
         let deleteMode = false;
         
+        // 保存模式状态变量
+        let saveMode = false;
+        
+        // 标签可见性状态变量
+        let nodeLabelsVisible = true;
+        let linkLabelsVisible = true;
+        
         // 设置画布
         const svg = d3.select("#graph-container");
         const width = svg.node().getBoundingClientRect().width;
@@ -871,8 +876,8 @@
                 .attr("viewBox", "0 -5 10 10")
                 .attr("refX", 25)
                 .attr("refY", 0)
-                .attr("markerWidth", 4)
-                .attr("markerHeight", 4)
+                .attr("markerWidth", 5)
+                .attr("markerHeight", 5)
                 .attr("orient", "auto")
                 .append("path")
                 .attr("d", "M0,-5L10,0L0,5")
@@ -960,7 +965,7 @@
                 }
                 return getStorageTypeColor(d.source_type);
             })
-            .attr("stroke-width", "2")
+            .attr("stroke-width", "3")
             .on("click", showLinkDetails);
         
         // 创建节点
@@ -1118,6 +1123,9 @@
             
             // 如果链接界面已打开，实时更新链接内容
             updateLinkFormIfVisible();
+            
+            // 如果保存界面已打开，实时更新保存内容
+            updateSaveFormIfVisible();
             
             let sourceText = '';
             if (d.source === 'local') {
@@ -1342,7 +1350,7 @@
             d3.select('body').on('keydown.multiRelationSelector', null);
             // 取消所有关系的高亮
             container.selectAll('.link')
-                .style('stroke-width', function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke-width', function(d) { return d.properties?.directivity === 'bidirectional' ? '4px' : '3px'; })
                 .style('stroke', null);
         }
         
@@ -1359,7 +1367,7 @@
         function highlightRelation(relation, highlight) {
             container.selectAll('.link')
                 .filter(d => d === relation)
-                .style('stroke-width', highlight ? '5px' : function(d) { return d.properties?.directivity === 'bidirectional' ? '3px' : '2px'; })
+                .style('stroke-width', highlight ? '5px' : function(d) { return d.properties?.directivity === 'bidirectional' ? '4px' : '3px'; })
                 .style('stroke', highlight ? '#ff6b6b' : null);
         }
         
@@ -1390,6 +1398,9 @@
             
             // 如果链接界面已打开，实时更新链接内容
             updateLinkFormIfVisible();
+            
+            // 如果保存界面已打开，实时更新保存内容
+            updateSaveFormIfVisible();
             
             // 获取起始和目标节点的名称
             const sourceNode = graphData.nodes.find(node => node.id === d.source.id);
@@ -1446,20 +1457,6 @@
         // 控制函数
         function resetZoom() {
             svg.transition().call(zoom.transform, d3.zoomIdentity);
-        }
-        
-        let nodeLabelsVisible = true;
-        let linkLabelsVisible = true;
-        
-        function toggleNodeLabels() {
-            nodeLabelsVisible = !nodeLabelsVisible;
-            nodeLabels.style("display", nodeLabelsVisible ? "block" : "none");
-        }
-        
-        function toggleLinkLabels() {
-            linkLabelsVisible = !linkLabelsVisible;
-            linkLabels.style("display", linkLabelsVisible ? "block" : "none");
-            linkLabelBgs.style("display", linkLabelsVisible ? "block" : "none");
         }
         
         // 动态更新图谱数据（无需页面刷新）
@@ -1590,6 +1587,15 @@
                     refreshData(); // 使用页面刷新
                 }
             });
+        }
+        
+        // 通知刷新并重新加载页面
+        function notifyRefreshAndReload() {
+            console.log('数据刷新成功，即将重新加载页面...');
+            // 延迟一小段时间后重新加载页面，让用户看到成功消息
+            setTimeout(() => {
+                location.reload();
+            }, 500);
         }
         
         // 刷新数据功能（页面重新加载方式）
@@ -1834,6 +1840,15 @@
             }
         }
         
+        // 检查保存界面是否可见，如果可见则更新内容
+        function updateSaveFormIfVisible() {
+            const saveBtn = document.querySelector('.save-btn');
+            if (saveBtn && saveBtn.classList.contains('active')) {
+                // 保存界面已打开，更新内容但不重置按钮状态
+                updateSaveFormContent();
+            }
+        }
+        
         // 更新最近选中的项目列表（节点和关系）
         function updateRecentSelectedNodes(itemData) {
             // 检查参数
@@ -1856,13 +1871,13 @@
                 recentSelectedNodes = recentSelectedNodes.slice(0, 10);
             }
             
-            // 如果在删除模式下，更新样式
-            if (deleteMode) {
+            // 如果在删除模式或保存模式下，更新样式
+            if (deleteMode || saveMode) {
                 updateSelectedItemsStyle();
             }
         }
         
-        // 更新选中项目的样式（删除模式下显示红色描边）
+        // 更新选中项目的样式（删除模式下显示红色描边，保存模式下显示橙色描边）
         function updateSelectedItemsStyle() {
             // 重置所有节点的样式
             container.selectAll(".node")
@@ -1872,7 +1887,7 @@
             // 重置所有关系的样式
             container.selectAll(".link")
                 .attr("stroke", d => getStorageTypeColor(d.source_type))
-                .attr("stroke-width", "2");
+                .attr("stroke-width", "3");
             
             // 如果在删除模式下，为选中的项目添加红色描边
             if (deleteMode) {
@@ -1888,6 +1903,25 @@
                         container.selectAll(".link")
                             .filter(d => d.neo4j_id === item.data.neo4j_id)
                             .attr("stroke", "#ff0000")
+                            .attr("stroke-width", "4");
+                    }
+                });
+            }
+            
+            // 如果在保存模式下，为选中的项目添加橙色描边
+            if (saveMode) {
+                recentSelectedNodes.forEach(item => {
+                    if (item.type === 'node') {
+                        // 为选中的节点添加橙色描边
+                        container.selectAll(".node")
+                            .filter(d => d.id === item.data.id)
+                            .attr("stroke", "#ff8800")
+                            .attr("stroke-width", "4");
+                    } else if (item.type === 'relationship') {
+                        // 为选中的关系添加橙色描边
+                        container.selectAll(".link")
+                            .filter(d => d.neo4j_id === item.data.neo4j_id)
+                            .attr("stroke", "#ff8800")
                             .attr("stroke-width", "4");
                     }
                 });
@@ -1971,9 +2005,9 @@
                             </div>
                         </div>
                         <div class="form-actions">
-                            <button class="action-btn danger-btn" onclick="confirmDelete()">确认删除</button>
-                            <button class="action-btn" onclick="clearRecentNodes()" style="background-color: #6c757d; color: white;">清空已选</button>
-                            <button class="action-btn cancel-btn" onclick="hideEditForms()">取消</button>
+                            <button class="action-btn danger-btn" onclick="confirmDelete()">从云图删除</button>
+                            <button class="action-btn danger-btn" onclick="confirmDeleteFromLocal()" style="background-color: #e67e22;">从本地删除</button>
+                            <button class="action-btn cancel-btn" onclick="clearRecentNodes(); hideEditForms()">取消</button>
                         </div>
                     </div>
                 `;
@@ -2414,49 +2448,319 @@
             updateSelectedItemsStyle();
         }
         
-        function showQuintupleForm() {
+        function showSaveForm() {
             hideEditForms();
             
-            // 创建五元组输入表单
-            const editForms = document.querySelector('.edit-forms');
-            editForms.innerHTML = `
-                <div class="edit-form">
-                    <h4>创建五元组</h4>
-                    <div class="form-group">
-                        <label>主体（Subject）：</label>
-                        <input type="text" id="quintuple-subject" placeholder="请输入主体" required>
-                    </div>
-                    <div class="form-group">
-                        <label>动作（Action）：</label>
-                        <input type="text" id="quintuple-action" placeholder="请输入动作" required>
-                    </div>
-                    <div class="form-group">
-                        <label>客体（Object）：</label>
-                        <input type="text" id="quintuple-object" placeholder="请输入客体" required>
-                    </div>
-                    <div class="form-group">
-                        <label>时间（Time）：</label>
-                        <input type="text" id="quintuple-time" placeholder="请输入时间（可选）">
-                    </div>
-                    <div class="form-group">
-                        <label>地点（Location）：</label>
-                        <input type="text" id="quintuple-location" placeholder="请输入地点（可选）">
-                    </div>
-                    <div class="form-actions">
-                        <button class="action-btn primary-btn" onclick="confirmQuintuple()">确认创建</button>
-                        <button class="action-btn cancel-btn" onclick="hideEditForms()">取消</button>
-                    </div>
-                </div>
-            `;
+            // 启用保存模式
+            saveMode = true;
+            
+            // 更新保存表单内容
+            updateSaveFormContent();
             
             // 设置按钮状态
             resetButtonStates();
-            document.querySelector('.quintuple-btn').classList.add('active');
+            document.querySelector('.save-btn').classList.add('active');
+            
+            // 更新所有选中项目的样式
+            updateSelectedItemsStyle();
         }
         
-        function confirmQuintuple() {
-            // TODO: 五元组创建逻辑，暂未实装
-            alert('五元组功能正在开发中，敬请期待！');
+        // 更新保存表单内容
+        function updateSaveFormContent() {
+            const editForms = document.querySelector('.edit-forms');
+            
+            if (recentSelectedNodes.length === 0) {
+                // 未选中任何项目
+                editForms.innerHTML = `
+                    <div class="edit-form">
+                        <h4>保存记忆</h4>
+                        <div class="warning-text">
+                            请先点击选中一个或多个节点或关系后再进行保存操作。
+                        </div>
+                    </div>
+                `;
+            } else {
+                // 计算将要保存的所有项目
+                let totalNodeCount = 0;
+                let totalRelationshipCount = 0;
+                let itemsList = [];
+                
+                recentSelectedNodes.forEach((item, index) => {
+                    if (item.type === 'node') {
+                        totalNodeCount += 1;
+                        // 计算每个节点的相关关系数量
+                        const relatedCount = graphData.links.filter(link => 
+                            link.source.id === item.data.id || link.target.id === item.data.id
+                        ).length;
+                        itemsList.push(`<strong>节点${index + 1}:</strong> ${item.data.label} (节点, 包含${relatedCount}个关系)`);
+                    } else if (item.type === 'relationship') {
+                        totalRelationshipCount += 1;
+                        const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
+                        const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
+                        itemsList.push(`<strong>关系${index + 1}:</strong> ${item.data.type} (从 "${sourceNode ? sourceNode.label : 'Unknown'}" 到 "${targetNode ? targetNode.label : 'Unknown'}")`);
+                    }
+                });
+                
+                // 收集所有选中项目涉及的节点ID
+                let allNodeIds = new Set();
+                recentSelectedNodes.forEach(item => {
+                    if (item.type === 'node') {
+                        allNodeIds.add(item.data.id);
+                    } else if (item.type === 'relationship') {
+                        allNodeIds.add(item.data.source.id);
+                        allNodeIds.add(item.data.target.id);
+                    }
+                });
+                
+                // 计算实际会保存的关系数量（只保存两端节点都在选中范围内的关系）
+                let validRelationshipCount = 0;
+                graphData.links.forEach(link => {
+                    if (allNodeIds.has(link.source.id) && allNodeIds.has(link.target.id)) {
+                        validRelationshipCount++;
+                    }
+                });
+                
+                editForms.innerHTML = `
+                    <div class="edit-form">
+                        <h4>保存记忆 (共${recentSelectedNodes.length}个项目)</h4>
+                        <div class="form-group">
+                            <label>选中的项目列表：</label>
+                            <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px; max-height: 200px; overflow-y: auto;">
+                                ${itemsList.join('<br>')}
+                            </div>
+                        </div>
+                        <div class="info-text" style="background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 4px; margin: 10px 0;">
+                            将保存到 local_memory.json：${allNodeIds.size} 个节点和 ${validRelationshipCount} 个关系
+                        </div>
+                        <div class="form-group">
+                            <label>保存说明：</label>
+                            <ul style="font-size: 12px; color: #666; margin: 5px 0; padding-left: 20px;">
+                                <li>节点：只保存选中的节点，自动保存节点链接的关系</li>
+                                <li>关系：只有当关系两端的节点都被选中，关系才会被保存，以避免关系指向空值</li>
+                                <li>数据将保存到 brain/memory/memory_graph/local_memory.json</li>
+                            </ul>
+                        </div>
+                        <div class="form-actions">
+                            <button class="action-btn primary-btn" onclick="confirmSave()">保存至本地</button>
+                            <button class="action-btn primary-btn" onclick="confirmUpload()" style="background: #28a745;">保存至云图</button>
+                            <button class="action-btn cancel-btn" onclick="clearRecentNodes(); hideEditForms()">取消</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+        
+        // 确认保存函数
+        async function confirmSave() {
+            if (recentSelectedNodes.length === 0) {
+                alert('请先选择要保存的节点或关系');
+                return;
+            }
+
+            try {
+                // 显示加载状态
+                const confirmBtn = document.querySelector('.edit-forms .primary-btn');
+                if (!confirmBtn) {
+                    alert('错误：保存表单未正确加载，请重新打开保存功能');
+                    return;
+                }
+                const originalText = confirmBtn.textContent;
+                confirmBtn.textContent = '保存中...';
+                confirmBtn.disabled = true;
+                
+                // 按类型分组待保存项目
+                const nodesToSave = recentSelectedNodes.filter(item => item.type === 'node');
+                const relationshipsToSave = recentSelectedNodes.filter(item => item.type === 'relationship');
+                
+                // 收集所有选中项目的节点ID到节点列表
+                let nodeIds = [];
+                
+                // 收集选中的节点
+                for (const nodeItem of nodesToSave) {
+                    nodeIds.push(nodeItem.data.neo4j_id);
+                }
+                
+                // 收集选中的关系及其涉及的节点
+                for (const relationshipItem of relationshipsToSave) {
+                    // 关系涉及的节点也需要添加
+                    const sourceNodeId = relationshipItem.data.source.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.source.id)?.neo4j_id;
+                    const targetNodeId = relationshipItem.data.target.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.target.id)?.neo4j_id;
+                    
+                    if (sourceNodeId && !nodeIds.includes(sourceNodeId)) {
+                        nodeIds.push(sourceNodeId);
+                    }
+                    if (targetNodeId && !nodeIds.includes(targetNodeId)) {
+                        nodeIds.push(targetNodeId);
+                    }
+                }
+                
+                // 收集所有节点所链接的关系的ID到关系列表
+                let relationIds = [];
+                
+                // 收集选中节点之间的所有关系
+                const nodeIdSet = new Set(nodeIds);
+                graphData.links.forEach(link => {
+                    const sourceNodeId = link.source.neo4j_id || graphData.nodes.find(n => n.id === link.source.id)?.neo4j_id;
+                    const targetNodeId = link.target.neo4j_id || graphData.nodes.find(n => n.id === link.target.id)?.neo4j_id;
+                    
+                    // 如果关系的两端节点都在选中范围内，则添加该关系
+                    if (sourceNodeId && targetNodeId && nodeIdSet.has(sourceNodeId) && nodeIdSet.has(targetNodeId)) {
+                        if (!relationIds.includes(link.neo4j_id)) {
+                            relationIds.push(link.neo4j_id);
+                        }
+                    }
+                });
+                
+                console.log('保存请求:', { nodes_ids: nodeIds, relation_ids: relationIds });
+                
+                // 调用knowledge_graph_manager.py的save_memory函数进行保存
+                const response = await fetch('/api/save_memory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        nodes_ids: nodeIds,
+                        relation_ids: relationIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`✅ 记忆保存成功！\n节点: ${nodeIds.length} 个\n关系: ${relationIds.length} 个\n文件: ${result.file || 'local_memory.json'}`);
+                    
+                    // 清空选择
+                    recentSelectedNodes = [];
+                    
+                    // 隐藏编辑表单
+                    hideEditForms();
+                    
+                    // 自动刷新图谱数据以显示保存后的状态
+                    console.log('保存成功，正在刷新图谱数据...');
+                    smartRefresh();
+                } else {
+                    alert(`❌ 保存失败: ${result.error || '未知错误'}`);
+                }
+                
+            } catch (error) {
+                console.error('保存操作失败:', error);
+                alert(`❌ 保存操作失败：${error.message}`);
+            } finally {
+                // 恢复按钮状态
+                const confirmBtn = document.querySelector('.edit-forms .primary-btn');
+                if (confirmBtn) {
+                    confirmBtn.textContent = '确认保存';
+                    confirmBtn.disabled = false;
+                }
+            }
+        }
+        
+        // 确认上传到云图函数
+        async function confirmUpload() {
+            if (recentSelectedNodes.length === 0) {
+                alert('请先选择要上传的节点或关系');
+                return;
+            }
+
+            try {
+                // 显示加载状态
+                const uploadBtn = document.querySelectorAll('.edit-forms .primary-btn')[1];
+                if (!uploadBtn) {
+                    alert('错误：上传按钮未正确加载，请重新打开保存功能');
+                    return;
+                }
+                const originalText = uploadBtn.textContent;
+                uploadBtn.textContent = '上传中...';
+                uploadBtn.disabled = true;
+                
+                // 按类型分组待上传项目
+                const nodesToUpload = recentSelectedNodes.filter(item => item.type === 'node');
+                const relationshipsToUpload = recentSelectedNodes.filter(item => item.type === 'relationship');
+                
+                // 收集所有选中项目的节点ID到节点列表
+                let nodeIds = [];
+                
+                // 收集选中的节点
+                for (const nodeItem of nodesToUpload) {
+                    nodeIds.push(nodeItem.data.neo4j_id);
+                }
+                
+                // 收集选中的关系及其涉及的节点
+                for (const relationshipItem of relationshipsToUpload) {
+                    // 关系涉及的节点也需要添加
+                    const sourceNodeId = relationshipItem.data.source.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.source.id)?.neo4j_id;
+                    const targetNodeId = relationshipItem.data.target.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.target.id)?.neo4j_id;
+                    
+                    if (sourceNodeId && !nodeIds.includes(sourceNodeId)) {
+                        nodeIds.push(sourceNodeId);
+                    }
+                    if (targetNodeId && !nodeIds.includes(targetNodeId)) {
+                        nodeIds.push(targetNodeId);
+                    }
+                }
+                
+                // 收集所有节点所链接的关系的ID到关系列表
+                let relationIds = [];
+                
+                // 收集选中节点之间的所有关系
+                const nodeIdSet = new Set(nodeIds);
+                graphData.links.forEach(link => {
+                    const sourceNodeId = link.source.neo4j_id || graphData.nodes.find(n => n.id === link.source.id)?.neo4j_id;
+                    const targetNodeId = link.target.neo4j_id || graphData.nodes.find(n => n.id === link.target.id)?.neo4j_id;
+                    
+                    // 如果关系的两端节点都在选中范围内，则添加该关系
+                    if (sourceNodeId && targetNodeId && nodeIdSet.has(sourceNodeId) && nodeIdSet.has(targetNodeId)) {
+                        const linkNeo4jId = link.neo4j_id;
+                        if (linkNeo4jId && !relationIds.includes(linkNeo4jId)) {
+                            relationIds.push(linkNeo4jId);
+                        }
+                    }
+                });
+                
+                console.log('上传请求:', { nodes_ids: nodeIds, relation_ids: relationIds });
+                
+                // 调用knowledge_graph_manager.py的upload_memory函数进行上传
+                const response = await fetch('/api/upload_memory', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        nodes_ids: nodeIds,
+                        relation_ids: relationIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert(`✅ 记忆上传成功！\n节点: ${nodeIds.length} 个\n关系: ${relationIds.length} 个\n已上传到Neo4j数据库`);
+                    
+                    // 清空选择
+                    recentSelectedNodes = [];
+                    
+                    // 隐藏编辑表单
+                    hideEditForms();
+                    
+                    // 自动刷新图谱数据以显示上传后的状态
+                    console.log('上传成功，正在刷新图谱数据...');
+                    smartRefresh();
+                } else {
+                    alert(`❌ 上传失败: ${result.error || '未知错误'}`);
+                }
+                
+            } catch (error) {
+                console.error('上传操作失败:', error);
+                alert(`❌ 上传操作失败：${error.message}`);
+            } finally {
+                // 恢复按钮状态
+                const uploadBtn = document.querySelectorAll('.edit-forms .primary-btn')[1];
+                if (uploadBtn) {
+                    uploadBtn.textContent = '保存至云图';
+                    uploadBtn.disabled = false;
+                }
+            }
         }
         
         function hideEditForms() {
@@ -2468,6 +2772,9 @@
             // 禁用删除模式
             deleteMode = false;
             
+            // 禁用保存模式
+            saveMode = false;
+            
             // 恢复所有选中项目的正常样式
             updateSelectedItemsStyle();
             
@@ -2478,6 +2785,118 @@
         }
         
         // 确认删除函数
+        // 从本地删除函数
+        async function confirmDeleteFromLocal() {
+            if (recentSelectedNodes.length === 0) {
+                alert('请先选择要删除的节点或关系');
+                return;
+            }
+            
+            // 计算将要删除的所有内容
+            let totalNodeCount = 0;
+            let totalRelationshipCount = 0;
+            let itemDescriptions = [];
+            
+            recentSelectedNodes.forEach((item, index) => {
+                if (item.type === 'node') {
+                    totalNodeCount += 1;
+                    const relatedCount = graphData.links.filter(link => 
+                        link.source.id === item.data.id || link.target.id === item.data.id
+                    ).length;
+                    totalRelationshipCount += relatedCount;
+                    itemDescriptions.push(`节点"${item.data.label}"（包含${relatedCount}个关系）`);
+                } else if (item.type === 'relationship') {
+                    totalRelationshipCount += 1;
+                    const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
+                    const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
+                    itemDescriptions.push(`关系"${item.data.type}" (从"${sourceNode ? sourceNode.label : 'Unknown'}"到"${targetNode ? targetNode.label : 'Unknown'}")`);
+                }
+            });
+            
+            // 构建确认删除消息
+            let confirmMessage = `确认从本地记忆文件中删除以下${recentSelectedNodes.length}个项目？\n\n`;
+            confirmMessage += `删除列表：\n`;
+            itemDescriptions.forEach((desc, index) => {
+                confirmMessage += `${index + 1}. ${desc}\n`;
+            });
+            confirmMessage += `\n此操作将总共删除：\n`;
+            if (totalNodeCount > 0) {
+                confirmMessage += `• ${totalNodeCount} 个节点\n`;
+            }
+            if (totalRelationshipCount > 0) {
+                confirmMessage += `• ${totalRelationshipCount} 个关系\n`;
+            }
+            confirmMessage += `\n注意：此操作仅删除本地记忆文件(local_memory.json)中的数据，不影响Neo4j数据库。\n\n确定要继续吗？`;
+            
+            // 进行删除确认
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            try {
+                // 显示加载状态
+                const confirmBtns = document.querySelectorAll('.danger-btn');
+                const localDeleteBtn = confirmBtns[1]; // 第二个按钮是"从本地删除"
+                const originalText = localDeleteBtn.textContent;
+                localDeleteBtn.textContent = '删除中...';
+                localDeleteBtn.disabled = true;
+                
+                // 收集所有要删除的元素ID
+                const elementIds = recentSelectedNodes.map(item => item.data.neo4j_id);
+                
+                // 调用本地删除API
+                const response = await fetch('/api/delete_from_local', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        element_ids: elementIds
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 清空最近选择的项目
+                    recentSelectedNodes = [];
+                    // 隐藏编辑表单
+                    hideEditForms();
+                    // 隐藏详情面板
+                    document.getElementById("node-details").style.display = "none";
+                    
+                    // 使用动态更新代替页面刷新
+                    const updateSuccess = await updateGraphData();
+                    
+                    let resultMessage = `从本地删除完成！\n\n`;
+                    resultMessage += `成功删除：${result.deleted_nodes || 0} 个节点，${result.deleted_relationships || 0} 个关系\n`;
+                    
+                    if (updateSuccess) {
+                        resultMessage += `\n图谱已自动更新显示最新数据。`;
+                    } else {
+                        resultMessage += `\n图谱数据更新失败，请手动刷新页面。`;
+                    }
+                    
+                    alert(resultMessage);
+                } else {
+                    alert(`从本地删除失败：${result.error || '未知错误'}`);
+                }
+                
+            } catch (error) {
+                console.error('从本地删除操作失败:', error);
+                alert(`从本地删除操作失败：${error.message}`);
+            } finally {
+                // 恢复按钮状态
+                const confirmBtns = document.querySelectorAll('.danger-btn');
+                const localDeleteBtn = confirmBtns[1];
+                if (localDeleteBtn) {
+                    localDeleteBtn.textContent = '从本地删除';
+                    localDeleteBtn.disabled = false;
+                }
+            }
+        }
+        
+        // 从云图删除函数
         async function confirmDelete() {
             if (recentSelectedNodes.length === 0) {
                 alert('请先选择要删除的节点或关系');
@@ -2532,77 +2951,23 @@
                 confirmBtn.textContent = '删除中...';
                 confirmBtn.disabled = true;
                 
-                // 按类型分组删除项目
-                const nodesToDelete = recentSelectedNodes.filter(item => item.type === 'node');
-                const relationshipsToDelete = recentSelectedNodes.filter(item => item.type === 'relationship');
+                // 收集所有要删除的元素ID
+                const elementIds = recentSelectedNodes.map(item => item.data.neo4j_id);
                 
-                let deleteResults = [];
+                // 批量删除
+                const response = await fetch('/api/delete_item', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        element_ids: elementIds
+                    })
+                });
                 
-                // 删除节点
-                for (const nodeItem of nodesToDelete) {
-                    try {
-                        const response = await fetch('/api/delete_item', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                element_id: nodeItem.data.neo4j_id
-                            })
-                        });
-                        
-                        const result = await response.json();
-                        deleteResults.push({
-                            type: 'node',
-                            name: nodeItem.data.label,
-                            success: result.success,
-                            error: result.error
-                        });
-                    } catch (error) {
-                        deleteResults.push({
-                            type: 'node',
-                            name: nodeItem.data.label,
-                            success: false,
-                            error: error.message
-                        });
-                    }
-                }
+                const result = await response.json();
                 
-                // 删除关系
-                for (const relationshipItem of relationshipsToDelete) {
-                    try {
-                        const response = await fetch('/api/delete_item', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({
-                                element_id: relationshipItem.data.neo4j_id
-                            })
-                        });
-                        
-                        const result = await response.json();
-                        deleteResults.push({
-                            type: 'relationship',
-                            name: relationshipItem.data.type,
-                            success: result.success,
-                            error: result.error
-                        });
-                    } catch (error) {
-                        deleteResults.push({
-                            type: 'relationship',
-                            name: relationshipItem.data.type,
-                            success: false,
-                            error: error.message
-                        });
-                    }
-                }
-                
-                // 统计结果
-                const successCount = deleteResults.filter(r => r.success).length;
-                const failCount = deleteResults.filter(r => !r.success).length;
-                
-                if (successCount > 0) {
+                if (result.success) {
                     // 清空最近选择的项目
                     recentSelectedNodes = [];
                     // 隐藏编辑表单
@@ -2613,12 +2978,14 @@
                     // 使用动态更新代替页面刷新
                     const updateSuccess = await updateGraphData();
                     
-                    let resultMessage = `批量删除完成！\n\n`;
-                    resultMessage += `成功删除：${successCount} 个项目\n`;
-                    if (failCount > 0) {
-                        resultMessage += `删除失败：${failCount} 个项目\n\n失败项目：\n`;
-                        deleteResults.filter(r => !r.success).forEach(r => {
-                            resultMessage += `- ${r.type === 'node' ? '节点' : '关系'} "${r.name}": ${r.error}\n`;
+                    let resultMessage = `从云图删除完成！\n\n`;
+                    resultMessage += `成功删除：${result.deleted_nodes || 0} 个节点，${result.deleted_relationships || 0} 个关系\n`;
+                    
+                    // 如果有失败的项目，显示详情
+                    if (result.failed_items && result.failed_items.length > 0) {
+                        resultMessage += `\n删除失败：${result.failed_items.length} 个项目\n\n失败项目：\n`;
+                        result.failed_items.forEach(item => {
+                            resultMessage += `- ID "${item.element_id}": ${item.error}\n`;
                         });
                     }
                     
@@ -2630,11 +2997,7 @@
                     
                     alert(resultMessage);
                 } else {
-                    let errorMessage = `所有项目删除失败：\n\n`;
-                    deleteResults.forEach(r => {
-                        errorMessage += `- ${r.type === 'node' ? '节点' : '关系'} "${r.name}": ${r.error || '未知错误'}\n`;
-                    });
-                    alert(errorMessage);
+                    alert(`从云图删除失败：${result.error || '未知错误'}`);
                 }
                 
             } catch (error) {
@@ -3220,6 +3583,8 @@
             updateDeleteFormIfVisible();
             // 如果修改界面已打开，实时更新修改内容
             updateModifyFormIfVisible();
+            // 如果保存界面已打开，实时更新保存内容
+            updateSaveFormIfVisible();
         }
         
         function resetButtonStates() {
@@ -3716,7 +4081,7 @@
                 .attr("class", "link")
                 .attr("marker-end", d => getStorageTypeArrow(d.source_type))
                 .attr("stroke", d => getStorageTypeColor(d.source_type))
-                .attr("stroke-width", "2")
+                .attr("stroke-width", "3")
                 .on("click", showLinkDetails)
                 .merge(link);
             

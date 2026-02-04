@@ -85,18 +85,29 @@ class MemoryGraphViewer:
             return False
     
     def merge_graph_data(self) -> Dict[str, Any]:
-        """合并本地和Neo4j数据"""
+        """合并本地和Neo4j数据，优先使用Neo4j数据，避免重复节点"""
         merged_nodes = []
         merged_relationships = []
+        node_id_map = {}  # 用于检测重复节点：key=node_id, value=index
         relationship_map = {}  # 用于检测重复关系
-        
-        # 添加本地节点
-        if self.local_data and "nodes" in self.local_data:
-            merged_nodes.extend(self.local_data["nodes"])
         
         # 添加Neo4j节点
         if self.neo4j_data and "nodes" in self.neo4j_data:
-            merged_nodes.extend(self.neo4j_data["nodes"])
+            for node in self.neo4j_data["nodes"]:
+                node_id = str(node["id"])
+                if node_id not in node_id_map:
+                    merged_nodes.append(node)
+                    node_id_map[node_id] = len(merged_nodes) - 1
+        
+        # 添加本地节点（检查是否与Neo4j重复）
+        if self.local_data and "nodes" in self.local_data:
+            for node in self.local_data["nodes"]:
+                node_id = str(node["id"])
+                if node_id not in node_id_map:
+                    # 节点不重复，添加到合并列表
+                    merged_nodes.append(node)
+                    node_id_map[node_id] = len(merged_nodes) - 1
+                # 如果节点ID已存在（与Neo4j重复），则跳过该本地节点
         
         # 添加本地关系（标记为本地来源）
         if self.local_data and "relationships" in self.local_data:
@@ -870,21 +881,22 @@ def start_api_server():
         
         @app.route('/api/delete_item', methods=['POST'])
         def handle_delete_item():
-            """删除节点或关系"""
+            """从Neo4j删除节点或关系（批量删除）"""
             try:
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
                 
                 data = request.get_json()
-                element_id = data.get('element_id', '')
+                element_ids = data.get('element_ids', [])
                 
-                if not element_id.strip():
+                if not element_ids or not isinstance(element_ids, list):
                     return jsonify({
                         "success": False,
-                        "error": "元素ID不能为空"
+                        "error": "元素ID列表不能为空"
                     }), 400
                 
-                result = kg_manager.delete_node_or_relation(element_id.strip())
+                # 批量删除
+                result = kg_manager.delete_node_or_relation(element_ids)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -893,6 +905,37 @@ def start_api_server():
                     
             except Exception as e:
                 logger.error(f"Delete API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/delete_from_local', methods=['POST'])
+        def handle_delete_from_local():
+            """从本地记忆文件中删除节点或关系"""
+            try:
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                
+                data = request.get_json()
+                element_ids = data.get('element_ids', [])
+                
+                if not element_ids or not isinstance(element_ids, list):
+                    return jsonify({
+                        "success": False,
+                        "error": "元素ID列表不能为空"
+                    }), 400
+                
+                # 调用delete_from_local_memory函数
+                result = kg_manager.delete_from_local_memory(element_ids)
+                
+                if result["success"]:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 500
+                    
+            except Exception as e:
+                logger.error(f"Delete from local API error: {e}")
                 return jsonify({
                     "success": False,
                     "error": str(e)
@@ -1083,6 +1126,94 @@ def start_api_server():
                     "error": str(e)
                 }), 500
         
+        @app.route('/api/save_memory', methods=['POST'])
+        def handle_save_memory():
+            """保存选中的记忆到本地文件"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                nodes_ids = data.get('nodes_ids', [])
+                relation_ids = data.get('relation_ids', [])
+                
+                if not nodes_ids and not relation_ids:
+                    return jsonify({
+                        "success": False,
+                        "error": "至少需要提供一个节点或关系ID"
+                    }), 400
+                
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                
+                # 调用 downloaod_memory 函数
+                success = kg_manager.downloaod_memory({
+                    "nodes_ids": nodes_ids,
+                    "relation_ids": relation_ids
+                })
+                
+                if success:
+                    return jsonify({
+                        "success": True,
+                        "message": f"成功保存 {len(nodes_ids)} 个节点和 {len(relation_ids)} 个关系",
+                        "file": "local_memory.json"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "保存记忆失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Save memory API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/upload_memory', methods=['POST'])
+        def handle_upload_memory():
+            """从本地记忆文件上传到Neo4j数据库"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                nodes_ids = data.get('nodes_ids', [])
+                relation_ids = data.get('relation_ids', [])
+                
+                if not nodes_ids and not relation_ids:
+                    return jsonify({
+                        "success": False,
+                        "error": "至少需要提供一个节点或关系ID"
+                    }), 400
+                
+                # 获取知识图谱管理器实例
+                kg_manager = get_knowledge_graph_manager()
+                
+                # 调用 upload_memory 函数
+                success = kg_manager.upload_memory({
+                    "nodes_ids": nodes_ids,
+                    "relation_ids": relation_ids
+                })
+                
+                if success:
+                    return jsonify({
+                        "success": True,
+                        "message": f"成功上传 {len(nodes_ids)} 个节点和 {len(relation_ids)} 个关系到Neo4j",
+                        "uploaded_nodes": len(nodes_ids),
+                        "uploaded_relations": len(relation_ids)
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "上传记忆失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Upload memory API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
 
         
         # 在后台线程中启动服务器

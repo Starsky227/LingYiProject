@@ -5,6 +5,8 @@
 - 负责将记忆数据写入 Neo4j 数据库
 - 提供统一的图谱操作接口
 - 支持批量写入和单条写入
+- create：创建各类节点/关系，modify：修改节点/关系，delete：删除节点/关系
+- set：通过五元组进行的创建，暂未启用
 """
 
 import os
@@ -1530,7 +1532,7 @@ class KnowledgeGraphManager:
         confidence: float = 0.5,
     ) -> Optional[str]:
         """
-        为节点设置时间属性：
+        为节点设置时间属性：（未使用
         Entity--HAPPENED_AT->Time
 
         Args:
@@ -1623,7 +1625,7 @@ class KnowledgeGraphManager:
         context: str = "reality",
     ) -> Optional[str]:
         """
-        为节点设置地点属性，如：
+        为节点设置地点属性，如：（暂未使用
         (Entity)-[HAPPENED_IN]->(Location)
 
         Args:
@@ -1979,7 +1981,7 @@ class KnowledgeGraphManager:
         source: str = "user_input",
     ) -> Optional[str]:
         """
-        创建五元组关系
+        创建五元组关系（已弃用
         输入(list of)：
             subject:主体（必填）,
             predicate:谓词/动作（必填），,
@@ -2190,83 +2192,6 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to write quintuple: {e}")
             return None
 
-    def write_memories_batch(self, triples: List, quintuples: List) -> Dict[str, Any]:
-        """批量写入三元组和五元组"""
-        if not self._ensure_connection():
-            logger.error("Cannot write memories: No Neo4j connection")
-            return {
-                "success": False,
-                "error": "No Neo4j connection",
-                "triples_written": 0,
-                "quintuples_written": 0,
-            }
-
-        triples_written = 0
-        quintuples_written = 0
-        errors = []
-
-        try:
-            with self.driver.session() as session:
-                # 开启事务以确保数据一致性
-                with session.begin_transaction() as tx:
-                    # 写入三元组
-                    for triple in triples:
-                        try:
-                            if self._create_triple_node_and_relationship(
-                                session, triple
-                            ):
-                                triples_written += 1
-                            else:
-                                errors.append(f"Failed to write triple: {triple}")
-                        except Exception as e:
-                            errors.append(f"Error writing triple {triple}: {e}")
-
-                    # 写入五元组
-                    for quintuple in quintuples:
-                        try:
-                            if self._create_quintuple_nodes_and_relationships(
-                                session, quintuple
-                            ):
-                                quintuples_written += 1
-                            else:
-                                errors.append(f"Failed to write quintuple: {quintuple}")
-                        except Exception as e:
-                            errors.append(f"Error writing quintuple {quintuple}: {e}")
-
-                    # 在所有五元组写入后，检测和创建交叉引用
-                    try:
-                        self._create_quintuple_cross_references(session, quintuples)
-                    except Exception as e:
-                        errors.append(f"Error creating cross-references: {e}")
-
-                    # 提交事务
-                    tx.commit()
-
-        except Exception as e:
-            logger.error(f"Transaction failed: {e}")
-            errors.append(f"Transaction error: {e}")
-
-        success = len(errors) == 0
-
-        result = {
-            "success": success,
-            "triples_written": triples_written,
-            "quintuples_written": quintuples_written,
-            "total_written": triples_written + quintuples_written,
-            "errors": errors,
-        }
-
-        if success:
-            logger.info(
-                f"Successfully wrote {triples_written} triples and {quintuples_written} quintuples to Neo4j"
-            )
-        else:
-            logger.warning(
-                f"Wrote {triples_written} triples and {quintuples_written} quintuples with {len(errors)} errors"
-            )
-
-        return result
-
     def get_statistics(self) -> Dict[str, Any]:
         """获取知识图谱统计信息"""
         if not self._ensure_connection():
@@ -2311,158 +2236,771 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to get statistics: {e}")
             return {"error": str(e)}
 
-    def delete_node_or_relation(self, element_id: str) -> Dict[str, Any]:
+    def delete_node_or_relation(self, element_ids: List[str]) -> Dict[str, Any]:
         """
-        根据Neo4j元素ID删除节点或关系
+        根据Neo4j元素ID批量删除节点或关系
 
         Args:
-            element_id: Neo4j元素ID（节点ID或关系ID）
+            element_ids: Neo4j元素ID列表（节点ID或关系ID）
 
         Returns:
-            Dict[str, Any]: 包含操作结果的字典
+            {
+              "success": bool,
+              "error": Optional[str],
+              "deleted_nodes": int,
+              "deleted_relationships": int,
+            }
         """
         if not self._ensure_connection():
             logger.error("Cannot delete element: No Neo4j connection")
             return {
                 "success": False,
                 "error": "No Neo4j connection",
-                "element_id": element_id,
-                "element_type": None,
+                "deleted_nodes": 0,
+                "deleted_relationships": 0,
             }
 
-        if not element_id or not element_id.strip():
+        if not element_ids:
             return {
                 "success": False,
-                "error": "Element ID cannot be empty",
-                "element_id": element_id,
-                "element_type": None,
+                "error": "Element ID list cannot be empty",
+                "deleted_nodes": 0,
+                "deleted_relationships": 0,
             }
+
+        # 累计统计
+        total_deleted_nodes = 0
+        total_deleted_relationships = 0
+        failed_items = []
 
         try:
             with self.driver.session() as session:
-                # 首先检查元素是否存在以及类型
-                check_query = """
-                OPTIONAL MATCH (n) WHERE elementId(n) = $element_id
-                OPTIONAL MATCH ()-[r]-() WHERE elementId(r) = $element_id
-                RETURN 
-                    CASE WHEN n IS NOT NULL THEN 'node' ELSE null END as node_type,
-                    CASE WHEN r IS NOT NULL THEN 'relationship' ELSE null END as rel_type,
-                    CASE WHEN n IS NOT NULL THEN labels(n) ELSE null END as node_labels,
-                    CASE WHEN n IS NOT NULL THEN n.name ELSE null END as node_name,
-                    CASE WHEN r IS NOT NULL THEN type(r) ELSE null END as rel_type_name
-                """
+                for element_id in element_ids:
+                    if not element_id or not element_id.strip():
+                        failed_items.append("Empty element ID")
+                        continue
+                    
+                    try:
+                        # 首先检查元素是否存在以及类型
+                        check_query = """
+                        OPTIONAL MATCH (n) WHERE elementId(n) = $element_id
+                        OPTIONAL MATCH ()-[r]-() WHERE elementId(r) = $element_id
+                        RETURN 
+                            CASE WHEN n IS NOT NULL THEN 'node' ELSE null END as node_type,
+                            CASE WHEN r IS NOT NULL THEN 'relationship' ELSE null END as rel_type,
+                            CASE WHEN n IS NOT NULL THEN labels(n) ELSE null END as node_labels,
+                            CASE WHEN n IS NOT NULL THEN n.name ELSE null END as node_name,
+                            CASE WHEN r IS NOT NULL THEN type(r) ELSE null END as rel_type_name
+                        """
 
-                check_result = session.run(check_query, element_id=element_id).single()
+                        check_result = session.run(check_query, element_id=element_id).single()
 
-                if not check_result or (
-                    not check_result["node_type"] and not check_result["rel_type"]
-                ):
+                        if not check_result or (
+                            not check_result["node_type"] and not check_result["rel_type"]
+                        ):
+                            failed_items.append(f"Element '{element_id}' not found")
+                            continue
+
+                        # 删除节点（会自动删除相关关系）
+                        if check_result["node_type"]:
+                            # 获取删除前的关系数量
+                            rel_count_query = """
+                            MATCH (n)-[r]-() WHERE elementId(n) = $element_id
+                            RETURN count(r) as rel_count
+                            """
+                            rel_count = session.run(
+                                rel_count_query, element_id=element_id
+                            ).single()["rel_count"]
+
+                            # 删除节点（DETACH DELETE 会同时删除所有相关关系）
+                            delete_query = """
+                            MATCH (n) WHERE elementId(n) = $element_id
+                            DETACH DELETE n
+                            RETURN count(n) as deleted_count
+                            """
+
+                            result = session.run(delete_query, element_id=element_id)
+                            deleted_count = result.single()["deleted_count"]
+
+                            if deleted_count > 0:
+                                total_deleted_nodes += 1
+                                total_deleted_relationships += rel_count
+                                logger.info(
+                                    f"Successfully deleted node {element_id} and {rel_count} related relationships"
+                                )
+                            else:
+                                failed_items.append(f"Node '{element_id}' deletion failed")
+
+                        # 删除关系
+                        elif check_result["rel_type"]:
+                            # 删除关系
+                            delete_query = """
+                            MATCH ()-[r]-() WHERE elementId(r) = $element_id
+                            DELETE r
+                            RETURN count(r) as deleted_count
+                            """
+
+                            result = session.run(delete_query, element_id=element_id)
+                            deleted_count = result.single()["deleted_count"]
+
+                            if deleted_count > 0:
+                                total_deleted_relationships += 1
+                                logger.info(f"Successfully deleted relationship {element_id}")
+                            else:
+                                failed_items.append(f"Relationship '{element_id}' deletion failed")
+                    
+                    except Exception as item_error:
+                        failed_items.append(f"Element '{element_id}': {str(item_error)}")
+                        logger.error(f"Failed to delete element '{element_id}': {item_error}")
+
+                # 构建返回结果
+                if total_deleted_nodes > 0 or total_deleted_relationships > 0:
+                    message = f"成功删除 {total_deleted_nodes} 个节点和 {total_deleted_relationships} 个关系"
+                    if failed_items:
+                        message += f"，{len(failed_items)} 个项目失败"
+                    
+                    return {
+                        "success": True,
+                        "error": None if not failed_items else f"{len(failed_items)} items failed",
+                        "deleted_nodes": total_deleted_nodes,
+                        "deleted_relationships": total_deleted_relationships,
+                        "message": message,
+                        "failed_items": failed_items if failed_items else None,
+                    }
+                else:
                     return {
                         "success": False,
-                        "error": f"Element with ID '{element_id}' not found",
-                        "element_id": element_id,
-                        "element_type": None,
+                        "error": "No elements were deleted: " + "; ".join(failed_items[:3]),
+                        "deleted_nodes": 0,
+                        "deleted_relationships": 0,
+                        "failed_items": failed_items,
                     }
-
-                element_type = None
-                element_info = {}
-
-                # 删除节点（会自动删除相关关系）
-                if check_result["node_type"]:
-                    element_type = "node"
-                    element_info = {
-                        "labels": check_result["node_labels"],
-                        "name": check_result["node_name"],
-                    }
-
-                    # 获取删除前的关系数量
-                    rel_count_query = """
-                    MATCH (n)-[r]-() WHERE elementId(n) = $element_id
-                    RETURN count(r) as rel_count
-                    """
-                    rel_count = session.run(
-                        rel_count_query, element_id=element_id
-                    ).single()["rel_count"]
-
-                    # 删除节点（DETACH DELETE 会同时删除所有相关关系）
-                    delete_query = """
-                    MATCH (n) WHERE elementId(n) = $element_id
-                    DETACH DELETE n
-                    RETURN count(n) as deleted_count
-                    """
-
-                    result = session.run(delete_query, element_id=element_id)
-                    deleted_count = result.single()["deleted_count"]
-
-                    if deleted_count > 0:
-                        logger.info(
-                            f"Successfully deleted node {element_id} and {rel_count} related relationships"
-                        )
-                        return {
-                            "success": True,
-                            "error": None,
-                            "element_id": element_id,
-                            "element_type": element_type,
-                            "element_info": element_info,
-                            "deleted_relationships": rel_count,
-                            "message": f"节点及其 {rel_count} 个关系已成功删除",
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "error": "Node deletion failed",
-                            "element_id": element_id,
-                            "element_type": element_type,
-                        }
-
-                # 删除关系
-                elif check_result["rel_type"]:
-                    element_type = "relationship"
-                    element_info = {"type": check_result["rel_type_name"]}
-
-                    # 删除关系
-                    delete_query = """
-                    MATCH ()-[r]-() WHERE elementId(r) = $element_id
-                    DELETE r
-                    RETURN count(r) as deleted_count
-                    """
-
-                    result = session.run(delete_query, element_id=element_id)
-                    deleted_count = result.single()["deleted_count"]
-
-                    if deleted_count > 0:
-                        logger.info(f"Successfully deleted relationship {element_id}")
-                        return {
-                            "success": True,
-                            "error": None,
-                            "element_id": element_id,
-                            "element_type": element_type,
-                            "element_info": element_info,
-                            "deleted_relationships": 0,
-                            "message": "关系已成功删除",
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "error": "Relationship deletion failed",
-                            "element_id": element_id,
-                            "element_type": element_type,
-                        }
-
-                return {
-                    "success": False,
-                    "error": "Unknown element type",
-                    "element_id": element_id,
-                    "element_type": None,
-                }
 
         except Exception as e:
-            logger.error(f"Failed to delete element '{element_id}': {e}")
+            logger.error(f"Failed to delete elements: {e}")
             return {
                 "success": False,
                 "error": str(e),
-                "element_id": element_id,
-                "element_type": None,
+                "deleted_nodes": total_deleted_nodes,
+                "deleted_relationships": total_deleted_relationships,
+            }
+
+    def downloaod_memory(self, elements: Dict[str, Any]) -> bool:
+        """
+        保存指定的节点和关系到local_memory.json文件
+        采用合并策略：更新已存在的项目，添加新项目，保留其他已有内容
+        
+        输入：
+        {
+            "nodes_ids": [],      # 节点ID列表
+            "relation_ids": [],   # 关系ID列表
+        }
+        
+        Returns:
+            bool: 操作是否成功
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot save memory: No Neo4j connection")
+            return False
+        
+        # 验证输入格式
+        if not isinstance(elements, dict):
+            logger.error("Invalid input format: elements must be a dictionary")
+            return False
+        
+        nodes_ids = elements.get("nodes_ids", [])
+        relation_ids = elements.get("relation_ids", [])
+        
+        if not isinstance(nodes_ids, list) or not isinstance(relation_ids, list):
+            logger.error("Invalid input format: nodes_ids and relation_ids must be lists")
+            return False
+        
+        try:
+            # 确保目录存在
+            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
+            os.makedirs(memory_dir, exist_ok=True)
+            
+            local_memory_file = os.path.join(memory_dir, "local_memory.json")
+            
+            # 读取现有的 local_memory.json 文件（如果存在）
+            existing_data = {"nodes": [], "relationships": []}
+            if os.path.exists(local_memory_file):
+                try:
+                    with open(local_memory_file, "r", encoding="utf-8") as f:
+                        content = f.read().strip()
+                        if content:
+                            existing_data = json.loads(content)
+                            logger.info(f"Loaded existing local memory: {len(existing_data.get('nodes', []))} nodes, {len(existing_data.get('relationships', []))} relationships")
+                except Exception as e:
+                    logger.warning(f"Failed to load existing local memory, starting fresh: {e}")
+                    existing_data = {"nodes": [], "relationships": []}
+            
+            with self.driver.session() as session:
+                # 查询指定的节点
+                new_nodes = []
+                if nodes_ids:
+                    logger.info(f"Loading {len(nodes_ids)} nodes from Neo4j...")
+                    
+                    for node_id in nodes_ids:
+                        node_query = """
+                        MATCH (n)
+                        WHERE elementId(n) = $node_id
+                        RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                        """
+                        node_result = session.run(node_query, node_id=node_id)
+                        node_record = node_result.single()
+                        
+                        if node_record:
+                            node = {
+                                "id": str(node_record["id"]),
+                                "labels": node_record["labels"],
+                                "properties": dict(node_record["properties"]),
+                            }
+                            new_nodes.append(node)
+                        else:
+                            logger.warning(f"Node with ID '{node_id}' not found, skipping")
+                
+                # 合并节点：使用字典去重，新节点覆盖旧节点
+                nodes_dict = {node["id"]: node for node in existing_data.get("nodes", [])}
+                added_count = 0
+                updated_count = 0
+                
+                for node in new_nodes:
+                    if node["id"] in nodes_dict:
+                        updated_count += 1
+                    else:
+                        added_count += 1
+                    nodes_dict[node["id"]] = node
+                
+                merged_nodes = list(nodes_dict.values())
+                
+                # 查询指定的关系
+                new_relationships = []
+                valid_node_ids = set(node["id"] for node in new_nodes)
+                
+                if relation_ids:
+                    logger.info(f"Loading {len(relation_ids)} relationships from Neo4j...")
+                    
+                    for relation_id in relation_ids:
+                        rel_query = """
+                        MATCH (a)-[r]->(b)
+                        WHERE elementId(r) = $relation_id
+                        RETURN elementId(r) as id, type(r) as type, 
+                               elementId(a) as start_node, elementId(b) as end_node, 
+                               properties(r) as properties
+                        """
+                        rel_result = session.run(rel_query, relation_id=relation_id)
+                        rel_record = rel_result.single()
+                        
+                        if rel_record:
+                            start_node = str(rel_record["start_node"])
+                            end_node = str(rel_record["end_node"])
+                            
+                            # 检查关系的起始节点和结束节点是否都在nodes_ids中
+                            if start_node in valid_node_ids and end_node in valid_node_ids:
+                                relationship = {
+                                    "id": str(rel_record["id"]),
+                                    "type": rel_record["type"],
+                                    "start_node": start_node,
+                                    "end_node": end_node,
+                                    "properties": dict(rel_record["properties"]),
+                                }
+                                new_relationships.append(relationship)
+                            else:
+                                logger.warning(
+                                    f"Relationship '{relation_id}' has invalid nodes "
+                                    f"(start: {start_node in valid_node_ids}, end: {end_node in valid_node_ids}), skipping"
+                                )
+                        else:
+                            logger.warning(f"Relationship with ID '{relation_id}' not found, skipping")
+                
+                # 合并关系：使用字典去重，新关系覆盖旧关系
+                relationships_dict = {rel["id"]: rel for rel in existing_data.get("relationships", [])}
+                rel_added_count = 0
+                rel_updated_count = 0
+                
+                for rel in new_relationships:
+                    if rel["id"] in relationships_dict:
+                        rel_updated_count += 1
+                    else:
+                        rel_added_count += 1
+                    relationships_dict[rel["id"]] = rel
+                
+                merged_relationships = list(relationships_dict.values())
+                
+                # 构建最终数据结构
+                local_memory_data = {
+                    "nodes": merged_nodes,
+                    "relationships": merged_relationships,
+                    "metadata": {
+                        "source": "local",
+                        "saved_from": "neo4j",
+                    },
+                    "updated_at": datetime.now().isoformat(),
+                }
+                
+                # 保存到文件（合并模式）
+                with open(local_memory_file, "w", encoding="utf-8") as f:
+                    json.dump(local_memory_data, f, ensure_ascii=False, indent=2)
+                
+                logger.info(
+                    f"Memory merged to {local_memory_file}: "
+                    f"{len(merged_nodes)} total nodes ({added_count} added, {updated_count} updated), "
+                    f"{len(merged_relationships)} total relationships ({rel_added_count} added, {rel_updated_count} updated)"
+                )
+                
+                print(f"💾 记忆已保存到: {local_memory_file}")
+                print(f"📊 合并结果:")
+                print(f"   节点: 新增 {added_count} 个, 更新 {updated_count} 个, 总计 {len(merged_nodes)} 个")
+                print(f"   关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个, 总计 {len(merged_relationships)} 个")
+                
+                # 统计被过滤的关系数量
+                filtered_count = len(relation_ids) - len(new_relationships)
+                if filtered_count > 0:
+                    print(f"⚠️  已过滤 {filtered_count} 个无效关系（节点不在保存列表中）")
+                
+                return True
+        
+        except Exception as e:
+            logger.error(f"Failed to save memory: {e}")
+            print(f"❌ 保存记忆失败: {e}")
+            return False
+
+    def upload_memory(self, elements: Dict[str, Any]) -> bool:
+        """
+        从local_memory.json文件加载节点和关系到Neo4j数据库
+        采用合并策略：通过属性匹配更新已存在的项目，创建新项目
+        
+        输入：
+        {
+            "nodes_ids": [],      # 节点ID列表（来自local_memory.json）
+            "relation_ids": [],   # 关系ID列表（来自local_memory.json）
+        }
+        
+        Returns:
+            bool: 操作是否成功
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot upload memory: No Neo4j connection")
+            return False
+        
+        # 验证输入格式
+        if not isinstance(elements, dict):
+            logger.error("Invalid input format: elements must be a dictionary")
+            return False
+        
+        nodes_ids = elements.get("nodes_ids", [])
+        relation_ids = elements.get("relation_ids", [])
+        
+        if not isinstance(nodes_ids, list) or not isinstance(relation_ids, list):
+            logger.error("Invalid input format: nodes_ids and relation_ids must be lists")
+            return False
+        
+        try:
+            # 确保目录存在
+            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
+            local_memory_file = os.path.join(memory_dir, "local_memory.json")
+            
+            # 检查local_memory.json是否存在
+            if not os.path.exists(local_memory_file):
+                logger.error(f"Local memory file not found: {local_memory_file}")
+                print(f"❌ 本地记忆文件不存在: {local_memory_file}")
+                return False
+            
+            # 读取local_memory.json文件
+            with open(local_memory_file, "r", encoding="utf-8") as f:
+                content = f.read().strip()
+                if not content:
+                    logger.error("Local memory file is empty")
+                    print("❌ 本地记忆文件为空")
+                    return False
+                local_memory_data = json.loads(content)
+            
+            # 提取节点和关系数据
+            all_nodes = {node["id"]: node for node in local_memory_data.get("nodes", [])}
+            all_relationships = {rel["id"]: rel for rel in local_memory_data.get("relationships", [])}
+            
+            with self.driver.session() as session:
+                # 上传指定的节点
+                nodes_to_upload = []
+                if nodes_ids:
+                    logger.info(f"Preparing {len(nodes_ids)} nodes for upload...")
+                    for node_id in nodes_ids:
+                        if node_id in all_nodes:
+                            nodes_to_upload.append(all_nodes[node_id])
+                        else:
+                            logger.warning(f"Node with ID '{node_id}' not found in local memory, skipping")
+                
+                added_count = 0
+                updated_count = 0
+                id_updated = False  # 标记是否有ID被更新
+                
+                for node in nodes_to_upload:
+                    old_node_id = node["id"]
+                    labels = node.get("labels", [])
+                    properties = node.get("properties", {})
+                    
+                    # 检查Neo4j中是否存在该ID的节点
+                    check_query = """
+                    MATCH (n)
+                    WHERE elementId(n) = $node_id
+                    RETURN elementId(n) as id, labels(n) as existing_labels
+                    """
+                    check_result = session.run(check_query, node_id=old_node_id)
+                    existing_node = check_result.single()
+                    
+                    if existing_node:
+                        # 节点已存在，更新属性和标签
+                        existing_labels = existing_node["existing_labels"]
+                        
+                        # 更新属性
+                        update_query = """
+                        MATCH (n)
+                        WHERE elementId(n) = $node_id
+                        SET n += $properties
+                        RETURN elementId(n) as id
+                        """
+                        session.run(update_query, node_id=old_node_id, properties=properties)
+                        
+                        # 处理标签：添加缺失的标签，移除多余的标签
+                        labels_to_add = [lbl for lbl in labels if lbl not in existing_labels]
+                        labels_to_remove = [lbl for lbl in existing_labels if lbl not in labels]
+                        
+                        if labels_to_add:
+                            add_labels_query = f"""
+                            MATCH (n)
+                            WHERE elementId(n) = $node_id
+                            SET n:{":".join(labels_to_add)}
+                            """
+                            session.run(add_labels_query, node_id=old_node_id)
+                        
+                        if labels_to_remove:
+                            for label in labels_to_remove:
+                                remove_label_query = f"""
+                                MATCH (n)
+                                WHERE elementId(n) = $node_id
+                                REMOVE n:{label}
+                                """
+                                session.run(remove_label_query, node_id=old_node_id)
+                        
+                        updated_count += 1
+                        logger.info(f"Updated node: {properties.get('name', 'Unknown')} (id: {old_node_id})")
+                    else:
+                        # 节点不存在，创建新节点并获取Neo4j生成的ID
+                        labels_str = ":".join(labels) if labels else "Entity"
+                        create_query = f"""
+                        CREATE (n:{labels_str})
+                        SET n = $properties
+                        RETURN elementId(n) as id
+                        """
+                        create_result = session.run(create_query, properties=properties)
+                        created_record = create_result.single()
+                        
+                        if created_record:
+                            new_node_id = created_record["id"]
+                            # 更新本地内存中的节点ID
+                            all_nodes[old_node_id]["id"] = new_node_id
+                            # 同时需要更新字典的键
+                            all_nodes[new_node_id] = all_nodes.pop(old_node_id)
+                            
+                            # 更新所有关系中引用该节点的ID
+                            for rel in all_relationships.values():
+                                if rel.get("start_node") == old_node_id:
+                                    rel["start_node"] = new_node_id
+                                if rel.get("end_node") == old_node_id:
+                                    rel["end_node"] = new_node_id
+                            
+                            added_count += 1
+                            id_updated = True
+                            logger.info(f"Created node: {properties.get('name', 'Unknown')} (old_id: {old_node_id}, new_id: {new_node_id})")
+                
+                # 上传指定的关系
+                relationships_to_upload = []
+                if relation_ids:
+                    logger.info(f"Preparing {len(relation_ids)} relationships for upload...")
+                    for relation_id in relation_ids:
+                        if relation_id in all_relationships:
+                            rel = all_relationships[relation_id]
+                            # 检查关系的起始和结束节点是否都存在
+                            start_node_id = rel.get("start_node")
+                            end_node_id = rel.get("end_node")
+                            
+                            # 验证节点是否存在于Neo4j中
+                            check_nodes_query = """
+                            MATCH (a), (b)
+                            WHERE elementId(a) = $start_id AND elementId(b) = $end_id
+                            RETURN elementId(a) as start_id, elementId(b) as end_id
+                            """
+                            check_result = session.run(check_nodes_query, start_id=start_node_id, end_id=end_node_id)
+                            
+                            if check_result.single():
+                                relationships_to_upload.append(rel)
+                            else:
+                                logger.warning(
+                                    f"Relationship '{relation_id}' has non-existent nodes in Neo4j "
+                                    f"(start: {start_node_id}, end: {end_node_id}), skipping"
+                                )
+                        else:
+                            logger.warning(f"Relationship with ID '{relation_id}' not found in local memory, skipping")
+                
+                rel_added_count = 0
+                rel_updated_count = 0
+                
+                for rel in relationships_to_upload:
+                    old_rel_id = rel["id"]
+                    rel_type = rel.get("type", "RELATED_TO")
+                    start_node_id = rel.get("start_node")
+                    end_node_id = rel.get("end_node")
+                    properties = rel.get("properties", {})
+                    
+                    # 检查Neo4j中是否存在该ID的关系
+                    check_rel_query = """
+                    MATCH ()-[r]->()
+                    WHERE elementId(r) = $rel_id
+                    RETURN elementId(r) as id, type(r) as existing_type
+                    """
+                    check_rel_result = session.run(check_rel_query, rel_id=old_rel_id)
+                    existing_rel = check_rel_result.single()
+                    
+                    if existing_rel:
+                        # 关系已存在，更新属性
+                        update_rel_query = """
+                        MATCH ()-[r]->()
+                        WHERE elementId(r) = $rel_id
+                        SET r += $properties
+                        RETURN elementId(r) as id
+                        """
+                        update_result = session.run(update_rel_query, rel_id=old_rel_id, properties=properties)
+                        
+                        if update_result.single():
+                            rel_updated_count += 1
+                            logger.info(f"Updated relationship: {rel_type} (id: {old_rel_id})")
+                    else:
+                        # 关系不存在，创建新关系并获取Neo4j生成的ID
+                        create_rel_query = f"""
+                        MATCH (a), (b)
+                        WHERE elementId(a) = $start_id AND elementId(b) = $end_id
+                        CREATE (a)-[r:{rel_type}]->(b)
+                        SET r = $properties
+                        RETURN elementId(r) as id
+                        """
+                        create_rel_result = session.run(
+                            create_rel_query, 
+                            start_id=start_node_id, 
+                            end_id=end_node_id, 
+                            properties=properties
+                        )
+                        created_rel_record = create_rel_result.single()
+                        
+                        if created_rel_record:
+                            new_rel_id = created_rel_record["id"]
+                            # 更新本地内存中的关系ID
+                            all_relationships[old_rel_id]["id"] = new_rel_id
+                            # 同时需要更新字典的键
+                            all_relationships[new_rel_id] = all_relationships.pop(old_rel_id)
+                            
+                            rel_added_count += 1
+                            id_updated = True
+                            logger.info(f"Created relationship: {rel_type} (old_id: {old_rel_id}, new_id: {new_rel_id})")
+                
+                # 如果有ID被更新，保存回local_memory.json
+                if id_updated:
+                    local_memory_data["nodes"] = list(all_nodes.values())
+                    local_memory_data["relationships"] = list(all_relationships.values())
+                    local_memory_data["updated_at"] = datetime.now().isoformat()
+                    
+                    with open(local_memory_file, "w", encoding="utf-8") as f:
+                        json.dump(local_memory_data, f, ensure_ascii=False, indent=2)
+                    
+                    logger.info(f"Updated local memory file with new IDs from Neo4j")
+                    print(f"💾 已同步Neo4j生成的ID到本地记忆文件")
+                
+                logger.info(
+                    f"Memory uploaded to Neo4j: "
+                    f"{added_count} nodes created, {updated_count} nodes updated, "
+                    f"{rel_added_count} relationships created, {rel_updated_count} relationships updated"
+                )
+                
+                print(f"📤 记忆已上传到Neo4j")
+                print(f"📊 上传结果:")
+                print(f"   节点: 新增 {added_count} 个, 更新 {updated_count} 个")
+                print(f"   关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个")
+                
+                # 统计跳过的项目
+                skipped_nodes = len(nodes_ids) - added_count - updated_count
+                skipped_rels = len(relation_ids) - rel_added_count - rel_updated_count
+                
+                if skipped_nodes > 0:
+                    print(f"⚠️  跳过 {skipped_nodes} 个节点（未找到或其他错误）")
+                if skipped_rels > 0:
+                    print(f"⚠️  跳过 {skipped_rels} 个关系（节点不存在或其他错误）")
+                
+                return True
+        
+        except Exception as e:
+            logger.error(f"Failed to upload memory: {e}")
+            print(f"❌ 上传记忆失败: {e}")
+            return False
+
+    def delete_from_local_memory(self, element_ids: List[str]) -> Dict[str, Any]:
+        """
+        从local_memory.json文件中删除指定的节点和关系
+        节点标准格式：
+            {
+                "id": "node_id",
+                "labels": [...],
+                "properties": {...}
+            }
+        关系标准格式：
+            {
+                "id": "relation_id",
+                "type": "RELATION_TYPE",
+                "start_node": "start_node_id",
+                "end_node": "end_node_id",
+                "properties": {...}
+            }
+        
+        Args:
+            element_ids: 要删除的元素ID列表（节点ID或关系ID）
+        
+        Returns:
+            {
+              "success": bool,
+              "error": Optional[str],
+              "deleted_nodes": int,
+              "deleted_relationships": int,
+            }
+        """
+        if not element_ids:
+            logger.warning("No element IDs provided for deletion")
+            return {
+                "success": False,
+                "error": "No element IDs provided for deletion",
+                "deleted_nodes": 0,
+                "deleted_relationships": 0,
+            }
+        
+        try:
+            # 确保目录存在
+            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
+            local_memory_file = os.path.join(memory_dir, "local_memory.json")
+            
+            # 检查文件是否存在
+            if not os.path.exists(local_memory_file):
+                logger.warning(f"Local memory file not found: {local_memory_file}")
+                print(f"⚠️  本地记忆文件不存在: {local_memory_file}")
+                return {
+                    "success": False,
+                    "error": "Local memory file not found",
+                    "deleted_nodes": 0,
+                    "deleted_relationships": 0,
+                }
+            
+            # 读取现有数据
+            with open(local_memory_file, "r", encoding="utf-8") as f:
+                memory_data = json.load(f)
+            
+            nodes = memory_data.get("nodes", [])
+            relationships = memory_data.get("relationships", [])
+            
+            # 记录初始数量
+            initial_node_count = len(nodes)
+            initial_rel_count = len(relationships)
+            
+            # 转换为字典以便快速查找和删除
+            nodes_dict = {node["id"]: node for node in nodes}
+            relationships_dict = {rel["id"]: rel for rel in relationships}
+            
+            # 统计删除信息
+            deleted_nodes = []
+            deleted_relationships = []
+            auto_deleted_relationships = []  # 因节点删除而自动删除的关系
+            
+            # 分离节点ID和关系ID
+            node_ids_to_delete = set()
+            relation_ids_to_delete = set()
+            
+            for element_id in element_ids:
+                if element_id in nodes_dict:
+                    node_ids_to_delete.add(element_id)
+                elif element_id in relationships_dict:
+                    relation_ids_to_delete.add(element_id)
+                else:
+                    logger.warning(f"Element ID not found in local memory: {element_id}")
+            
+            # 删除节点
+            for node_id in node_ids_to_delete:
+                if node_id in nodes_dict:
+                    deleted_nodes.append(nodes_dict[node_id])
+                    del nodes_dict[node_id]
+                    logger.info(f"Deleted node from local memory: {node_id}")
+            
+            # 查找并自动删除关联到被删除节点的关系
+            for rel_id, rel in list(relationships_dict.items()):
+                start_node = rel.get("start_node")
+                end_node = rel.get("end_node")
+                
+                # 如果关系的起始节点或结束节点在删除列表中，自动删除该关系
+                if start_node in node_ids_to_delete or end_node in node_ids_to_delete:
+                    if rel_id not in relation_ids_to_delete:
+                        auto_deleted_relationships.append(rel)
+                    del relationships_dict[rel_id]
+                    logger.info(f"Auto-deleted relationship from local memory (connected to deleted node): {rel_id}")
+            
+            # 删除显式指定的关系
+            for relation_id in relation_ids_to_delete:
+                if relation_id in relationships_dict:
+                    deleted_relationships.append(relationships_dict[relation_id])
+                    del relationships_dict[relation_id]
+                    logger.info(f"Deleted relationship from local memory: {relation_id}")
+            
+            # 转换回列表
+            remaining_nodes = list(nodes_dict.values())
+            remaining_relationships = list(relationships_dict.values())
+            
+            # 更新数据结构
+            memory_data["nodes"] = remaining_nodes
+            memory_data["relationships"] = remaining_relationships
+            memory_data["updated_at"] = datetime.now().isoformat()
+            
+            # 保存回文件
+            with open(local_memory_file, "w", encoding="utf-8") as f:
+                json.dump(memory_data, f, ensure_ascii=False, indent=2)
+            
+            # 输出统计信息
+            total_deleted_nodes = len(deleted_nodes)
+            total_deleted_rels = len(deleted_relationships) + len(auto_deleted_relationships)
+            
+            print(f"✅ 本地记忆删除完成")
+            print(f"📊 删除统计:")
+            print(f"   节点: 删除 {total_deleted_nodes} 个 (剩余 {len(remaining_nodes)} 个)")
+            print(f"   关系: 删除 {total_deleted_rels} 个 (直接删除 {len(deleted_relationships)} 个, 自动删除 {len(auto_deleted_relationships)} 个, 剩余 {len(remaining_relationships)} 个)")
+            
+            if auto_deleted_relationships:
+                print(f"ℹ️  因节点删除自动删除了 {len(auto_deleted_relationships)} 个关联关系")
+            
+            logger.info(
+                f"Local memory deletion completed: "
+                f"{total_deleted_nodes} nodes deleted, "
+                f"{total_deleted_rels} relationships deleted "
+                f"({len(deleted_relationships)} explicit + {len(auto_deleted_relationships)} auto)"
+            )
+            
+            return {
+                "success": True,
+                "error": None,
+                "deleted_nodes": total_deleted_nodes,
+                "deleted_relationships": total_deleted_rels,
+            }
+        
+        except Exception as e:
+            logger.error(f"Failed to delete from local memory: {e}")
+            print(f"❌ 从本地记忆删除失败: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "deleted_nodes": 0,
+                "deleted_relationships": 0,
             }
 
     def clear_all_memory(self) -> bool:
@@ -2637,152 +3175,6 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to load Neo4j data: {e}")
             print(f"❌ Neo4j数据下载失败: {e}")
             return False
-        """将 recent_memory.json 中的记忆上传到 Neo4j
-        
-        读取 recent_memory.json 文件，将其中的三元组和五元组写入 Neo4j。
-        对于每个记忆项，进行查重检查，如果发现冲突则用新数据覆盖旧数据。
-        
-        Returns:
-            Dict[str, Any]: 包含上传结果的字典
-        """
-        if not self._ensure_connection():
-            logger.error("Cannot upload recent memory: No Neo4j connection")
-            return {
-                "success": False,
-                "error": "No Neo4j connection",
-                "triples_uploaded": 0,
-                "quintuples_uploaded": 0,
-            }
-
-        try:
-            # 读取 recent_memory.json 文件
-            recent_memory_file = os.path.join(
-                config.system.log_dir, "recent_memory.json"
-            )
-
-            if not os.path.exists(recent_memory_file):
-                logger.warning(f"Recent memory file not found: {recent_memory_file}")
-                return {
-                    "success": False,
-                    "error": "Recent memory file not found",
-                    "triples_uploaded": 0,
-                    "quintuples_uploaded": 0,
-                }
-
-            with open(recent_memory_file, "r", encoding="utf-8") as f:
-                memory_data = json.load(f)
-
-            triples = memory_data.get("triples", [])
-            quintuples = memory_data.get("quintuples", [])
-
-            logger.info(
-                f"Found {len(triples)} triples and {len(quintuples)} quintuples to upload"
-            )
-            print(f"准备上传：{len(triples)} 个三元组，{len(quintuples)} 个五元组")
-
-            triples_uploaded = 0
-            quintuples_uploaded = 0
-            errors = []
-
-            with self.driver.session() as session:
-                # 上传三元组
-                for triple_data in triples:
-                    try:
-                        if self._upload_triple_with_dedup(session, triple_data):
-                            triples_uploaded += 1
-                        else:
-                            errors.append(f"Failed to upload triple: {triple_data}")
-                    except Exception as e:
-                        errors.append(f"Error uploading triple {triple_data}: {e}")
-
-                # 上传五元组
-                for quintuple_data in quintuples:
-                    try:
-                        if self._upload_quintuple_with_dedup(session, quintuple_data):
-                            quintuples_uploaded += 1
-                        else:
-                            errors.append(
-                                f"Failed to upload quintuple: {quintuple_data}"
-                            )
-                    except Exception as e:
-                        errors.append(
-                            f"Error uploading quintuple {quintuple_data}: {e}"
-                        )
-
-            success = len(errors) == 0
-
-            result = {
-                "success": success,
-                "triples_uploaded": triples_uploaded,
-                "quintuples_uploaded": quintuples_uploaded,
-                "total_uploaded": triples_uploaded + quintuples_uploaded,
-                "errors": errors,
-            }
-
-            if success:
-                logger.info(
-                    f"Successfully uploaded {triples_uploaded} triples and {quintuples_uploaded} quintuples to Neo4j"
-                )
-                print(
-                    f"✅ 成功上传：{triples_uploaded} 个三元组，{quintuples_uploaded} 个五元组"
-                )
-
-                # 上传成功后清空recent_memory.json文件
-                print("正在清空recent_memory.json文件...")
-                if self.clear_recent_memory():
-                    logger.info("Successfully cleared recent_memory.json after upload")
-                    print("✅ recent_memory.json已清空")
-                else:
-                    logger.warning("Failed to clear recent_memory.json after upload")
-                    print("⚠️ 清空recent_memory.json失败")
-            else:
-                logger.warning(
-                    f"Uploaded {triples_uploaded} triples and {quintuples_uploaded} quintuples with {len(errors)} errors"
-                )
-                print(
-                    f"⚠️ 部分上传成功：{triples_uploaded} 个三元组，{quintuples_uploaded} 个五元组，{len(errors)} 个错误"
-                )
-
-                # 即使部分失败，如果有数据上传成功，也清空文件
-                if triples_uploaded > 0 or quintuples_uploaded > 0:
-                    print("部分数据上传成功，正在清空recent_memory.json文件...")
-                    if self.clear_recent_memory():
-                        logger.info(
-                            "Successfully cleared recent_memory.json after partial upload"
-                        )
-                        print("✅ recent_memory.json已清空")
-                    else:
-                        logger.warning(
-                            "Failed to clear recent_memory.json after partial upload"
-                        )
-                        print("⚠️ 清空recent_memory.json失败")
-
-            return result
-
-        except FileNotFoundError:
-            logger.error(f"Recent memory file not found: {recent_memory_file}")
-            return {
-                "success": False,
-                "error": "Recent memory file not found",
-                "triples_uploaded": 0,
-                "quintuples_uploaded": 0,
-            }
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse recent memory JSON: {e}")
-            return {
-                "success": False,
-                "error": f"JSON parse error: {e}",
-                "triples_uploaded": 0,
-                "quintuples_uploaded": 0,
-            }
-        except Exception as e:
-            logger.error(f"Failed to upload recent memory: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "triples_uploaded": 0,
-                "quintuples_uploaded": 0,
-            }
 
 
 # 全局实例
@@ -2795,19 +3187,6 @@ def get_knowledge_graph_manager() -> KnowledgeGraphManager:
     if _kg_manager is None:
         _kg_manager = KnowledgeGraphManager()
     return _kg_manager
-
-
-def write_memories_to_graph(triples: List, quintuples: List) -> Dict[str, Any]:
-    """便捷函数：将记忆数据写入知识图谱"""
-    manager = get_knowledge_graph_manager()
-    return manager.write_memories_batch(triples, quintuples)
-
-
-def clear_recent_memory_file() -> bool:
-    """便捷函数：清空 recent_memory.json 文件"""
-    manager = get_knowledge_graph_manager()
-    return manager.clear_recent_memory()
-
 
 def clear_all_memory_interactive() -> bool:
     """便捷函数：交互式清空Neo4j中的全部记忆数据"""
