@@ -2,6 +2,7 @@
     "system":{
         "version": "0.3.3",
         "ai_name": "铃依",
+        "stream_response": true,
         "debug": true,
         "log_level": "INFO"
     },
@@ -9,9 +10,21 @@
         "api_key": "ollama", // 你的sdk，必填！
         "base_url": "http://localhost:11434/v1", // 模型的url，必填！
         "model": "gemma3:4b", // 你用的模型型号，必填！
+        "temperature": 0.7,
+        "max_tokens": 2048,
+        "max_history_rounds": 10,
+        "max_history_days": 3
         "memory_record_api_key": "sk-AAAA", // 不填默认为主模型
         "memory_record_base_url": "https://api.openai.com/v1", // 不填默认为主模型
         "memory_record_model": "gpt-5-nano-2025-08-07" // 不填默认为主模型
+    },
+    "sub_system_api" :{
+        "memory_record_api_key": "sk-AAAA", // 不填默认为主模型
+        "memory_record_base_url": "https://api.openai.com/v1", // 不填默认为主模型
+        "memory_record_model": "gpt-5-nano-2025-08-07" // 不填默认为主模型
+        "embedding_api_key": "sk-AAAA", // 不填默认为主模型
+        "embedding_base_url": "https://api.openai.com/v1", // 不填默认为主模型
+        "embedding_model": "text-embedding-3-small" // 必须为embedding模型
     },
     "api_server": {
         "enabled": true,
