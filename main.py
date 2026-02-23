@@ -41,13 +41,13 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication
 
 # 本地模块导入
-# from system.system_checker import run_system_check, run_quick_check
 from system.config import config, AI_NAME
+# from system.system_checker import run_system_check, run_quick_check
+from brain.task_manager import task_manager
 # from summer_memory.memory_manager import memory_manager
 # from summer_memory.task_manager import start_task_manager, task_manager
 # from ui.pyqt_chat_window import ChatWindow
 # from ui.tray.console_tray import integrate_console_tray
-from system.task_manager import task_manager
 from ui.chat_ui import ChatUI
 from api_server.llm_service import chat_with_model, preload_model
 

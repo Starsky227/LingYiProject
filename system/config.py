@@ -93,7 +93,8 @@ def setup_environment():
 class SystemConfig(BaseModel):
     """系统基础配置"""
     version: str = Field(default="4.0.0", description="系统版本号")
-    ai_name: str = Field(default="娜迦日达", description="AI助手名称")
+    ai_name: str = Field(default="AI助手", description="AI助手名称")
+    user_name: str = Field(default="用户", description="默认用户名")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
     log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "logs", description="日志目录")
     # voice_enabled: bool = Field(default=False, description="是否启用语音功能")
@@ -207,13 +208,14 @@ class BrowserConfig(BaseModel):
 
 class UIConfig(BaseModel):
     """用户界面配置"""
-    user_name: str = Field(default="用户", description="默认用户名")
-    bg_alpha: float = Field(default=0.5, ge=0.0, le=1.0, description="聊天背景透明度")
-    window_bg_alpha: int = Field(default=110, ge=0, le=255, description="主窗口背景透明度")
-    mac_btn_size: int = Field(default=36, ge=10, le=100, description="Mac按钮大小")
-    mac_btn_margin: int = Field(default=16, ge=0, le=50, description="Mac按钮边距")
-    mac_btn_gap: int = Field(default=12, ge=0, le=30, description="Mac按钮间距")
-    animation_duration: int = Field(default=600, ge=100, le=2000, description="动画时长（毫秒）")
+    text_size: str = Field(default="10", description="文本大小")
+    image_name: str = Field(default="LingYi_img.png", description="AI头像文件名")
+    # bg_alpha: float = Field(default=0.5, ge=0.0, le=1.0, description="聊天背景透明度")
+    # window_bg_alpha: int = Field(default=110, ge=0, le=255, description="主窗口背景透明度")
+    # mac_btn_size: int = Field(default=36, ge=10, le=100, description="Mac按钮大小")
+    # mac_btn_margin: int = Field(default=16, ge=0, le=50, description="Mac按钮边距")
+    # mac_btn_gap: int = Field(default=12, ge=0, le=30, description="Mac按钮间距")
+    # animation_duration: int = Field(default=600, ge=100, le=2000, description="动画时长（毫秒）")
 
 # class Live2DConfig(BaseModel):
 #     """Live2D配置"""
