@@ -26,11 +26,11 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # API 配置
-API_KEY = config.api.embedding_api_key
-API_URL = config.api.embedding_base_url
-MODEL = config.api.embedding_model
+API_KEY = config.memory_api.embedding_api_key
+API_URL = config.memory_api.embedding_base_url
+MODEL = config.memory_api.embedding_model
 AI_NAME = config.system.ai_name
-USERNAME = config.ui.username
+USERNAME = config.system.user_name
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端
@@ -74,7 +74,8 @@ except ImportError:
     print("Neo4j driver not installed. Please install with: pip install neo4j")
     sys.exit(1)
 
-from system.config import config, is_neo4j_available
+from system.config import config
+from system.system_checker import is_neo4j_available
 
 logger = logging.getLogger(__name__)
 
@@ -624,15 +625,18 @@ class KnowledgeGraphManager:
         session,
         name: str,
         node_type: str,
+        time_str: str,
         importance: float = 0.5,
         trust: float = 0.5,
         context: str = "reality",
         note: str = "无",
     ) -> Optional[str]:
         """
-        创建节点，可能创建多种节点类型时通过此节点。
+        创建节点，通过此节点时可以创建多种节点类型。
         """
-        if node_type == "Character":
+        if node_type == "Time":
+            return self.create_time_node(session, time_str)
+        elif node_type == "Character":
             return self.create_character_node(session, name, importance, trust, context)
         elif node_type == "Location":
             return self.create_location_node(session, name, context)
@@ -1013,9 +1017,7 @@ class KnowledgeGraphManager:
             )
             return None
 
-    def modify_node(
-        self, node_id: str, updates: dict, call: str = "passive"
-    ) -> Optional[str]:
+    def modify_node(self, node_id: str, updates: dict, call: str = "passive") -> Optional[str]:
         """
         用于从客户端直接修改节点的属性。
 
@@ -1062,7 +1064,7 @@ class KnowledgeGraphManager:
                     logger.warning(
                         f"Cannot modify Time node '{node_id}' - Time nodes are read-only"
                     )
-                    return None
+                    return "InvalidModification"
 
                 if call == "passive":
                     # 被动更改的情况下，如果检测到name，context，nodeType和数据库中不一致，则拒绝并return
@@ -1070,7 +1072,7 @@ class KnowledgeGraphManager:
                         logger.warning(
                             f"Passive modification rejected: name mismatch for node '{node_id}'"
                         )
-                        return None
+                        return "InvalidModification"
 
                     if (
                         "context" in updates
@@ -1079,7 +1081,7 @@ class KnowledgeGraphManager:
                         logger.warning(
                             f"Passive modification rejected: context mismatch for node '{node_id}'"
                         )
-                        return None
+                        return "InvalidModification"
 
                     if (
                         "node_type" in updates
@@ -1088,7 +1090,7 @@ class KnowledgeGraphManager:
                         logger.warning(
                             f"Passive modification rejected: nodeType mismatch for node '{node_id}'"
                         )
-                        return None
+                        return "InvalidModification"
 
         except Exception as e:
             logger.error(f"Failed to validate node '{node_id}': {e}")
@@ -1376,7 +1378,8 @@ class KnowledgeGraphManager:
             predicate: 关系谓词/类型
             source: 关系来源
             confidence: 置信度 (默认0.5)
-            directivity: 关系方向 (默认'to_endNode'，'bidirectional'表示双向)
+            directivity: 关系方向 (输入'to_endNode', 'to_startNode', 'bidirectional'表示双向, 
+                            输出时会自动调整为'single'或'bidirectional')
             evidence: 关系证据（为什么设置这个置信度，选填）
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
@@ -1470,9 +1473,7 @@ class KnowledgeGraphManager:
                     # 计算新的置信度：new_confidence = (1-(1-old_confidence)*(1-confidence/2))
                     try:
                         current_confidence = float(current_confidence)
-                        new_confidence = 1 - (1 - current_confidence) * (
-                            1 - confidence / 2
-                        )
+                        new_confidence = 1 - (1 - current_confidence) * (1 - confidence / 2)
                         # 确保置信度在0-1范围内
                         new_confidence = max(0.0, min(1.0, new_confidence))
                     except (ValueError, TypeError):

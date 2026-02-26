@@ -42,7 +42,7 @@ from PyQt5.QtWidgets import QApplication
 
 # 本地模块导入
 from system.config import config, AI_NAME
-# from system.system_checker import run_system_check, run_quick_check
+from system.system_checker import run_system_check
 from brain.task_manager import task_manager
 # from summer_memory.memory_manager import memory_manager
 # from summer_memory.task_manager import start_task_manager, task_manager
@@ -303,18 +303,13 @@ def _deffered_init_services():
     """延迟初始化服务 - 在需要时才初始化"""
     global service_manager
     if not hasattr(_deffered_init_services, '_initialized'):
+        # 系统环境检测
+        run_system_check()
+        
         # 初始化服务管理器
         service_manager = ServiceManager()
         service_manager.start_background_services()
         
-        # 显示系统状态
-        # print("=" * 30)
-        # print(f"GRAG状态: {'启用' if memory_manager.enabled else '禁用'}")
-        # if memory_manager.enabled:
-        #     stats = memory_manager.get_memory_stats()
-        #     from summer_memory.quintuple_graph import get_graph, GRAG_ENABLED
-        #     graph = get_graph()
-        #     print(f"Neo4j连接: {'成功' if graph and GRAG_ENABLED else '失败'}")
         print("=" * 30)
         print(f'【{AI_NAME}】已启动')
         print("=" * 30)

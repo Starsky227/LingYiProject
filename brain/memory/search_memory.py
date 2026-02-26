@@ -22,17 +22,18 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+from system.system_checker import is_neo4j_available
 from openai import OpenAI
 from system.config import config
 from typing import Any, List, Dict, Optional
 
 # API 配置
-API_KEY = config.api.memory_record_api_key
-API_URL = config.api.memory_record_base_url
-MODEL = config.api.memory_record_model
-EMB_API_KEY = config.api.embedding_api_key
-EMB_API_URL = config.api.embedding_base_url
-EMB_MODEL = config.api.embedding_model
+API_KEY = config.memory_api.memory_record_api_key
+API_URL = config.memory_api.memory_record_base_url
+MODEL = config.memory_api.memory_record_model
+EMB_API_KEY = config.memory_api.embedding_api_key
+EMB_API_URL = config.memory_api.embedding_base_url
+EMB_MODEL = config.memory_api.embedding_model
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端
@@ -114,7 +115,6 @@ def search_nodes_by_embedding(text: str, top_k: int = 5) -> List[Dict[str, Any]]
         List[Dict[str, Any]]: 匹配的节点列表，包含id, name和相似度分数
     """
     try:
-        from system.config import is_neo4j_available
         if not is_neo4j_available():
             logger.warning("Neo4j不可用")
             return []
@@ -627,7 +627,6 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
     """
     try:
         # 首先检查全局Neo4j可用性
-        from system.config import is_neo4j_available
         if not is_neo4j_available():
             return {"nodes": [], "relationships": []}
             

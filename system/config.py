@@ -266,6 +266,7 @@ class LingYiConfig(BaseModel):
     """LingYi主配置类"""
     system: SystemConfig = Field(default_factory=SystemConfig)
     api: APIConfig = Field(default_factory=APIConfig)
+    memory_api: MemorySystemConfig = Field(default_factory=MemorySystemConfig)
     api_server: APIServerConfig = Field(default_factory=APIServerConfig)
     grag: GRAGConfig = Field(default_factory=GRAGConfig)
     handoff: HandoffConfig = Field(default_factory=HandoffConfig)

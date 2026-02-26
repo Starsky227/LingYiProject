@@ -3,10 +3,11 @@
 """
 记忆写入功能模块，负责汇总消息内容，并将有价值的信息储存以节点形式储存至neo4j。
 调用方式：
-    event_extractor.passive_event_extraction_from_message(
+    event_extractor.passive_event_extraction(
         recent_message=recent_messages,
         related_memory=related_memory
     )
+passive_event_extraction 会自动调用 passive_memory_record 来记录记忆信息，
 不会返回任何内容，自动将记忆节点上传至neo4j图谱中。
 """
 
@@ -27,9 +28,9 @@ if project_root not in sys.path:
 from system.config import config
 
 # API 配置
-API_KEY = config.api.memory_record_api_key
-API_URL = config.api.memory_record_base_url
-MODEL = config.api.memory_record_model
+API_KEY = config.memory_api.memory_record_api_key
+API_URL = config.memory_api.memory_record_base_url
+MODEL = config.memory_api.memory_record_model
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端
@@ -121,7 +122,7 @@ class MemoryWriter:
         self.conversation_context = conversation_context
     
     
-    def passive_event_extraction_from_message(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any]) -> None:
+    def passive_event_extraction(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any]) -> None:
         """
         阅读群消息，判断是否值得记忆，并提取需要记忆的事件信息
         
@@ -302,7 +303,7 @@ class MemoryWriter:
             print(f"[DEBUG] 记忆存储模型返回数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
             print(f"[DEBUG] 处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
 
-        '''try:
+        try:
             with self.kg_manager.driver.session() as session:
                 # 遍历nodelist，处理节点
                 for node in nodes_list:
@@ -330,47 +331,73 @@ class MemoryWriter:
                             for key, value in node_info.items():
                                 if key not in ["nodeId", "nodeType", "significance"]:  # 排除不应加入的字段
                                     updates[key] = value
-                            # 处理updates字典
-                            # 排除所有Time时间节点，该节点不遵从modify_node逻辑
+                            # 排除所有Time时间节点，该节点不遵从modify_node逻辑，直接创建新节点
                             if node_type == "Time":
-                                updates = {}
+                                new_node_id = self.kg_manager.create_node(
+                                    session=session,
+                                    name="",
+                                    node_type=node_type,
+                                    time_str=node_info.get("time_str", node_info.get("time", "")),
+                                    importance=0.5,
+                                    trust=0.5,
+                                    context="reality",
+                                    note="无"
+                                )
+                                if new_node_id:
+                                    logger.info(f"Created new Time node: {node_id} -> {new_node_id}")
+                                    old_node_id = node["nodeId"]
+                                    node["nodeId"] = new_node_id
+                                    for relation in relations_list:
+                                        if relation.get("startNode") == old_node_id:
+                                            relation["startNode"] = new_node_id
+                                        if relation.get("endNode") == old_node_id:
+                                            relation["endNode"] = new_node_id
+                                else:
+                                    logger.warning(f"Failed to create Time node: {node_id}")
+                                continue
                             
                             if updates:
                                 result = self.kg_manager.modify_node(existing_node_id, updates)
-                                if result:
+                                if result and result != "InvalidModification":
                                     logger.info(f"Updated existing node: {node_id}")
+                                elif result == "InvalidModification":
+                                    # 修改被拒绝，回退到创建新节点
+                                    logger.warning(f"Modify rejected for node {node_id}, falling back to create new node")
+                                    new_node_id = self.kg_manager.create_node(
+                                        session=session,
+                                        name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
+                                        node_type=node_type,
+                                        time_str=node_info.get("time_str", node_info.get("time", "")),
+                                        importance=node_info.get("importance", 0.5),
+                                        trust=node_info.get("trust", 0.5),
+                                        context=node_info.get("context", "reality"),
+                                        note=node_info.get("note", "无")
+                                    )
+                                    if new_node_id:
+                                        logger.info(f"Fallback created new {node_type} node: {node_id} -> {new_node_id}")
+                                        old_node_id = node["nodeId"]
+                                        node["nodeId"] = new_node_id
+                                        for relation in relations_list:
+                                            if relation.get("startNode") == old_node_id:
+                                                relation["startNode"] = new_node_id
+                                            if relation.get("endNode") == old_node_id:
+                                                relation["endNode"] = new_node_id
+                                    else:
+                                        logger.warning(f"Fallback create also failed for {node_type} node: {node_id}")
                                 else:
                                     logger.warning(f"Failed to update node: {node_id}")
                         else:
-                            # 节点不存在，根据nodeType调用对应的create_xxx_node
-                            new_node_id = None
-                            
-                            if node_type == "Time":
-                                time_str = node_info.get("time_str", node_info.get("time", ""))
-                                if time_str:
-                                    new_node_id = self.kg_manager.create_time_node(session, time_str)
-                                    
-                            elif node_type == "Character":
-                                name = node_info.get("character_name", node_info.get("name", ""))
-                                importance = node_info.get("importance", 0.5)
-                                trust = node_info.get("trust", 0.5)
-                                context = node_info.get("context", "reality")
-                                if name:
-                                    new_node_id = self.kg_manager.create_character_node(session, name, importance, trust, context)
-                                    
-                            elif node_type == "Location":
-                                name = node_info.get("location_name", node_info.get("name", ""))
-                                context = node_info.get("context", "reality")
-                                if name:
-                                    new_node_id = self.kg_manager.create_location_node(session, name, context)
-                                    
-                            elif node_type == "Entity":
-                                name = node_info.get("entity_name", node_info.get("name", ""))
-                                importance = node_info.get("importance", 0.5)
-                                context = node_info.get("context", "reality")
-                                note = node_info.get("note", "无")
-                                if name:
-                                    new_node_id = self.kg_manager.create_entity_node(session, name, importance, context, note)
+                            # 节点不存在，调用create_node创建节点
+                            new_node_id = self.kg_manager.create_node(
+                                session=session,
+                                name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
+                                node_type=node_type,
+                                time_str=node_info.get("time_str", node_info.get("time", "")),
+                                importance=node_info.get("importance", 0.5),
+                                trust=node_info.get("trust", 0.5),
+                                context=node_info.get("context", "reality"),
+                                note=node_info.get("note", "无")
+                            )
                             
                             if new_node_id:
                                 logger.info(f"Created new {node_type} node: {node_id} -> {new_node_id}")
@@ -420,7 +447,7 @@ class MemoryWriter:
                         check_relation_query = """
                         OPTIONAL MATCH (a)-[r]->(b) 
                         WHERE elementId(a) = $start_id AND elementId(b) = $end_id 
-                        AND (elementId(r) = $relation_id OR (r.custom_id IS NOT NULL AND r.custom_id = $relation_id))
+                        AND elementId(r) = $relation_id
                         RETURN elementId(r) as existing_relation_id
                         """
                         
@@ -482,44 +509,12 @@ class MemoryWriter:
                 
         except Exception as e:
             logger.error(f"Error during memory record processing: {e}")
-            return {"nodes": [], "relations": []}'''
+            return {"nodes": [], "relations": []}
+
+    
 
 
-def test_passive_memory_record():
-    """测试被动记忆记录功能"""
-    from brain.memory.knowledge_graph_manager import KnowledgeGraphManager
-    
-    # 初始化知识图谱管理器和记忆写入器
-    kg_manager = KnowledgeGraphManager()
-    memory_writer = MemoryWriter(kg_manager)
-    
-    # 测试数据
-    memory_to_record = {}
-    
-    related_memory = {
-        "nodes": [],
-        "relations": []
-    }
-    
-    try:
-        print("开始测试记忆写入功能...")
-        print(f"事件: {memory_to_record['event']}")
-        print(f"描述详情: {len(memory_to_record['description'])} 个属性")
-        
-        # 调用被测试的函数
-        memory_writer.passive_memory_record(
-            memory_to_record=memory_to_record,
-            related_memory=related_memory,
-        )
-        
-        print("记忆写入测试完成!")
-        
-    except Exception as e:
-        print(f"测试过程中出现错误: {e}")
-        import traceback
-        traceback.print_exc()
-    
-def test_passive_event_extraction():
+def main():
     """测试被动事件提取功能"""
     from brain.memory.knowledge_graph_manager import KnowledgeGraphManager
     
@@ -557,7 +552,7 @@ def test_passive_event_extraction():
         print(f"当前已提取事件数: {len(current_events)}")
         
         # 从用户输入获取对话记录
-        print("请输入对话记录，格式：[时间戳] <角色> 对话内容")
+        print("请输入对话记录，建议格式：[时间戳] <角色> 对话内容")
         print("输入示例：[2026/1/7T16:01] <角色> 对话内容")
         print("回车键结束当前轮次输入")
         
@@ -580,7 +575,7 @@ def test_passive_event_extraction():
             recent_messages = session_context.get_context()
             
             # 调用被测试的函数
-            event_extractor.passive_event_extraction_from_message(
+            event_extractor.passive_event_extraction(
                 recent_message=recent_messages,
                 related_memory=related_memory
             )
@@ -598,14 +593,6 @@ def test_passive_event_extraction():
             print()
         
         round_count += 1
-
-
-def main():
-    """测试事件提取功能"""
-    test_passive_event_extraction()
-
-    """测试记忆写入功能"""
-    # test_passive_memory_record()
 
 
 if __name__ == "__main__":
