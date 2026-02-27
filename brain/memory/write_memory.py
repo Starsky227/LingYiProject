@@ -122,18 +122,30 @@ class MemoryWriter:
         self.conversation_context = conversation_context
     
     
-    def passive_event_extraction(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any]) -> None:
+    def passive_event_extraction(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any] = None) -> None:
         """
         阅读群消息，判断是否值得记忆，并提取需要记忆的事件信息
         
         Args:
             recent_message: 最近的消息列表，格式：[{"role": "user", "content": "...", "time": "..."}, ...]
-            related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}
+            related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}，为空时自动从temp_memory.json读取
         """
 
         # 准备输入数据
         input_messages = [{"role": "system", "content": EVENT_EXTRACT_PROMPT}]
         
+        # 如果没有输入related_memory，则读取temp_memory.json文件中的相关记忆数据
+        if related_memory is None:
+            temp_memory_path = os.path.join(os.path.dirname(__file__), "memory_graph", "temp_memory.json")
+            try:
+                with open(temp_memory_path, "r", encoding="utf-8") as f:
+                    related_memory = json.load(f)
+                if DEBUG_MODE:
+                    print(f"[DEBUG] 从temp_memory.json加载了相关记忆数据")
+            except (FileNotFoundError, json.JSONDecodeError) as e:
+                logger.warning(f"无法加载temp_memory.json: {e}")
+                related_memory = {"nodes": [], "relationships": []}
+
         # 处理related_memory，将字典格式转换为文本格式
         if isinstance(related_memory, dict):
             # 转换为文本格式
@@ -511,8 +523,6 @@ class MemoryWriter:
             logger.error(f"Error during memory record processing: {e}")
             return {"nodes": [], "relations": []}
 
-    
-
 
 def main():
     """测试被动事件提取功能"""
@@ -522,18 +532,6 @@ def main():
     kg_manager = KnowledgeGraphManager()
     session_context = ConversationContext("test_session_001")
     event_extractor = MemoryWriter(kg_manager, session_context)
-    
-    # 从 memory_frag_for_test.json 文件读取测试数据
-    memory_frag_path = os.path.join(os.path.dirname(__file__), "memory_graph", "memory_frag_for_test.json")
-    try:
-        with open(memory_frag_path, "r", encoding="utf-8") as f:
-            related_memory = json.load(f)
-    except FileNotFoundError:
-        print(f"[警告] 未找到测试数据文件: {memory_frag_path}")
-        related_memory = {"nodes": [], "relations": []}
-    except json.JSONDecodeError as e:
-        print(f"[错误] 测试数据文件JSON解析失败: {e}")
-        related_memory = {"nodes": [], "relations": []}
     
     print("=== 事件提取功能测试 ===")
     print(f"会话ID: {session_context.session_id}")
@@ -575,10 +573,7 @@ def main():
             recent_messages = session_context.get_context()
             
             # 调用被测试的函数
-            event_extractor.passive_event_extraction(
-                recent_message=recent_messages,
-                related_memory=related_memory
-            )
+            event_extractor.passive_event_extraction(recent_message=recent_messages)
             
             print("事件提取测试完成!")
             

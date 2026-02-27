@@ -601,7 +601,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str]) -> Dict[str, Any]
         return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50) -> Dict[str, Any]:
+def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50, save_temp_memory: bool = False) -> Dict[str, Any]:
     """
     通过_extract_keywords获得基础节点数据。
     而后通过反复调用_expand_memory_grabbed获取相关联的节点和关系。
@@ -685,6 +685,18 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
             
             if DEBUG_MODE:
                 print(f"[记忆查询] 成功返回 {len(result['nodes'])} 个节点，{len(result['relationships'])} 个关系")
+            
+            # 保存结果到临时文件供调试查看
+            if save_temp_memory:
+                try:
+                    memory_frag_path = os.path.join(os.path.dirname(__file__), "memory_graph", "temp_memory.json")
+                    os.makedirs(os.path.dirname(memory_frag_path), exist_ok=True)
+                    with open(memory_frag_path, "w", encoding="utf-8") as f:
+                        json.dump(result, f, ensure_ascii=False, indent=2)
+                    logger.debug(f"[记忆查询] 结果已保存到: {memory_frag_path}")
+                except Exception as save_e:
+                    logger.warning(f"[警告] 保存结果到文件失败: {save_e}")
+            
             return result
         
     except Exception as e:
@@ -695,21 +707,11 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
 
 
 if __name__ == "__main__":
-    test_message = [{"role": "user", "content": f"[2026_1_12T20:30] <星空> 玲依你知道我的出生日期吗？"}]
+    test_message = [{"role": "user", "content": f"[2026_1_12T20:30] <星空> 谁喜欢吃苹果？"}]
 
     extract_result = extract_keyword_from_text(test_message)
     test_summary = extract_result.get("summary", [])
     test_keywords = extract_result.get("keywords", [])
 
-    result = get_relevant_memories(test_keywords, test_summary)
-
-    # 保存result到json文件供调试查看
-    try:
-        memory_frag_path = os.path.join(os.path.dirname(__file__), "memory_graph", "memory_frag_for_test.json")
-        os.makedirs(os.path.dirname(memory_frag_path), exist_ok=True)
-        with open(memory_frag_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-        logger.debug(f"[记忆查询] 结果已保存到: {memory_frag_path}")
-    except Exception as save_e:
-        logger.warning(f"[警告] 保存结果到文件失败: {save_e}")
+    result = get_relevant_memories(test_keywords, test_summary, save_temp_memory=True)
     
