@@ -10,6 +10,9 @@ brain/memory/logs/chat_logs/
 chat_logs/
 *.log
 
+# 记忆图谱数据
+brain/memory/memory_graph/
+
 # 虚拟环境
 venv/
 env/
