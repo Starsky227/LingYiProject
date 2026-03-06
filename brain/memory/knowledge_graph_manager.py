@@ -16,7 +16,7 @@ import json
 import logging
 from dataclasses import asdict
 from datetime import datetime
-from litellm import OpenAI
+from openai import OpenAI
 from system.config import config
 from typing import List, Dict, Any, Optional
 
@@ -48,14 +48,14 @@ def load_prompt_file(filename: str, description: str = "") -> str:
     """
     prompt_path = os.path.join(os.path.dirname(__file__), "prompt", filename)
     if not os.path.exists(prompt_path):
-        error_msg = f"[错误] {description}提示词文件不存在: {prompt_path}"
-        print(error_msg)
+        error_msg = f"{description}提示词文件不存在: {prompt_path}"
+        logger.error(error_msg)
         return ""
 
     with open(prompt_path, "r", encoding="utf-8") as f:
         content = f.read().strip()
         if not content:
-            print(f"[警告] {description}提示词文件为空: {prompt_path}")
+            logger.warning(f"{description}提示词文件为空: {prompt_path}")
         return content
 
 
@@ -123,6 +123,8 @@ class KnowledgeGraphManager:
                 if test_value == 1:
                     self.connected = True
                     logger.info("Successfully connected to Neo4j")
+                    # 确保向量索引已创建
+                    self._ensure_vector_indexes()
                     return True
 
         except AuthError as e:
@@ -151,6 +153,50 @@ class KnowledgeGraphManager:
         if not self.connected:
             return self._connect()
         return True
+
+    # 向量索引定义：(索引名, 标签名)
+    VECTOR_INDEX_DEFINITIONS = [
+        ("character_embedding_index", "Character"),
+        ("location_embedding_index", "Location"),
+        ("entity_embedding_index", "Entity"),
+        ("time_embedding_index", "Time"),
+    ]
+    VECTOR_EMBEDDING_DIMENSION = 384
+    VECTOR_SIMILARITY_FUNCTION = "cosine"
+
+    def _ensure_vector_indexes(self):
+        """
+        确保所有需要的向量索引已创建。
+        在连接成功后调用，如果索引已存在则跳过。
+        """
+        if not self.driver:
+            return
+
+        try:
+            with self.driver.session() as session:
+                # 获取已存在的索引
+                existing_indexes = set()
+                result = session.run("SHOW INDEXES YIELD name RETURN name")
+                for record in result:
+                    existing_indexes.add(record["name"])
+
+                for index_name, label in self.VECTOR_INDEX_DEFINITIONS:
+                    if index_name not in existing_indexes:
+                        create_index_query = (
+                            f"CREATE VECTOR INDEX {index_name} IF NOT EXISTS "
+                            f"FOR (n:{label}) ON (n.embedding) "
+                            f"OPTIONS {{indexConfig: {{"
+                            f"`vector.dimensions`: {self.VECTOR_EMBEDDING_DIMENSION}, "
+                            f"`vector.similarity_function`: '{self.VECTOR_SIMILARITY_FUNCTION}'"
+                            f"}}}}"
+                        )
+                        session.run(create_index_query)
+                        logger.info(f"Created vector index: {index_name} for label :{label}")
+                    else:
+                        logger.debug(f"Vector index already exists: {index_name}")
+
+        except Exception as e:
+            logger.warning(f"Failed to ensure vector indexes (non-fatal): {e}")
 
     def _generate_embedding(self, text: str) -> Optional[List[float]]:
         """
@@ -2433,7 +2479,7 @@ class KnowledgeGraphManager:
                             existing_data = json.loads(content)
                             logger.info(f"Loaded existing local memory: {len(existing_data.get('nodes', []))} nodes, {len(existing_data.get('relationships', []))} relationships")
                 except Exception as e:
-                    logger.warning(f"Failed to load existing local memory, starting fresh: {e}")
+                    logger.error(f"Failed to load existing local memory, starting fresh: {e}")
                     existing_data = {"nodes": [], "relationships": []}
             
             with self.driver.session() as session:
@@ -2550,21 +2596,21 @@ class KnowledgeGraphManager:
                     f"{len(merged_relationships)} total relationships ({rel_added_count} added, {rel_updated_count} updated)"
                 )
                 
-                print(f"💾 记忆已保存到: {local_memory_file}")
-                print(f"📊 合并结果:")
-                print(f"   节点: 新增 {added_count} 个, 更新 {updated_count} 个, 总计 {len(merged_nodes)} 个")
-                print(f"   关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个, 总计 {len(merged_relationships)} 个")
+                logger.info(f"记忆已保存到: {local_memory_file}")
+                logger.info("合并结果:")
+                logger.info(f"  节点: 新增 {added_count} 个, 更新 {updated_count} 个, 总计 {len(merged_nodes)} 个")
+                logger.info(f"  关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个, 总计 {len(merged_relationships)} 个")
                 
                 # 统计被过滤的关系数量
                 filtered_count = len(relation_ids) - len(new_relationships)
                 if filtered_count > 0:
-                    print(f"⚠️  已过滤 {filtered_count} 个无效关系（节点不在保存列表中）")
+                    logger.warning(f"已过滤 {filtered_count} 个无效关系（节点不在保存列表中）")
                 
                 return True
         
         except Exception as e:
             logger.error(f"Failed to save memory: {e}")
-            print(f"❌ 保存记忆失败: {e}")
+            logger.error(f"保存记忆失败: {e}")
             return False
 
     def upload_memory(self, elements: Dict[str, Any]) -> bool:
@@ -2605,7 +2651,7 @@ class KnowledgeGraphManager:
             # 检查local_memory.json是否存在
             if not os.path.exists(local_memory_file):
                 logger.error(f"Local memory file not found: {local_memory_file}")
-                print(f"❌ 本地记忆文件不存在: {local_memory_file}")
+                logger.error(f"本地记忆文件不存在: {local_memory_file}")
                 return False
             
             # 读取local_memory.json文件
@@ -2613,7 +2659,7 @@ class KnowledgeGraphManager:
                 content = f.read().strip()
                 if not content:
                     logger.error("Local memory file is empty")
-                    print("❌ 本地记忆文件为空")
+                    logger.error("本地记忆文件为空")
                     return False
                 local_memory_data = json.loads(content)
             
@@ -2814,7 +2860,7 @@ class KnowledgeGraphManager:
                         json.dump(local_memory_data, f, ensure_ascii=False, indent=2)
                     
                     logger.info(f"Updated local memory file with new IDs from Neo4j")
-                    print(f"💾 已同步Neo4j生成的ID到本地记忆文件")
+                    logger.info("已同步Neo4j生成的ID到本地记忆文件")
                 
                 logger.info(
                     f"Memory uploaded to Neo4j: "
@@ -2822,25 +2868,25 @@ class KnowledgeGraphManager:
                     f"{rel_added_count} relationships created, {rel_updated_count} relationships updated"
                 )
                 
-                print(f"📤 记忆已上传到Neo4j")
-                print(f"📊 上传结果:")
-                print(f"   节点: 新增 {added_count} 个, 更新 {updated_count} 个")
-                print(f"   关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个")
+                logger.info("记忆已上传到Neo4j")
+                logger.info("上传结果:")
+                logger.info(f"  节点: 新增 {added_count} 个, 更新 {updated_count} 个")
+                logger.info(f"  关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个")
                 
                 # 统计跳过的项目
                 skipped_nodes = len(nodes_ids) - added_count - updated_count
                 skipped_rels = len(relation_ids) - rel_added_count - rel_updated_count
                 
                 if skipped_nodes > 0:
-                    print(f"⚠️  跳过 {skipped_nodes} 个节点（未找到或其他错误）")
+                    logger.warning(f"跳过 {skipped_nodes} 个节点（未找到或其他错误）")
                 if skipped_rels > 0:
-                    print(f"⚠️  跳过 {skipped_rels} 个关系（节点不存在或其他错误）")
+                    logger.warning(f"跳过 {skipped_rels} 个关系（节点不存在或其他错误）")
                 
                 return True
         
         except Exception as e:
             logger.error(f"Failed to upload memory: {e}")
-            print(f"❌ 上传记忆失败: {e}")
+            logger.error(f"上传记忆失败: {e}")
             return False
 
     def delete_from_local_memory(self, element_ids: List[str]) -> Dict[str, Any]:
@@ -2889,7 +2935,7 @@ class KnowledgeGraphManager:
             # 检查文件是否存在
             if not os.path.exists(local_memory_file):
                 logger.warning(f"Local memory file not found: {local_memory_file}")
-                print(f"⚠️  本地记忆文件不存在: {local_memory_file}")
+                logger.warning(f"本地记忆文件不存在: {local_memory_file}")
                 return {
                     "success": False,
                     "error": "Local memory file not found",
@@ -2972,13 +3018,13 @@ class KnowledgeGraphManager:
             total_deleted_nodes = len(deleted_nodes)
             total_deleted_rels = len(deleted_relationships) + len(auto_deleted_relationships)
             
-            print(f"✅ 本地记忆删除完成")
-            print(f"📊 删除统计:")
-            print(f"   节点: 删除 {total_deleted_nodes} 个 (剩余 {len(remaining_nodes)} 个)")
-            print(f"   关系: 删除 {total_deleted_rels} 个 (直接删除 {len(deleted_relationships)} 个, 自动删除 {len(auto_deleted_relationships)} 个, 剩余 {len(remaining_relationships)} 个)")
+            logger.info("本地记忆删除完成")
+            logger.info("删除统计:")
+            logger.info(f"  节点: 删除 {total_deleted_nodes} 个 (剩余 {len(remaining_nodes)} 个)")
+            logger.info(f"  关系: 删除 {total_deleted_rels} 个 (直接删除 {len(deleted_relationships)} 个, 自动删除 {len(auto_deleted_relationships)} 个, 剩余 {len(remaining_relationships)} 个)")
             
             if auto_deleted_relationships:
-                print(f"ℹ️  因节点删除自动删除了 {len(auto_deleted_relationships)} 个关联关系")
+                logger.info(f"因节点删除自动删除了 {len(auto_deleted_relationships)} 个关联关系")
             
             logger.info(
                 f"Local memory deletion completed: "
@@ -2996,7 +3042,7 @@ class KnowledgeGraphManager:
         
         except Exception as e:
             logger.error(f"Failed to delete from local memory: {e}")
-            print(f"❌ 从本地记忆删除失败: {e}")
+            logger.error(f"从本地记忆删除失败: {e}")
             return {
                 "success": False,
                 "error": str(e),
@@ -3047,11 +3093,11 @@ class KnowledgeGraphManager:
             return False
 
         # 执行清空操作
-        print("\n正在清空Neo4j数据库...")
+        logger.info("正在清空Neo4j数据库...")
 
         if not self._ensure_connection():
             logger.error("Cannot clear all memory: No Neo4j connection")
-            print("❌ 错误：无法连接到Neo4j数据库")
+            logger.error("无法连接到Neo4j数据库")
             return False
 
         try:
@@ -3061,12 +3107,12 @@ class KnowledgeGraphManager:
                 if "error" not in stats_before:
                     total_nodes = stats_before.get("nodes", {}).get("total", 0)
                     total_rels = stats_before.get("relationships", {}).get("total", 0)
-                    print(f"清空前统计：{total_nodes} 个节点，{total_rels} 个关系")
+                    logger.info(f"清空前统计：{total_nodes} 个节点，{total_rels} 个关系")
 
                 # 删除所有关系和节点
                 result = session.run("MATCH (n) DETACH DELETE n")
 
-                print("✅ Neo4j数据库已完全清空")
+                logger.info("Neo4j数据库已完全清空")
                 logger.warning(
                     "All Neo4j memory data has been cleared by clear_all_memory function"
                 )
@@ -3078,7 +3124,7 @@ class KnowledgeGraphManager:
                     remaining_rels = stats_after.get("relationships", {}).get(
                         "total", 0
                     )
-                    print(
+                    logger.info(
                         f"清空后确认：{remaining_nodes} 个节点，{remaining_rels} 个关系"
                     )
 
@@ -3086,7 +3132,7 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to clear all memory: {e}")
-            print(f"❌ 清空操作失败：{e}")
+            logger.error(f"清空操作失败：{e}")
             return False
 
     def download_neo4j_data(self) -> bool:
@@ -3098,10 +3144,10 @@ class KnowledgeGraphManager:
         # 检查Neo4j连接
         if not self._ensure_connection():
             logger.error("Cannot load Neo4j data: No Neo4j connection available")
-            print("❌ 错误：无法连接到Neo4j数据库")
+            logger.error("无法连接到Neo4j数据库")
             return False
 
-        print("✅ Neo4j连接正常，正在同步数据...")
+        logger.info("Neo4j连接正常，正在同步数据...")
         logger.info("Neo4j connection established, starting data download")
 
         try:
@@ -3113,7 +3159,7 @@ class KnowledgeGraphManager:
 
             with self.driver.session() as session:
                 # 加载所有节点
-                print("📥 正在下载节点数据...")
+                logger.info("正在下载节点数据...")
                 nodes_query = """
                 MATCH (n)
                 RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
@@ -3130,7 +3176,7 @@ class KnowledgeGraphManager:
                     nodes.append(node)
 
                 # 加载所有关系
-                print("🔗 正在下载关系数据...")
+                logger.info("正在下载关系数据...")
                 relationships_query = """
                 MATCH (a)-[r]->(b)
                 RETURN elementId(r) as id, type(r) as type, elementId(a) as start_node, elementId(b) as end_node, properties(r) as properties
@@ -3164,8 +3210,8 @@ class KnowledgeGraphManager:
                 with open(neo4j_memory_file, "w", encoding="utf-8") as f:
                     json.dump(neo4j_data, f, ensure_ascii=False, indent=2)
 
-                print(f"💾 Neo4j数据已保存到: {neo4j_memory_file}")
-                print(f"📊 下载统计: {len(nodes)} 个节点, {len(relationships)} 个关系")
+                logger.info(f"Neo4j数据已保存到: {neo4j_memory_file}")
+                logger.info(f"下载统计: {len(nodes)} 个节点, {len(relationships)} 个关系")
 
                 logger.info(
                     f"Neo4j data successfully downloaded to {neo4j_memory_file}: {len(nodes)} nodes, {len(relationships)} relationships"
@@ -3174,7 +3220,7 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to load Neo4j data: {e}")
-            print(f"❌ Neo4j数据下载失败: {e}")
+            logger.error(f"Neo4j数据下载失败: {e}")
             return False
 
 

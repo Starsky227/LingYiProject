@@ -18,7 +18,7 @@ import logging
 from typing import Dict, Any, List
 from collections import deque
 from datetime import datetime
-from litellm import OpenAI
+from openai import OpenAI
 
 # 添加项目根目录到Python路径
 project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -50,14 +50,14 @@ def load_prompt_file(filename: str, description: str = "") -> str:
     """
     prompt_path = os.path.join(os.path.dirname(__file__), "prompt", filename)
     if not os.path.exists(prompt_path):
-        error_msg = f"[错误] {description}提示词文件不存在: {prompt_path}"
-        print(error_msg)
+        error_msg = f"{description}提示词文件不存在: {prompt_path}"
+        logger.error(error_msg)
         return ""
     
     with open(prompt_path, "r", encoding="utf-8") as f:
         content = f.read().strip()
         if not content:
-            print(f"[警告] {description}提示词文件为空: {prompt_path}")
+            logger.error(f"{description}提示词文件为空: {prompt_path}")
         return content
 
 MEMORY_RECORD_PROMPT = load_prompt_file("memory_record.txt", "记忆存储")
@@ -140,8 +140,7 @@ class MemoryWriter:
             try:
                 with open(temp_memory_path, "r", encoding="utf-8") as f:
                     related_memory = json.load(f)
-                if DEBUG_MODE:
-                    print(f"[DEBUG] 从temp_memory.json加载了相关记忆数据")
+                logger.debug("从temp_memory.json加载了相关记忆数据")
             except (FileNotFoundError, json.JSONDecodeError) as e:
                 logger.warning(f"无法加载temp_memory.json: {e}")
                 related_memory = {"nodes": [], "relationships": []}
@@ -187,7 +186,7 @@ class MemoryWriter:
         full_response = response.output_text
 
         if not full_response:
-            print(f"[错误] 记忆存储模型未返回响应。")
+            logger.error("记忆存储模型未返回响应。")
             return
         
         # 提取输出为 json 格式
@@ -203,13 +202,11 @@ class MemoryWriter:
             
             extract_event = json.loads(json_content)
             
-            if DEBUG_MODE:
-                print(f"[DEBUG] 解析出的事件数据: {json.dumps(extract_event, ensure_ascii=False, indent=2)}")
+            logger.debug(f"解析出的事件数据: {json.dumps(extract_event, ensure_ascii=False, indent=2)}")
                 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            print(f"[错误] 无法解析模型返回的JSON格式: {e}")
-            print(f"[原始响应] {full_response}")
+            logger.error(f"无法解析模型返回的JSON格式: {e}")
+            logger.error(f"原始响应: {full_response}")
             return
         except Exception as e:
             logger.error(f"Error processing response: {e}")
@@ -218,8 +215,7 @@ class MemoryWriter:
         # 检查提取的事件数据是否有效
         if extract_event and isinstance(extract_event, dict):
             if 'event' in extract_event and extract_event['event']:
-                if DEBUG_MODE:
-                    print(f"[DEBUG] 提取到事件: {extract_event.get('event', '')}")
+                logger.debug(f"提取到事件: {extract_event.get('event', '')}")
                 
                 # 调用记忆记录功能
                 if 'event' in extract_event and 'description' in extract_event:
@@ -228,11 +224,9 @@ class MemoryWriter:
                         related_memory=related_memory,
                     )
             else:
-                if DEBUG_MODE:
-                    print("[DEBUG] 事件字段为空，跳过记忆记录")
+                logger.debug("事件字段为空，跳过记忆记录")
         else:
-            if DEBUG_MODE:
-                print("[DEBUG] 未提取到有效事件，跳过记忆记录")
+            logger.debug("未提取到有效事件，跳过记忆记录")
 
     
     def passive_memory_record(self, memory_to_record: Dict[str, Any], related_memory: Dict[str, Any]) -> None:
@@ -254,8 +248,7 @@ class MemoryWriter:
         else:
             related_memory_text = "【相关记忆】\n暂无相关记忆，可直接进行处理"
         
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储接收到任务: {str(memory_to_record)}")
+        logger.debug(f"记忆存储接收到任务: {str(memory_to_record)}")
         
         # 准备输入数据
         input_messages = []
@@ -278,7 +271,7 @@ class MemoryWriter:
         full_response = response.output_text
 
         if not full_response:
-            print(f"[错误] 记忆存储模型未返回响应。")
+            logger.error("记忆存储模型未返回响应。")
             return
         
         # 提取输出为 json 格式
@@ -295,9 +288,8 @@ class MemoryWriter:
             memory_data = json.loads(json_content)
                 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON response: {e}")
-            print(f"[错误] 无法解析模型返回的JSON格式: {e}")
-            print(f"[原始响应] {full_response}")
+            logger.error(f"无法解析模型返回的JSON格式: {e}")
+            logger.error(f"原始响应: {full_response}")
             return
         except Exception as e:
             logger.error(f"Error processing response: {e}")
@@ -311,12 +303,12 @@ class MemoryWriter:
         nodes_list = memory_data.get("nodes", [])
         relations_list = memory_data.get("relations", [])
         
-        if DEBUG_MODE:
-            print(f"[DEBUG] 记忆存储模型返回数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
-            print(f"[DEBUG] 处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
+        logger.debug(f"记忆存储模型返回数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
+        logger.debug(f"处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
 
         try:
             with self.kg_manager.driver.session() as session:
+                tx = session.begin_transaction()
                 # 遍历nodelist，处理节点
                 for node in nodes_list:
                     try:
@@ -334,7 +326,7 @@ class MemoryWriter:
                         RETURN elementId(n) as existing_id
                         """
                         
-                        check_result = session.run(check_query, node_id=node_id).single()
+                        check_result = tx.run(check_query, node_id=node_id).single()
                         existing_node_id = check_result["existing_id"] if check_result else None
                         
                         if existing_node_id:
@@ -346,7 +338,7 @@ class MemoryWriter:
                             # 排除所有Time时间节点，该节点不遵从modify_node逻辑，直接创建新节点
                             if node_type == "Time":
                                 new_node_id = self.kg_manager.create_node(
-                                    session=session,
+                                    session=tx,
                                     name="",
                                     node_type=node_type,
                                     time_str=node_info.get("time_str", node_info.get("time", "")),
@@ -376,7 +368,7 @@ class MemoryWriter:
                                     # 修改被拒绝，回退到创建新节点
                                     logger.warning(f"Modify rejected for node {node_id}, falling back to create new node")
                                     new_node_id = self.kg_manager.create_node(
-                                        session=session,
+                                        session=tx,
                                         name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
                                         node_type=node_type,
                                         time_str=node_info.get("time_str", node_info.get("time", "")),
@@ -401,7 +393,7 @@ class MemoryWriter:
                         else:
                             # 节点不存在，调用create_node创建节点
                             new_node_id = self.kg_manager.create_node(
-                                session=session,
+                                session=tx,
                                 name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
                                 node_type=node_type,
                                 time_str=node_info.get("time_str", node_info.get("time", "")),
@@ -463,10 +455,10 @@ class MemoryWriter:
                         RETURN elementId(r) as existing_relation_id
                         """
                         
-                        check_relation_result = session.run(check_relation_query, 
-                                                           start_id=start_node_id,
-                                                           end_id=end_node_id,
-                                                           relation_id=relation_id).single()
+                        check_relation_result = tx.run(check_relation_query, 
+                                                       start_id=start_node_id,
+                                                       end_id=end_node_id,
+                                                       relation_id=relation_id).single()
                         
                         existing_relation_id = check_relation_result["existing_relation_id"] if check_relation_result else None
                         
@@ -517,10 +509,13 @@ class MemoryWriter:
                             "action": "processed"
                         })
                 
+                tx.commit()
+                logger.info(f"记忆记录事务已提交: {len(nodes_list)} 个节点, {len(relations_list)} 个关系")
                 return {"nodes": processed_nodes, "relations": processed_relations}
                 
         except Exception as e:
-            logger.error(f"Error during memory record processing: {e}")
+            # 事务未提交时，session 关闭会自动回滚未提交的事务
+            logger.error(f"记忆记录处理出错，事务已回滚: {e}")
             return {"nodes": [], "relations": []}
 
 

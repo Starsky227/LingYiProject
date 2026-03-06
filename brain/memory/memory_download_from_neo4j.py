@@ -342,40 +342,35 @@ def update_memory_graph_file() -> bool:
 def main():
     """主函数 - 用于命令行调用"""
     
-    print("Memory Graph Loader")
-    print("=" * 50)
+    logger.info("Memory Graph Loader")
     
     # 显示配置信息
-    print(f"GRAG enabled: {config.grag.enabled}")
-    print(f"Neo4j URI: {config.grag.neo4j_uri}")
-    print(f"Neo4j Database: {config.grag.neo4j_database}")
-    print(f"Output file: {os.path.join(config.system.log_dir, 'memory_graph.json')}")
-    print()
+    logger.info(f"GRAG enabled: {config.grag.enabled}")
+    logger.info(f"Neo4j URI: {config.grag.neo4j_uri}")
+    logger.info(f"Neo4j Database: {config.grag.neo4j_database}")
+    logger.info(f"Output file: {os.path.join(config.system.log_dir, 'memory_graph.json')}")
     
     if not config.grag.enabled:
-        print("GRAG is disabled. Please enable it in config.json")
+        logger.warning("GRAG is disabled. Please enable it in config.json")
         return
     
     # 更新图谱文件
     success = update_memory_graph_file()
     
     if success:
-        print("✓ Memory graph loaded and saved successfully")
+        logger.info("Memory graph loaded and saved successfully")
         
         # 显示统计信息
         graph = load_memory_graph_from_file()
         if graph:
-            print(f"  - Nodes: {len(graph.nodes)}")
-            print(f"  - Relationships: {len(graph.relationships)}")
-            print(f"  - Updated at: {graph.updated_at}")
+            logger.info(f"Nodes: {len(graph.nodes)}, Relationships: {len(graph.relationships)}, Updated at: {graph.updated_at}")
             
             if graph.metadata:
-                print("  - Metadata:")
                 for key, value in graph.metadata.items():
                     if key not in ['source', 'neo4j_uri', 'neo4j_database']:
-                        print(f"    {key}: {value}")
+                        logger.info(f"  {key}: {value}")
     else:
-        print("✗ Failed to load memory graph")
+        logger.error("Failed to load memory graph")
 
 if __name__ == "__main__":
     main()

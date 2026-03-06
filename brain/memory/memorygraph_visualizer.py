@@ -37,8 +37,7 @@ logger = logging.getLogger(__name__)
 class MemoryGraphViewer:
     """记忆图谱HTML可视化器"""
     
-    def __init__(self, memory_graph_file: Optional[str] = None):
-        self.memory_graph_file = memory_graph_file or os.path.join(config.system.log_dir, "memory_graph.json")
+    def __init__(self):
         self.local_memory_file = os.path.join(os.path.dirname(__file__), "memory_graph", "local_memory.json")
         self.neo4j_memory_file = os.path.join(os.path.dirname(__file__), "memory_graph", "neo4j_memory.json")
         self.graph_data = None
@@ -76,8 +75,6 @@ class MemoryGraphViewer:
             
             # 合并数据用于向后兼容
             self.graph_data = self.merge_graph_data()
-            
-            logger.info(f"Loaded merged memory graph data")
             return True
             
         except Exception as e:
@@ -142,12 +139,10 @@ class MemoryGraphViewer:
         """检查Neo4j连接状态"""
         try:
             self.neo4j_connected = is_neo4j_available()
-            logger.info(f"Neo4j connection status: {self.neo4j_connected}")
-            print(f"🔍 Neo4j连接状态检查结果: {self.neo4j_connected}")
+            logger.info(f"Neo4j连接状态检查结果: {self.neo4j_connected}")
             return self.neo4j_connected
         except Exception as e:
-            logger.error(f"Failed to check Neo4j connection: {e}")
-            print(f"❌ Neo4j连接检查失败: {e}")
+            logger.error(f"Neo4j连接检查失败: {e}")
             self.neo4j_connected = False
             return False
     
@@ -300,7 +295,7 @@ class MemoryGraphViewer:
             viz_data = self.prepare_visualization_data()
             
             if not viz_data:
-                logger.error("No visualization data available")
+                logger.error("无可视化数据可用")
                 return False
             
             # 加载HTML模板
@@ -316,7 +311,7 @@ class MemoryGraphViewer:
             
             # 确定输出文件路径
             if output_file is None:
-                output_file = os.path.join(config.system.log_dir, "memory_graph_visualization.html")
+                output_file = os.path.join(os.path.dirname(__file__), "memory_graph", "memory_graph_visualization.html")
             
             # 确保目录存在
             os.makedirs(os.path.dirname(output_file), exist_ok=True)
@@ -325,14 +320,12 @@ class MemoryGraphViewer:
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            logger.info(f"HTML visualization generated: {output_file}")
-            print(f"✅ HTML可视化文件已生成: {output_file}")
+            logger.info(f"HTML可视化文件已生成: {output_file}")
             
             return True
             
         except Exception as e:
-            logger.error(f"Failed to generate HTML visualization: {e}")
-            print(f"❌ 生成HTML可视化失败: {e}")
+            logger.error(f"生成HTML可视化失败: {e}")
             return False
     
     def prepare_graph_data(self) -> Dict[str, Any]:
@@ -357,7 +350,7 @@ class MemoryGraphViewer:
             return viz_data
             
         except Exception as e:
-            logger.error(f"Failed to prepare graph data: {e}")
+            logger.error(f"准备图谱数据失败: {e}")
             return {
                 "nodes": [],
                 "links": [],
@@ -377,11 +370,10 @@ class MemoryGraphViewer:
         try:
             # 直接打开服务器地址而不是文件
             webbrowser.open("http://localhost:5000")
-            print(f"🌐 已在浏览器中打开: http://localhost:5000")
+            logger.info("已在浏览器中打开: http://localhost:5000")
                 
         except Exception as e:
-            logger.error(f"Failed to open in browser: {e}")
-            print(f"❌ 无法在浏览器中打开: {e}")
+            logger.error(f"无法在浏览器中打开: {e}")
 
 def check_neo4j_connection() -> bool:
     """检查Neo4j连接状态"""
@@ -392,7 +384,7 @@ def check_neo4j_connection() -> bool:
             connector.disconnect()
         return connected
     except Exception as e:
-        logger.error(f"Failed to check Neo4j connection: {e}")
+        logger.error(f"检查Neo4j连接失败: {e}")
         return False
 
 def create_time_node_api(time_str: str) -> Dict[str, Any]:
@@ -422,7 +414,7 @@ def create_time_node_api(time_str: str) -> Dict[str, Any]:
             result_node = kg_manager.create_time_node(session, time_str)
             
             if result_node:
-                logger.info(f"Successfully created time node: {result_node}")
+                logger.info(f"成功创建时间节点: {result_node}")
                 return {
                     "success": True,
                     "error": None,
@@ -437,7 +429,7 @@ def create_time_node_api(time_str: str) -> Dict[str, Any]:
                 }
                 
     except Exception as e:
-        logger.error(f"Failed to create time node '{time_str}': {e}")
+        logger.error(f"创建时间节点 '{time_str}' 失败: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -474,7 +466,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
             result_node = kg_manager.create_character_node(session, character_name, importance, trust, context)
             
             if result_node:
-                logger.info(f"Successfully created character node: {result_node}")
+                logger.info(f"成功创建角色节点: {result_node}")
                 return {
                     "success": True,
                     "error": None,
@@ -489,7 +481,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
                 }
                 
     except Exception as e:
-        logger.error(f"Failed to create character node '{character_name}': {e}")
+        logger.error(f"创建角色节点 '{character_name}' 失败: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -526,7 +518,7 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
             result_node = kg_manager.create_entity_node(session, entity_name, importance, context, note)
             
             if result_node:
-                logger.info(f"Successfully created entity node: {result_node}")
+                logger.info(f"成功创建实体节点: {result_node}")
                 return {
                     "success": True,
                     "error": None,
@@ -541,7 +533,7 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
                 }
                 
     except Exception as e:
-        logger.error(f"Failed to create entity node '{entity_name}': {e}")
+        logger.error(f"创建实体节点 '{entity_name}' 失败: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -576,7 +568,7 @@ def create_location_node_api(location_name: str, context: str = "reality现实")
             result_node = kg_manager.create_location_node(session, location_name, context)
             
             if result_node:
-                logger.info(f"Successfully created location node: {result_node}")
+                logger.info(f"成功创建地点节点: {result_node}")
                 return {
                     "success": True,
                     "error": None,
@@ -591,7 +583,7 @@ def create_location_node_api(location_name: str, context: str = "reality现实")
                 }
                 
     except Exception as e:
-        logger.error(f"Failed to create location node '{location_name}': {e}")
+        logger.error(f"创建地点节点 '{location_name}' 失败: {e}")
         return {
             "success": False,
             "error": str(e),
@@ -693,7 +685,7 @@ def start_api_server():
             nonlocal client_connected, last_heartbeat
             client_connected = True
             last_heartbeat = time.time()
-            html_file = os.path.join(config.system.log_dir, "memory_graph_visualization.html")
+            html_file = os.path.join(os.path.dirname(__file__), "memory_graph", "memory_graph_visualization.html")
             if os.path.exists(html_file):
                 return send_file(html_file)
             else:
@@ -1299,12 +1291,11 @@ def start_api_server():
             server_thread.join(timeout=5)
         
     except ImportError:
-        print("⚠️ Flask未安装，无法启动API服务器")
-        print("API功能需要安装Flask: pip install flask flask-cors")
+        logger.error("Flask未安装，无法启动API服务器")
+        logger.error("API功能需要安装Flask: pip install flask flask-cors")
         input("\n按Enter键退出...")
     except Exception as e:
-        logger.error(f"Failed to start API server: {e}")
-        print(f"❌ API服务器启动失败: {e}")
+        logger.error(f"API服务器启动失败: {e}")
         input("\n按Enter键退出...")
 
 if __name__ == "__main__":

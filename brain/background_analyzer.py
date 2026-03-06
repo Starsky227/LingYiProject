@@ -22,7 +22,7 @@ API_KEY = config.api.api_key
 API_URL = config.api.base_url
 MODEL = config.api.model
 AI_NAME = config.system.ai_name
-USERNAME = config.ui.username
+USERNAME = config.system.user_name
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端

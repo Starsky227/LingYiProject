@@ -217,6 +217,18 @@ class UIConfig(BaseModel):
     # mac_btn_gap: int = Field(default=12, ge=0, le=30, description="Mac按钮间距")
     # animation_duration: int = Field(default=600, ge=100, le=2000, description="动画时长（毫秒）")
 
+class QQConfig(BaseModel):
+    """QQ相关配置"""
+    bot_qq: int = Field(default=None, description="机器人QQ号")
+    master_qq: int = Field(default=None, description="主人QQ号")
+    speak_freq: int = Field(default=30, ge=1, le=3600, description="两次回应之间的间隔（秒）")
+    onebot_ws_url: str = Field(default="http://127.0.0.1:6099", description="OneBot WebSocket URL")
+    onebot_token: str = Field(default="", description="OneBot Token")
+    group_whitelist: List[int] = Field(default_factory=list, description="群聊白名单，填入允许机器人响应的群号")
+    group_blacklist: List[int] = Field(default_factory=list, description="群聊黑名单，当白名单为空时，黑名单生效")
+    private_whitelist: List[int] = Field(default_factory=list, description="私聊白名单，填入允许机器人响应的QQ号")
+    private_blacklist: List[int] = Field(default_factory=list, description="私聊黑名单，当白名单为空时，黑名单生效")
+
 # class Live2DConfig(BaseModel):
 #     """Live2D配置"""
 #     enabled: bool = Field(default=True, description="是否启用Live2D功能")
@@ -274,6 +286,7 @@ class LingYiConfig(BaseModel):
     # tts: TTSConfig = Field(default_factory=TTSConfig)
     # asr: ASRConfig = Field(default_factory=ASRConfig)  # ASR输入服务配置 #
     ui: UIConfig = Field(default_factory=UIConfig)
+    qq_config: QQConfig = Field(default_factory=QQConfig)
     # live2d: Live2DConfig = Field(default_factory=Live2DConfig)
     # voice_realtime: VoiceRealtimeConfig = Field(default_factory=VoiceRealtimeConfig)  # 实时语音配置
     window: QWidget = Field(default=None)

@@ -17,3 +17,4 @@ pytz>=2023.3
 python-dateutil>=2.8.2
 requests>=2.31.0
 uvicorn>=0.38.0
+websockets>=16.0
