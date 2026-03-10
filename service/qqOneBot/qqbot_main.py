@@ -11,6 +11,7 @@ from pathlib import Path
 project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, project_root)
 
+from brain.lingyi_core.lingyi_core import LingYiCore
 from service.qqOneBot import onebot
 from service.qqOneBot.handler import MessageHandler
 from system.config import config
@@ -62,8 +63,12 @@ async def main() -> None:
     logger.info("[初始化] 正在加载核心组件...")
     try:
         onebot = OneBotClient(config.qq_config.onebot_ws_url, config.qq_config.onebot_token)
+        qq_prompt_path = os.path.join(os.path.dirname(__file__), "utils", "qq_prompt.txt")
+        with open(qq_prompt_path, "r", encoding="utf-8") as f:
+            qq_prompt = f.read().strip()
+        ai = LingYiCore(qq_prompt)
         # 创建handler
-        handler = MessageHandler(onebot)
+        handler = MessageHandler(onebot, ai)
 
         onebot.set_message_handler(handler.handle_message)
         logger.info("[初始化] 核心组件加载完成")
@@ -88,6 +93,19 @@ async def main() -> None:
 
 def run() -> None:
     """运行入口"""
+    level, level_name = _get_log_level()
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
+
+    # 过滤不关键的日志
+    logging.getLogger("websockets").setLevel(logging.WARNING)
+    logging.getLogger("onebot").setLevel(logging.WARNING)
+    logging.getLogger("openai").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger().setLevel(level)
     asyncio.run(main())
 
 

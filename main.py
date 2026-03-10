@@ -79,8 +79,8 @@ logger = logging.getLogger("memory")
 logger.setLevel(logging.INFO)
 
 # 屏蔽 httpx 和 openai 的 INFO 日志
-# logging.getLogger("httpx").setLevel(logging.WARNING)
-# logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("openai").setLevel(logging.WARNING)
 
 
 # 服务管理器类

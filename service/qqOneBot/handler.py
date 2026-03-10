@@ -7,7 +7,7 @@ import time
 import asyncio
 from typing import Any
 
-# from Undefined.ai import AIClient
+from brain.lingyi_core.lingyi_core import LingYiCore
 from system.config import config
 # from Undefined.faq import FAQStorage
 # from Undefined.rate_limit import RateLimiter
@@ -33,13 +33,14 @@ class MessageHandler:
     def __init__(
         self,
         onebot: OneBotClient,
-        # ai: AIClient,
+        ai: LingYiCore,
         # faq_storage: FAQStorage,
         # task_storage: ScheduledTaskStorage,
     ) -> None:
         self.onebot = onebot
         self.sessions: dict[str, ConversationSession] = {}  # 会话存储 {session_key: ConversationSession}
         self.ai_coordinator = AICoordinator(
+            ai,
             onebot,
         )
     
@@ -187,6 +188,10 @@ class MessageHandler:
                 )
             return"""
         
+        # 当前不管什么消息都直接丢给ai_coordinator
+        asyncio.create_task(self.ai_coordinator.temp_message_handeling(session, event))
+        return
+
         # 处理私聊消息
         if event.get("message_type") == "private":
             private_sender_id: int = get_message_sender_id(event)

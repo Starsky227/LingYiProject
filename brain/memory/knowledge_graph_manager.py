@@ -78,6 +78,7 @@ from system.config import config
 from system.system_checker import is_neo4j_available
 
 logger = logging.getLogger(__name__)
+logging.getLogger("neo4j").setLevel(logging.WARNING)
 
 
 class KnowledgeGraphManager:
@@ -231,16 +232,45 @@ class KnowledgeGraphManager:
         except Exception as e:
             logger.error(f"Failed to generate embedding: {e}")
             return None
-
-    def create_time_node(self, session, time_str: str) -> Optional[str]:
+    
+    def create_node(
+        self,
+        session,
+        name: str,
+        node_type: str,
+        time_str: list[str],
+        time_type: str,
+        trust: float = 0.5,
+        context: str = "reality现实",
+        note: str = "无",
+    ) -> Optional[str]:
         """
-        创建时间节点并建立层次关系
-        自动根据时间完整性确定类型：没有年份为recurring，有年份为static
-        标准格式：XXXX年XX月XX日XX点XX分XX秒XX
+        创建节点，通过此节点时可以创建多种节点类型。
+        """
+        if node_type == "Time":
+            return self.create_time_node(session, time_str, time_type, context)
+        elif node_type == "Character":
+            return self.create_character_node(session, name, trust, context)
+        elif node_type == "Location":
+            return self.create_location_node(session, name, context)
+        elif node_type == "Entity":
+            return self.create_entity_node(session, name, context, note)
+        else:
+            logger.error(f"Unsupported node type: {node_type}")
+            return None
+
+
+    def create_time_node(self, session, time_str: list[str], time_type: str = "static", context: str = "reality现实") -> Optional[str]:
+        """
+        根据时间组件列表创建对应的时间节点和层次关系。
+        列表中第一个元素为最上层（最粗粒度），最后一个为最具体。
+        例如: ["2001年", "2月", "3日", "4点", "56分", "7秒"]
 
         Args:
             session: Neo4j session
-            time_str: 时间字符串
+            time_str: 时间组件列表，如 ["2001年", "2月", "3日"]
+            time_type: 时间类型，"static" 或 "recurring"
+            context: 上下文环境
 
         Returns:
             Optional[str]: 创建的最具体时间节点ID，失败返回None
@@ -250,390 +280,62 @@ class KnowledgeGraphManager:
         logger.debug(f"Creating time node for: {time_str}")
 
         try:
-            # 解析时间组件
-            year_match = re.search(r"(\d{4})年", time_str)
-            month_match = re.search(r"(\d{1,2})月", time_str)
-            day_match = re.search(r"(\d{1,2})日", time_str)
-            hour_match = re.search(r"(\d{1,2})点", time_str)
-            sub_hour_match = re.search(r"点(.+)", time_str)
-
-            # 自动确定时间类型：没有年份为recurring，有年份为static
-            if not year_match:
-                time_type = "recurring"
-            else:
-                time_type = "static"
-
             most_specific_node_id = None
+            prev_node_name = None
+            prev_cumulative = None
 
-            # 如果有年份，创建年份节点
-            if year_match:
-                year = year_match.group(1)
-                year_name = f"{year}年"
-                if time_type == "recurring":
-                    year_name = f"[re]{year}年"
+            for i, component in enumerate(time_str):
+                component = component.strip()
+                if not component:
+                    continue
 
-                # 创建年份节点 - 只记录到年份
-                year_time_str = f"{year}年"  # 只记录年份
-                
-                # 生成embedding（使用time字段）
-                year_embedding = self._generate_embedding(year_time_str)
-                
-                result = session.run(
-                    """
-                    MERGE (y:Time:Year {name: $year_name, time: $year_time_str})
-                    SET y.node_type = 'Time',
-                        y.type = $time_type,
-                        y.embedding = $embedding
-                    RETURN elementId(y) as node_id
-                """,
-                    year_name=year_name,
-                    year_time_str=year_time_str,
-                    time_type=time_type,
-                    embedding=year_embedding,
-                )
-                record = result.single()
-                if record:
-                    most_specific_node_id = record["node_id"]
+                # name: 当前组件文本
+                name = component
+                # cumulative_name: 从上层到当前层的累积文本，用于embedding
+                cumulative_name = "".join(c.strip() for c in time_str[:i + 1])
 
-            if month_match:
-                # 如果有月份
-                if month_match:
-                    month = month_match.group(1)
-                    month = str(int(month))
-                    month_name = f"{month}月"
-                    if time_type == "recurring":
-                        month_name = f"[re]{month}月"
-
-                    # 创建月份节点 - 记录到年月或只记录月（recurring类型）
-                    if time_type == "recurring":
-                        month_time_str = f"{month}月"  # recurring类型只记录月份
-                    else:
-                        month_time_str = f"{year}年{month}月"  # static类型记录年月
-
-                    # 生成embedding（使用time字段）
-                    month_embedding = self._generate_embedding(month_time_str)
-
-                    result = session.run(
-                        """
-                        MERGE (m:Time:Month {name: $month_name, time: $month_time_str})
-                        SET m.node_type = 'Time',
-                            m.type = $time_type,
-                            m.embedding = $embedding
-                        RETURN elementId(m) as node_id
-                    """,
-                        month_name=month_name,
-                        month_time_str=month_time_str,
-                        time_type=time_type,
-                        embedding=month_embedding,
-                    )
-                    record = result.single()
-                    if record:
-                        most_specific_node_id = record["node_id"]
-
-                    # 创建月份到年份的层次关系（年份节点在同一函数中已创建）
-                    if year_match:
-                        # 直接创建层次关系，无需检查存在性（年份节点刚刚创建）
-                        session.run(
-                            """
-                            MATCH (m:Time:Month {name: $month_name, time: $month_time_str})
-                            MATCH (y:Time:Year {name: $year_name, time: $year_time_str})
-                            MERGE (m)-[r:BELONGS_TO]->(y)
-                            SET r.hierarchy_type = 'month_to_year'
-                        """,
-                            month_name=month_name,
-                            month_time_str=month_time_str,
-                            year_name=year_name,
-                            year_time_str=year_time_str,
-                        )
-
-                # 如果有日期
-                if day_match:
-                    day = day_match.group(1)
-                    day = str(int(day))
-                    day_name = f"{day}日"
-                    if time_type == "recurring":
-                        day_name = f"[re]{day}日"
-
-                    # 创建日期节点
-                    day_time_str = f"{day}日"
-                    if month_match:
-                        day_time_str = f"{month}月{day}日"
-                        if year_match:
-                            day_time_str = f"{year}年{month}月{day}日"
-
-                    # 生成embedding（使用time字段）
-                    day_embedding = self._generate_embedding(day_time_str)
-
-                    result = session.run(
-                        """
-                        MERGE (d:Time:Day {name: $day_name, time: $day_time_str})
-                        SET d.node_type = 'Time',
-                            d.type = $time_type,
-                            d.embedding = $embedding
-                        RETURN elementId(d) as node_id
-                    """,
-                        day_name=day_name,
-                        day_time_str=day_time_str,
-                        time_type=time_type,
-                        embedding=day_embedding,
-                    )
-                    record = result.single()
-                    if record:
-                        most_specific_node_id = record["node_id"]
-
-                    # 创建日期到月份的层次关系（月份节点在同一函数中已创建）
-                    if month_match:
-                        # 直接创建层次关系，无需检查存在性（月份节点刚刚创建）
-                        session.run(
-                            """
-                            MATCH (d:Time:Day {name: $day_name, time: $day_time_str})
-                            MATCH (m:Time:Month {name: $month_name, time: $month_time_str})
-                            MERGE (d)-[r:BELONGS_TO]->(m)
-                            SET r.hierarchy_type = 'day_to_month'
-                        """,
-                            day_name=day_name,
-                            day_time_str=day_time_str,
-                            month_name=month_name,
-                            month_time_str=month_time_str,
-                        )
-
-                # 如果没有具体日期，尝试解析"第X个星期X"格式
-                elif not day_match:
-                    # 匹配"第X个星期X"、"第X周星期X"等格式
-                    week_pattern = re.search(
-                        r"第(\d{1,2})[个周]?星期([一二三四五六七日天1234567])", time_str
-                    )
-                    if week_pattern:
-                        week_number = week_pattern.group(1)
-                        weekday = week_pattern.group(2)
-
-                        # 将数字转换为中文
-                        weekday_map = {
-                            "1": "一",
-                            "2": "二",
-                            "3": "三",
-                            "4": "四",
-                            "5": "五",
-                            "6": "六",
-                            "7": "七",
-                            "天": "日",
-                        }
-                        weekday = weekday_map.get(weekday, weekday)
-
-                        day_name = f"第{week_number}周星期{weekday}"
-                        if time_type == "recurring":
-                            day_name = f"[re]第{week_number}周星期{weekday}"
-
-                        # 创建周日期节点 - 根据类型记录对应精度
-                        day_time_str = f"第{week_number}周星期{weekday}"
-                        if month_match:
-                            day_time_str = f"{month}月第{week_number}周星期{weekday}"
-                            if year_match:
-                                day_time_str = (
-                                    f"{year}年{month}月第{week_number}周星期{weekday}"
-                                )
-
-                        # 生成embedding（使用time字段）
-                        weekday_embedding = self._generate_embedding(day_time_str)
-
-                        result = session.run(
-                            """
-                            MERGE (d:Time:WeekDay {name: $day_name, time: $day_time_str})
-                            SET d.node_type = 'Time',
-                                d.type = $time_type,
-                                d.week_number = $week_number,
-                                d.weekday = $weekday,
-                                d.embedding = $embedding
-                            RETURN elementId(d) as node_id
-                        """,
-                            day_name=day_name,
-                            day_time_str=day_time_str,
-                            time_type=time_type,
-                            week_number=week_number,
-                            weekday=weekday,
-                            embedding=weekday_embedding,
-                        )
-                        record = result.single()
-                        if record:
-                            most_specific_node_id = record["node_id"]
-
-                        # 创建WeekDay到月份的层次关系（月份节点在同一函数中已创建）
-                        if month_match:
-                            # 直接创建层次关系，无需检查存在性（月份节点刚刚创建）
-                            session.run(
-                                """
-                                MATCH (d:Time:WeekDay {name: $day_name, time: $day_time_str})
-                                MATCH (m:Time:Month {name: $month_name, time: $month_time_str})
-                                MERGE (d)-[r:BELONGS_TO]->(m)
-                                SET r.hierarchy_type = 'weekday_to_month'
-                            """,
-                                day_name=day_name,
-                                day_time_str=day_time_str,
-                                month_name=month_name,
-                                month_time_str=month_time_str,
-                            )
-
-            # 如果有小时（在月份处理之后）
-            if hour_match:
-                hour = hour_match.group(1)
-                hour = str(int(hour))
-                hour_name = f"{hour}点"
-                if time_type == "recurring":
-                    hour_name = f"[re]{hour}点"
-
-                # 创建小时节点 - 根据类型和已有信息记录对应精度
-                hour_time_str = f"{hour}点"
-                if day_match:
-                    hour_time_str = f"{day}日{hour}点"
-                    if month_match:
-                        hour_time_str = f"{month}月{day}日{hour}点"
-                        if year_match:
-                            hour_time_str = f"{year}年{month}月{day}日{hour}点"
-
-                # 生成embedding（使用time字段）
-                hour_embedding = self._generate_embedding(hour_time_str)
+                embedding = self._generate_embedding(cumulative_name)
 
                 result = session.run(
                     """
-                    MERGE (h:Time:Hour {name: $hour_name, time: $hour_time_str})
-                    SET h.node_type = 'Time',
-                        h.type = $time_type,
-                        h.embedding = $embedding
-                    RETURN elementId(h) as node_id
-                """,
-                    hour_name=hour_name,
-                    hour_time_str=hour_time_str,
+                    MERGE (t:Time {time_str: $time_str, context: $context})
+                    SET t.name = $name,
+                        t.node_type = 'Time',
+                        t.time_type = $time_type,
+                        t.embedding = $embedding
+                    RETURN elementId(t) as node_id
+                    """,
+                    name=name,
+                    time_str=cumulative_name,
+                    context=context,
                     time_type=time_type,
-                    embedding=hour_embedding,
+                    embedding=embedding,
                 )
                 record = result.single()
-                if record:
-                    most_specific_node_id = record["node_id"]
+                if not record:
+                    continue
 
-                # 创建小时到日期的层次关系（日期节点在同一函数中已创建）
-                if day_match:
-                    day_name_for_check = f"{day_match.group(1)}日"
-                    # 直接创建层次关系，无需检查存在性（日期节点刚刚创建）
-                    # 需要构建对应的day_time_str
-                    day_time_str_for_relation = f"{day_match.group(1)}日"
-                    if month_match:
-                        day_time_str_for_relation = f"{month}月{day_match.group(1)}日"
-                        if year_match:
-                            day_time_str_for_relation = (
-                                f"{year}年{month}月{day_match.group(1)}日"
-                            )
+                current_node_id = record["node_id"]
+                most_specific_node_id = current_node_id
 
+                # 创建当前节点到上层节点的 BELONGS_TO 关系
+                if prev_cumulative is not None:
                     session.run(
                         """
-                        MATCH (h:Time:Hour {name: $hour_name, time: $hour_time_str})
-                        MATCH (d:Time:Day {name: $day_name, time: $day_time_str})
-                        MERGE (h)-[r:BELONGS_TO]->(d)
-                        SET r.hierarchy_type = 'hour_to_day'
-                    """,
-                        hour_name=hour_name,
-                        hour_time_str=hour_time_str,
-                        day_name=day_name_for_check,
-                        day_time_str=day_time_str_for_relation,
-                    )
-                elif not day_match:
-                    # 如果没有具体日期但有周日期，检查WeekDay节点
-                    week_pattern = re.search(
-                        r"第(\d{1,2})[个周]?星期([一二三四五六七日天1234567])", time_str
-                    )
-                    if week_pattern:
-                        week_number = week_pattern.group(1)
-                        weekday = week_pattern.group(2)
-                        weekday_map = {
-                            "1": "一",
-                            "2": "二",
-                            "3": "三",
-                            "4": "四",
-                            "5": "五",
-                            "6": "六",
-                            "7": "七",
-                            "天": "日",
-                        }
-                        weekday = weekday_map.get(weekday, weekday)
-                        weekday_name = f"第{week_number}周星期{weekday}"
-
-                        # 直接创建层次关系，WeekDay节点已在同一函数中创建
-                        # 需要构建对应的weekday_time_str
-                        weekday_time_str = f"第{week_number}周星期{weekday}"
-                        if month_match:
-                            weekday_time_str = (
-                                f"{month}月第{week_number}周星期{weekday}"
-                            )
-                            if year_match:
-                                weekday_time_str = (
-                                    f"{year}年{month}月第{week_number}周星期{weekday}"
-                                )
-
-                        session.run(
-                            """
-                            MATCH (h:Time:Hour {name: $hour_name, time: $hour_time_str})
-                            MATCH (d:Time:WeekDay {name: $day_name, time: $weekday_time_str})
-                            MERGE (h)-[r:BELONGS_TO]->(d)
-                            SET r.hierarchy_type = 'hour_to_weekday'
+                        MATCH (child:Time {time_str: $child_time_str, context: $context})
+                        MATCH (parent:Time {time_str: $parent_time_str, context: $context})
+                        MERGE (child)-[:BELONGS_TO]->(parent)
                         """,
-                            hour_name=hour_name,
-                            hour_time_str=hour_time_str,
-                            day_name=weekday_name,
-                            weekday_time_str=weekday_time_str,
-                        )
-
-            # 如果有子小时单位，创建独立的SubHour节点
-            if sub_hour_match:
-                # 提取小时后的所有时间单位
-                sub_hour_content = sub_hour_match.group(1).strip()
-                sub_hour = sub_hour_content
-                sub_hour_name = sub_hour
-                if time_type == "recurring":
-                    sub_hour_name = f"[re]{sub_hour}"
-
-                # 创建SubHour节点
-                sub_hour_time_str = time_str
-
-                # 生成embedding（使用time字段）
-                subhour_embedding = self._generate_embedding(sub_hour_time_str)
-
-                result = session.run(
-                    """
-                    MERGE (sh:Time:SubHour {name: $sub_hour_name, time: $sub_hour_time_str})
-                    SET sh.node_type = 'Time',
-                        sh.type = $time_type,
-                        sh.embedding = $embedding
-                    RETURN elementId(sh) as node_id
-                """,
-                    sub_hour_name=sub_hour_name,
-                    sub_hour_time_str=sub_hour_time_str,
-                    time_type=time_type,
-                    embedding=subhour_embedding,
-                )
-                record = result.single()
-                if record:
-                    most_specific_node_id = record["node_id"]
-
-                # 创建SubHour到Hour的层次关系（Hour节点在同一函数中已创建）
-                if hour_match:
-                    hour_name_for_check = f"{hour_match.group(1)}点"
-                    # 直接创建层次关系，无需检查存在性（Hour节点刚刚创建）
-                    session.run(
-                        """
-                        MATCH (sh:Time:SubHour {name: $sub_hour_name, time: $sub_hour_time_str})
-                        MATCH (h:Time:Hour {name: $hour_name, time: $hour_time_str})
-                        MERGE (sh)-[r:BELONGS_TO]->(h)
-                        SET r.hierarchy_type = 'subhour_to_hour'
-                    """,
-                        sub_hour_name=sub_hour_name,
-                        sub_hour_time_str=sub_hour_time_str,
-                        hour_name=hour_name_for_check,
-                        hour_time_str=hour_time_str,
+                        child_time_str=cumulative_name,
+                        parent_time_str=prev_cumulative,
+                        context=context,
                     )
+
+                prev_node_name = name
+                prev_cumulative = cumulative_name
 
             if most_specific_node_id:
-                logger.debug(
-                    f"Created hierarchical time node with ID: {most_specific_node_id}"
-                )
+                logger.debug(f"Created hierarchical time node with ID: {most_specific_node_id}")
                 return most_specific_node_id
             else:
                 logger.warning(f"No specific node created for time: {time_str}")
@@ -641,20 +343,23 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to create time node '{time_str}': {e}")
-            # 回退到创建通用时间节点
+            # 回退到创建单一时间节点
             try:
-                # 生成embedding（使用time字段）
-                fallback_embedding = self._generate_embedding(time_str)
-                
+                fallback_name = "".join(time_str)
+                fallback_embedding = self._generate_embedding(fallback_name)
+
                 result = session.run(
                     """
-                    MERGE (t:Time {name: $time, time: $time})
-                    SET t.node_type = 'Time',
-                        t.type = $time_type,
+                    MERGE (t:Time {time_str: $time_str, context: $context})
+                    SET t.name = $name,
+                        t.node_type = 'Time',
+                        t.time_type = $time_type,
                         t.embedding = $embedding
                     RETURN elementId(t) as node_id
-                """,
-                    time=time_str,
+                    """,
+                    name=fallback_name,
+                    time_str=fallback_name,
+                    context=context,
                     time_type=time_type,
                     embedding=fallback_embedding,
                 )
@@ -666,37 +371,11 @@ class KnowledgeGraphManager:
                 logger.error(f"Failed to create fallback time node: {fallback_e}")
                 return None
 
-    def create_node(
-        self,
-        session,
-        name: str,
-        node_type: str,
-        time_str: str,
-        importance: float = 0.5,
-        trust: float = 0.5,
-        context: str = "reality",
-        note: str = "无",
-    ) -> Optional[str]:
-        """
-        创建节点，通过此节点时可以创建多种节点类型。
-        """
-        if node_type == "Time":
-            return self.create_time_node(session, time_str)
-        elif node_type == "Character":
-            return self.create_character_node(session, name, importance, trust, context)
-        elif node_type == "Location":
-            return self.create_location_node(session, name, context)
-        elif node_type == "Entity":
-            return self.create_entity_node(session, name, importance, context, note)
-        else:
-            logger.error(f"Unsupported node type: {node_type}")
-            return None
-
+    
     def create_character_node(
         self,
         session,
         name: str,
-        importance: float = 0.5,
         trust: float = 0.5,
         context: str = "reality",
     ) -> Optional[str]:
@@ -706,7 +385,6 @@ class KnowledgeGraphManager:
         Args:
             session: Neo4j session
             name: 角色名称
-            importance: 重要程度 (默认0.5)
             trust: 信任度 (默认0.5)
             context: 上下文环境 (默认"reality")
 
@@ -731,16 +409,13 @@ class KnowledgeGraphManager:
                 CREATE (c:Character {name: $name})
                 SET c.created_at = $created_at,
                     c.node_type = 'Character',
-                    c.importance = $importance,
                     c.trust = $trust,
                     c.context = $context,
                     c.last_updated = $last_updated,
-                    c.significance = 1,
                     c.embedding = $embedding
                 RETURN elementId(c) as node_id
             """,
                 name=name,
-                importance=importance,
                 trust=trust,
                 context=context,
                 created_at=current_time,
@@ -824,7 +499,6 @@ class KnowledgeGraphManager:
         self,
         session,
         name: str,
-        importance: float = 0.5,
         context: str = "reality",
         note: str = "无",
     ) -> Optional[str]:
@@ -834,7 +508,6 @@ class KnowledgeGraphManager:
         Args:
             session: Neo4j session
             name: 实体名称
-            importance: 重要程度 (默认0.5)
             context: 上下文环境 (默认"reality")
             note: 备注 (默认"无")
 
@@ -859,16 +532,13 @@ class KnowledgeGraphManager:
                 CREATE (e:Entity {name: $name})
                 SET e.created_at = $created_at,
                     e.node_type = 'Entity',
-                    e.importance = $importance,
                     e.context = $context,
                     e.note = $note,
                     e.last_updated = $last_updated,
-                    e.significance = 1,
                     e.embedding = $embedding
                 RETURN elementId(e) as node_id
             """,
                 name=name,
-                importance=importance,
                 context=context,
                 note=note,
                 created_at=current_time,
@@ -896,6 +566,7 @@ class KnowledgeGraphManager:
         predicate: str,
         source: str,
         confidence: float = 0.5,
+        importance: float = 0.5,
         directivity: str = "single",
         evidence: str = "",
     ) -> Optional[str]:
@@ -908,6 +579,7 @@ class KnowledgeGraphManager:
             predicate: 关系谓词/类型
             source: 关系来源
             confidence: 置信度 (默认0.5)
+            importance: 重要程度 (默认0.5)
             directivity: 关系方向 (默认'single'，'bidirectional'表示双向)
             evidence: 关系证据（为什么设置这个置信度，选填）
 
@@ -983,6 +655,7 @@ class KnowledgeGraphManager:
                         confidence,
                         directivity,
                         evidence,
+                        importance=importance,
                     )
                     return relationship_id
 
@@ -1000,6 +673,8 @@ class KnowledgeGraphManager:
                     r.predicate = $predicate,
                     r.source = [$source],
                     r.confidence = $confidence,
+                    r.importance = $importance,
+                    r.significance = $significance,
                     r.evidence = $evidence
                 RETURN elementId(r) as forward_relationship_id
                 """
@@ -1011,6 +686,8 @@ class KnowledgeGraphManager:
                     predicate=predicate,
                     source=source,
                     confidence=confidence,
+                    importance=importance,
+                    significance=1,
                     evidence=evidence,
                     current_time=current_time,
                 )
@@ -1031,6 +708,8 @@ class KnowledgeGraphManager:
                         r.predicate = $predicate,
                         r.source = [$source],
                         r.confidence = $confidence,
+                        r.importance = $importance,
+                        r.significance = $significance,
                         r.evidence = $evidence
                     RETURN elementId(r) as backward_relationship_id
                     """
@@ -1042,6 +721,8 @@ class KnowledgeGraphManager:
                         predicate=predicate,
                         source=source,
                         confidence=confidence,
+                        importance=importance,
+                        significance=1,
                         evidence=evidence,
                         current_time=current_time,
                     )
@@ -1169,7 +850,6 @@ class KnowledgeGraphManager:
                     "node_type",
                     "context",
                     "name",
-                    "significance",
                     "id",
                     "elementId",
                     "labels",
@@ -1294,22 +974,6 @@ class KnowledgeGraphManager:
                     except Exception as embed_error:
                         logger.warning(f"Failed to update embedding for node {node_id}: {embed_error}")
 
-                    # 更新修改的节点
-                    self.update_node(
-                        node_id, significance=0.99, Increase_importance=False
-                    )
-
-                    # 如果当前节点是Location类型，删除不应该有的属性
-                    if "Location" in updated_labels:
-                        location_cleanup_query = """
-                        MATCH (n) WHERE elementId(n) = $node_id
-                        REMOVE n.importance, n.significance
-                        """
-                        session.run(location_cleanup_query, node_id=node_id)
-                        logger.debug(
-                            f"Cleaned up importance and significance properties from Location node {node_id}"
-                        )
-
                     return node_id
                 else:
                     logger.error("Failed to update node")
@@ -1387,14 +1051,6 @@ class KnowledgeGraphManager:
                         f"Successfully reversed relation direction: {start_name} -> {end_name} became {end_name} -> {start_name}"
                     )
 
-                    # 更新相关节点的significance
-                    self.update_node(
-                        start_node_id, significance=0.99, Increase_importance=True
-                    )
-                    self.update_node(
-                        end_node_id, significance=0.99, Increase_importance=True
-                    )
-
                     return new_relation_id
                 else:
                     logger.error("Failed to reverse relation direction")
@@ -1415,6 +1071,7 @@ class KnowledgeGraphManager:
         directivity: str = "to_endNode",
         evidence: str = "",
         call: str = "passive",
+        importance: float = None,
     ) -> Optional[str]:
         """
         修改关系的属性
@@ -1427,6 +1084,8 @@ class KnowledgeGraphManager:
             directivity: 关系方向 (输入'to_endNode', 'to_startNode', 'bidirectional'表示双向, 
                             输出时会自动调整为'single'或'bidirectional')
             evidence: 关系证据（为什么设置这个置信度，选填）
+            call: 调用模式 ('passive' 或 'active')
+            importance: 重要程度 (0-1)，如果提供则更新
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
         """
@@ -1534,11 +1193,23 @@ class KnowledgeGraphManager:
                 if directivity != "bidirectional":
                     directivity = "single"
 
+                # 处理importance和significance
+                current_importance = (
+                    current_properties.get("importance", 0.5)
+                    if current_properties
+                    else 0.5
+                )
+
+                new_importance = importance if importance is not None else current_importance
+                new_significance = 1
+
                 update_query = """
                 MATCH ()-[r]-() WHERE elementId(r) = $relation_id
                 SET r.predicate = $predicate,
                     r.source = $source_list,
                     r.confidence = $new_confidence,
+                    r.importance = $importance,
+                    r.significance = $significance,
                     r.evidence = $evidence,
                     r.last_updated = $current_time
                 RETURN elementId(r) as updated_relation_id
@@ -1550,6 +1221,8 @@ class KnowledgeGraphManager:
                     predicate=predicate,
                     source_list=source_list,
                     new_confidence=new_confidence,
+                    importance=new_importance,
+                    significance=new_significance,
                     evidence=evidence,
                     directivity=directivity,
                     current_time=current_time,
@@ -1570,280 +1243,164 @@ class KnowledgeGraphManager:
         except Exception as e:
             logger.error(f"Failed to modify relation '{relation_id}': {e}")
             return None
-
-    def set_entity_time(
-        self,
-        node_id: str,
-        time_str: str,
-        source: str = "unknown",
-        confidence: float = 0.5,
-    ) -> Optional[str]:
+        
+    def collide_nodes(self, node_id_1: str, node_id_2: str) -> Optional[str]:
         """
-        为节点设置时间属性：（未使用
-        Entity--HAPPENED_AT->Time
+        将所选的两个节点，合并成一个节点。
+        节点2将被删除，其上的所有关系迁移至节点1。
 
         Args:
-            node_id: Neo4j节点ID
-            time_str: 时间字符串
+            node_id_1: 第一个节点的Neo4j元素ID
+            node_id_2: 第二个节点的Neo4j元素ID
 
         Returns:
-            Optional[str]: 设置成功返回节点ID，失败返回None
+            Optional[str]: 合并后的节点ID，失败返回None
         """
         if not self._ensure_connection():
-            logger.error("Cannot set node time: No Neo4j connection")
+            logger.error("Cannot collide nodes: No Neo4j connection")
             return None
 
-        if not node_id or not node_id.strip():
-            logger.error("Node ID cannot be empty")
-            return None
-
-        if not time_str or not time_str.strip():
-            logger.error("Time string cannot be empty")
+        if not all([node_id_1, node_id_2]):
+            logger.error("Node IDs cannot be empty")
             return None
 
         try:
             with self.driver.session() as session:
-                # 检查节点是否存在且为Entity类型
-                check_query = """
-                MATCH (n) WHERE elementId(n) = $node_id
-                RETURN n.name as node_name, labels(n) as node_labels
+                # 查询两个节点的信息
+                query = """
+                MATCH (n) WHERE elementId(n) IN [$node_id_1, $node_id_2]
+                RETURN elementId(n) as node_id, n.name as name, n.node_type as node_type,
+                       n.context as context, properties(n) as properties, labels(n) as labels
                 """
 
-                check_result = session.run(check_query, node_id=node_id).single()
+                result = session.run(query, node_id_1=node_id_1, node_id_2=node_id_2)
+                nodes_info = {record["node_id"]: record for record in result}
 
-                if not check_result:
-                    logger.error(f"Node with ID '{node_id}' not found")
+                if len(nodes_info) != 2:
+                    logger.error("One or both nodes not found for collision")
                     return None
 
-                node_labels = check_result["node_labels"]
-                if "Entity" not in node_labels:
-                    logger.error(
-                        f"Only Entity nodes can have time attributes. Node {node_id} has labels: {node_labels}"
-                    )
-                    return None
+                node1_info = nodes_info[node_id_1]
+                node2_info = nodes_info[node_id_2]
 
-                # 删除已有的时间关联（覆盖逻辑）
+                # 将节点2的出关系迁移到节点1（跳过指向节点1的自环）
                 session.run(
                     """
-                    MATCH (n) WHERE elementId(n) = $node_id
-                    OPTIONAL MATCH (n)-[r:HAPPENED_AT]->(t:Time)
+                    MATCH (n2)-[r]->(target) WHERE elementId(n2) = $node_id_2
+                      AND elementId(target) <> $node_id_1
+                    MATCH (n1) WHERE elementId(n1) = $node_id_1
+                    WITH n1, target, type(r) as rel_type, properties(r) as rel_props, r
+                    CALL apoc.create.relationship(n1, rel_type, rel_props, target) YIELD rel
                     DELETE r
-                """,
-                    node_id=node_id,
+                    """,
+                    node_id_1=node_id_1,
+                    node_id_2=node_id_2,
                 )
 
-                # 创建时间节点
-                time_node_id = self.create_time_node(session, time_str)
-
-                if not time_node_id:
-                    logger.error(f"Failed to create time node for '{time_str}'")
-                    return None
-
-                # 将时间节点与目标节点关联
-                relation_id = self.create_relation(
-                    startNode_id=node_id,
-                    endNode_id=time_node_id,
-                    predicate="HAPPENED_AT",
-                    source=source,
-                    confidence=confidence,
-                    directivity="single",
-                )
-
-                if not relation_id:
-                    logger.error("Failed to create HAPPENED_AT relationship")
-                    return None
-
-                logger.info(f"Set time '{time_str}' for Entity node {node_id}")
-
-                # 更新实体节点
-                self.update_node(node_id, significance=0.99, Increase_importance=True)
-
-                return node_id
-
-        except Exception as e:
-            logger.error(f"Failed to set time for node '{node_id}': {e}")
-            return None
-
-    def set_location(
-        self,
-        node_id: str,
-        location: str,
-        source: str = "unknown",
-        context: str = "reality",
-    ) -> Optional[str]:
-        """
-        为节点设置地点属性，如：（暂未使用
-        (Entity)-[HAPPENED_IN]->(Location)
-
-        Args:
-            node_id: Neo4j节点ID
-            location: 地点名称
-
-        Returns:
-            Optional[str]: 设置成功返回node_id，失败返回None
-        """
-        if not self._ensure_connection():
-            logger.error("Cannot set node location: No Neo4j connection")
-            return None
-
-        if not node_id or not node_id.strip():
-            logger.error("Node ID cannot be empty")
-            return None
-
-        if not location or not location.strip():
-            logger.error("Location name cannot be empty")
-            return None
-
-        try:
-            with self.driver.session() as session:
-                # 检查节点是否存在
-                check_query = """
-                MATCH (n) WHERE elementId(n) = $node_id
-                RETURN n.name as node_name, labels(n) as node_labels
-                """
-
-                check_result = session.run(check_query, node_id=node_id).single()
-
-                if not check_result:
-                    logger.error(f"Node with ID '{node_id}' not found")
-                    return None
-
-                # 删除已有的地点关联（覆盖逻辑）
+                # 将节点2的入关系迁移到节点1（跳过来自节点1的自环）
                 session.run(
                     """
-                    MATCH (n) WHERE elementId(n) = $node_id
-                    OPTIONAL MATCH (n)-[r:HAPPENED_IN]->(l:Location)
+                    MATCH (source)-[r]->(n2) WHERE elementId(n2) = $node_id_2
+                      AND elementId(source) <> $node_id_1
+                    MATCH (n1) WHERE elementId(n1) = $node_id_1
+                    WITH n1, source, type(r) as rel_type, properties(r) as rel_props, r
+                    CALL apoc.create.relationship(source, rel_type, rel_props, n1) YIELD rel
                     DELETE r
-                """,
-                    node_id=node_id,
+                    """,
+                    node_id_1=node_id_1,
+                    node_id_2=node_id_2,
                 )
 
-                # 创建地点节点
-                location_node_id = self.create_location_node(session, location, context)
-
-                if not location_node_id:
-                    logger.error(f"Failed to create location node for '{location}'")
-                    return None
-
-                # 将地点节点与目标节点关联
-                relation_id = self.create_relation(
-                    startNode_id=node_id,
-                    endNode_id=location_node_id,
-                    predicate="HAPPENED_IN",
-                    source="set_location",
-                    confidence=0.9,
-                    directivity="single",
+                # 删除节点2上剩余的关系（节点1和节点2之间的直接关系）及节点2本身
+                session.run(
+                    """
+                    MATCH (n2) WHERE elementId(n2) = $node_id_2
+                    DETACH DELETE n2
+                    """,
+                    node_id_2=node_id_2,
                 )
 
-                if not relation_id:
-                    logger.error("Failed to create HAPPENED_AT relationship")
-                    return None
-
-                logger.info(f"Set location '{location}' for node {node_id}")
-
-                # 更新节点
-                self.update_node(node_id, significance=0.99, Increase_importance=True)
-
-                return node_id
+                logger.info(
+                    f"Successfully collided nodes: '{node2_info['name']}' merged into '{node1_info['name']}' (ID: {node_id_1})"
+                )
+                return node_id_1
 
         except Exception as e:
-            logger.error(f"Failed to set location for node '{node_id}': {e}")
+            logger.error(f"Failed to collide nodes '{node_id_1}' and '{node_id_2}': {e}")
             return None
 
-    def update_node(
-        self,
-        node_id: str,
-        significance: float = None,
-        Increase_importance: bool = False,
-    ) -> Optional[str]:
+    def memory_decay(self, decay_factor: float = 0.9) -> None:
         """
-        由AI上传五元组or日常记忆维护（主要是遗忘机制）所触发的节点更新
+        记忆衰退机制
+        对于所有的关系，如果其有significance参数，设置其
+        significance = old_significance * (decay_factor + importance * (1 - decay_factor))
+        如果该关系的significance衰退到0.1以下，则删除该关系
 
-        Args:
-            node_id: Neo4j节点ID
-            significance: 记忆清晰度（0-1），如果不提供则自动计算衰减
-            importance: 如果True则略微提高importance
-
-        Returns:
-            Optional[str]: 更新成功返回节点ID，失败返回None
+        孤立节点清理
+        对于所有的时间节点，如果没有指向该节点的关系，则删除该节点
+        对于所有其余节点，如果既没有指向该节点的关系，也没有关系从该节点触发，则删除该节点
         """
         if not self._ensure_connection():
-            logger.error("Cannot update node significance: No Neo4j connection")
-            return None
-
-        if not node_id or not node_id.strip():
-            logger.error("Node ID cannot be empty")
-            return None
+            logger.error("Cannot perform memory decay: No Neo4j connection")
+            return
 
         try:
             with self.driver.session() as session:
-                # 检查节点是否存在并获取当前属性
-                check_query = """
-                MATCH (n) WHERE elementId(n) = $node_id
-                RETURN n.significance as current_significance, 
-                       n.importance as importance,
-                       properties(n) as current_properties
-                """
-
-                check_result = session.run(check_query, node_id=node_id).single()
-
-                if not check_result:
-                    logger.error(f"Node with ID '{node_id}' not found")
-                    return None
-
-                current_importance = check_result["importance"] or 0.5
-                current_significance = check_result["current_significance"] or 1.0
-
-                # 如果没有提供significance，则计算衰减值
-                if significance is None:
-                    # 新的significance = significance - (1-final_importance^2)/10
-                    decay_factor = (1 - current_importance**2) / 10
-                    new_significance = max(0.0, significance - decay_factor)
-                else:
-                    # 使用提供的significance值
-                    new_significance = max(0.0, min(1.0, significance))
-
-                if Increase_importance:
-                    current_importance = (
-                        current_importance + (1 - current_importance) * 0.1
-                    )  # 提高余量的10%
-
-                # 添加当前时间戳
-                current_time = datetime.now().isoformat()
-
-                # 更新节点的significance、importance和last_updated
-                update_query = """
-                MATCH (n) WHERE elementId(n) = $node_id
-                SET n.significance = $new_significance,
-                    n.importance = $current_importance,
-                    n.last_updated = $last_updated
-                RETURN elementId(n) as node_id, n.significance as updated_significance, n.importance as updated_importance
-                """
-
+                # 1. 衰退所有有significance的关系
                 result = session.run(
-                    update_query,
-                    node_id=node_id,
-                    new_significance=new_significance,
-                    current_importance=current_importance,
-                    last_updated=current_time,
+                    """
+                    MATCH ()-[r]->()
+                    WHERE r.significance IS NOT NULL AND r.importance IS NOT NULL
+                    SET r.significance = r.significance * ($decay_factor + r.importance * (1 - $decay_factor))
+                    RETURN count(r) as updated_count
+                    """,
+                    decay_factor=decay_factor,
                 )
+                decay_count = result.single()["updated_count"]
+                logger.info(f"Memory decay applied to {decay_count} relationships (decay_factor={decay_factor})")
 
-                updated_record = result.single()
+                # 2. 删除significance低于0.1的关系
+                result = session.run(
+                    """
+                    MATCH ()-[r]->()
+                    WHERE r.significance IS NOT NULL AND r.significance < 0.1
+                    DELETE r
+                    RETURN count(r) as deleted_count
+                    """
+                )
+                deleted_rels = result.single()["deleted_count"]
+                if deleted_rels > 0:
+                    logger.info(f"Deleted {deleted_rels} relationships with significance < 0.1")
 
-                if updated_record:
-                    updated_significance = updated_record["updated_significance"]
-                    updated_importance = updated_record["updated_importance"]
-                    logger.info(
-                        f"Successfully updated node {node_id}: significance {current_significance} -> {updated_significance}, importance {current_importance} -> {updated_importance}"
-                    )
-                    return node_id
-                else:
-                    logger.error("Failed to update node significance and importance")
-                    return None
+                # 3. 清理孤立时间节点（没有入关系的Time节点）
+                result = session.run(
+                    """
+                    MATCH (t:Time)
+                    WHERE NOT EXISTS { MATCH ()-[]->(t) }
+                    DETACH DELETE t
+                    RETURN count(t) as deleted_count
+                    """
+                )
+                deleted_time = result.single()["deleted_count"]
+                if deleted_time > 0:
+                    logger.info(f"Deleted {deleted_time} orphaned Time nodes")
+
+                # 4. 清理其余孤立节点（既无入关系也无出关系的非Time节点）
+                result = session.run(
+                    """
+                    MATCH (n)
+                    WHERE NOT n:Time
+                      AND NOT EXISTS { MATCH (n)-[]-() }
+                    DELETE n
+                    RETURN count(n) as deleted_count
+                    """
+                )
+                deleted_other = result.single()["deleted_count"]
+                if deleted_other > 0:
+                    logger.info(f"Deleted {deleted_other} orphaned non-Time nodes")
 
         except Exception as e:
-            logger.error(f"Failed to update node significance '{node_id}': {e}")
-            return None
+            logger.error(f"Failed to apply memory decay: {e}")
 
     def _find_node(
         self,
@@ -2011,232 +1568,6 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to find object node '{node_name}': {e}")
-            return None
-
-    def write_quintuple(
-        self,
-        subject: str,
-        predicate: str,
-        object: str,
-        time: str = None,
-        location: str = None,
-        with_person: str = None,
-        directivity: bool = True,
-        importance: float = 0.5,
-        confidence: float = 0.5,
-        context: str = "reality",
-        source: str = "user_input",
-    ) -> Optional[str]:
-        """
-        创建五元组关系（已弃用
-        输入(list of)：
-            subject:主体（必填）,
-            predicate:谓词/动作（必填），,
-            object:客体/事件（选填）,
-            time:事件发生的时间（选填）,
-            location:事件发生的地点（选填）,
-            with_person:[事件涉及到的其他人A, 事件涉及到的其他人B],
-            directivity:主体与其他人的关系是否可逆（仅在有with_person时填写）,
-            importance:这条信息的重要性（必填）,
-            confidence:这条信息的真实性（必填）,
-            context:这条信息的语境，如现实，某款游戏，某个故事（必填）,
-            source:谁提供的信息（必填）
-        返回：
-            创建成功：返回主关系ID
-            创建失败：返回None
-        备注：
-            概念流程中，如果A吃了苹果，B吃了苹果，这两个苹果虽然同名，但不应该是同一个节点。
-            因而AI在准备创建五元组时，应该先查询到这些计划中的节点的信息，比如查询苹果，则查询到一个苹果和A相连，一个苹果和B相连。
-            当试图存储，A吃的是一个红色的苹果，AI应该传输和A相连的苹果的节点ID，从而确保不会混淆。
-            然具体实施过于复杂（尤其是要过两边AI），当前并不进行实际查询和匹配，主要依靠时间地点匹配和[最近提到]的机制来匹配。
-        """
-
-        if not self._ensure_connection():
-            logger.error("Cannot write quintuple: No Neo4j connection")
-            return None
-
-        # 整理输入元素
-        # 情况0：信息不全，无主体和谓词，直接返回None
-        if not all([subject, predicate]):
-            logger.error("Subject, predicate, and object are required")
-            return None
-        # 情况1：主谓宾，无时间地点 -> 三元组，关系建立(主语)--谓词->(宾语)
-        # 无需调整
-        # 情况2：主谓+时间or地点，无宾语 -> 不完全五元组，关系建立(主语)--has_action->(谓词)--HAPPENED_AT/IN->(时间/地点)
-        # 将谓词作为宾语，谓词改为HAS_ACTION
-        if not object:
-            object = predicate
-            predicate = "HAS_ACTION"
-            logger.debug(
-                f"No object provided, using action as object with predicate 'HAS_ACTION'"
-            )
-
-        # 情况3：主谓宾+时间or地点 -> 完整五元组
-        # 无需调整，于是到这里为止至少确保后续都一定有主谓宾
-        # 检查各项内容是否被标注：[时间](地点)<角色>
-        def decode_annotation(text: str) -> tuple[str, str]:
-            """解析标注并返回节点类型和纯净内容"""
-            if text.startswith("[") and text.endswith("]"):
-                return "Time", text[1:-1]
-            elif text.startswith("(") and text.endswith(")"):
-                return "Location", text[1:-1]
-            elif text.startswith("<") and text.endswith(">"):
-                return "Character", text[1:-1]
-            else:
-                return "Entity", text
-
-        subject_type, subject = decode_annotation(subject)
-        object_type, object = decode_annotation(object)
-
-        # 开始事务处理
-        try:
-            with self.driver.session() as session:
-                # 查找主体节点，提供客体作为signature_node帮助匹配
-                subject_id = self._find_node(
-                    session, subject, subject_type, None, None, object, context
-                )
-                if subject_id:
-                    logger.debug(
-                        f"Found existing subject node: {subject} with ID: {subject_id}"
-                    )
-                else:
-                    # 没有找到匹配的节点，创建新的主体节点
-                    subject_id = self.create_node(
-                        session, subject, subject_type, context
-                    )
-                    if subject_id:
-                        logger.debug(
-                            f"Created new subject node: {subject} with ID: {subject_id}"
-                        )
-                    else:
-                        logger.error(f"Failed to create subject node: {subject}")
-
-                # 查找客体节点，提供时间，地点，主体作为signature_node帮助匹配
-                object_id = self._find_node(
-                    session, object, object_type, time, location, subject, context
-                )
-                if object_id:
-                    logger.debug(
-                        f"Found existing object node: {object} with ID: {object_id}"
-                    )
-                else:
-                    # 没有找到匹配的节点，创建新的客体节点
-                    object_id = self.create_node(session, object, object_type, context)
-                    if object_id:
-                        logger.debug(
-                            f"Created new object node: {object} with ID: {object_id}"
-                        )
-                    else:
-                        logger.error(f"Failed to create object node: {object}")
-
-                if not subject_id or not object_id:
-                    logger.error("Failed to create or find subject/object nodes")
-                    return None
-
-                # 创建主体到客体的关系（默认to_endNode方向）
-                main_relation_id = self.create_relation(
-                    startNode_id=subject_id,
-                    endNode_id=object_id,
-                    predicate=predicate,
-                    source=source,
-                    confidence=confidence,
-                    directivity="single",
-                )
-
-                if not main_relation_id:
-                    logger.error("Failed to create main relation")
-                    return None
-
-                # 处理时间节点（时间节点有特殊规则，可以直接使用）
-                if time:
-                    # 使用set_entity_time方法设置时间
-                    result = self.set_entity_time(
-                        object_id, time, source=source, confidence=confidence
-                    )
-                    if result:
-                        logger.debug(f"Set time for object node {object}: {time}")
-                    else:
-                        logger.warning(
-                            f"Failed to set time for object node {object}: {time}"
-                        )
-
-                # 处理地点节点
-                if location:
-                    # 直接使用set_location方法设置地点
-                    result = self.set_location(
-                        object_id, location, source=source, context=context
-                    )
-                    if result:
-                        logger.debug(
-                            f"Set location for object node {object}: {location}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Failed to set location for object node {object}: {location}"
-                        )
-
-                # 处理同行者节点
-                if with_person:
-                    # 查找同行者节点
-                    with_person_id = self._find_node(
-                        session, with_person, "Character", None, None, object, context
-                    )
-                    if with_person_id:
-                        logger.debug(
-                            f"Found existing with_person node: {with_person} with ID: {with_person_id}"
-                        )
-                    else:
-                        # 没有找到匹配的节点，创建新的同行者节点
-                        with_person_id = self.create_entity_node(
-                            session, with_person, importance, context
-                        )
-                        if with_person_id:
-                            logger.debug(
-                                f"Created new with_person node: {with_person} with ID: {with_person_id}"
-                            )
-                        else:
-                            logger.error(
-                                f"Failed to create with_person node: {with_person}"
-                            )
-
-                    if with_person_id:
-                        # 根据directivity决定关系方向
-                        if directivity:
-                            # True: 被动参与 (to_endNode: 客体 -> 同行者)
-                            # 使用"被+原动作"的形式
-                            passive_predicate = f"被{predicate}"
-                            with_relation_directivity = "to_endNode"
-                            with_relation_id = self.create_relation(
-                                startNode_id=object_id,
-                                endNode_id=with_person_id,
-                                predicate=passive_predicate,
-                                source=source,
-                                confidence=confidence,
-                                directivity=with_relation_directivity,
-                            )
-                        else:
-                            # False: 共事关系 (to_startNode: 同行者 -> 客体)
-                            with_relation_directivity = "to_startNode"
-                            with_relation_id = self.create_relation(
-                                startNode_id=object_id,
-                                endNode_id=with_person_id,
-                                predicate=predicate,
-                                source=source,
-                                confidence=confidence,
-                                directivity=with_relation_directivity,
-                            )
-
-                        logger.debug(
-                            f"Created with_person relationship: {object} <-> {with_person}"
-                        )
-
-                logger.info(
-                    f"Successfully created quintuple: {subject} -{predicate}-> {object}"
-                )
-                return main_relation_id
-
-        except Exception as e:
-            logger.error(f"Failed to write quintuple: {e}")
             return None
 
     def get_statistics(self) -> Dict[str, Any]:
@@ -2432,10 +1763,28 @@ class KnowledgeGraphManager:
                 "deleted_relationships": total_deleted_relationships,
             }
 
+    def _filter_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
+        """过滤节点属性，隐去指定的系统属性"""
+
+        if not properties:
+            return {}
+        
+        # 需要隐去的属性列表
+        hidden_properties = {
+            "last_updated", "embedding", "significance",
+        }
+        
+        # 返回过滤后的属性
+        filtered_props = {}
+        for key, value in properties.items():
+            if key not in hidden_properties:
+                filtered_props[key] = value
+        
+        return filtered_props
+
     def downloaod_memory(self, elements: Dict[str, Any]) -> bool:
         """
-        保存指定的节点和关系到local_memory.json文件
-        采用合并策略：更新已存在的项目，添加新项目，保留其他已有内容
+        从Neo4j查询指定的节点和关系，过滤后保存到日志文件
         
         输入：
         {
@@ -2463,25 +1812,6 @@ class KnowledgeGraphManager:
             return False
         
         try:
-            # 确保目录存在
-            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
-            os.makedirs(memory_dir, exist_ok=True)
-            
-            local_memory_file = os.path.join(memory_dir, "local_memory.json")
-            
-            # 读取现有的 local_memory.json 文件（如果存在）
-            existing_data = {"nodes": [], "relationships": []}
-            if os.path.exists(local_memory_file):
-                try:
-                    with open(local_memory_file, "r", encoding="utf-8") as f:
-                        content = f.read().strip()
-                        if content:
-                            existing_data = json.loads(content)
-                            logger.info(f"Loaded existing local memory: {len(existing_data.get('nodes', []))} nodes, {len(existing_data.get('relationships', []))} relationships")
-                except Exception as e:
-                    logger.error(f"Failed to load existing local memory, starting fresh: {e}")
-                    existing_data = {"nodes": [], "relationships": []}
-            
             with self.driver.session() as session:
                 # 查询指定的节点
                 new_nodes = []
@@ -2506,20 +1836,6 @@ class KnowledgeGraphManager:
                             new_nodes.append(node)
                         else:
                             logger.warning(f"Node with ID '{node_id}' not found, skipping")
-                
-                # 合并节点：使用字典去重，新节点覆盖旧节点
-                nodes_dict = {node["id"]: node for node in existing_data.get("nodes", [])}
-                added_count = 0
-                updated_count = 0
-                
-                for node in new_nodes:
-                    if node["id"] in nodes_dict:
-                        updated_count += 1
-                    else:
-                        added_count += 1
-                    nodes_dict[node["id"]] = node
-                
-                merged_nodes = list(nodes_dict.values())
                 
                 # 查询指定的关系
                 new_relationships = []
@@ -2561,45 +1877,48 @@ class KnowledgeGraphManager:
                         else:
                             logger.warning(f"Relationship with ID '{relation_id}' not found, skipping")
                 
-                # 合并关系：使用字典去重，新关系覆盖旧关系
-                relationships_dict = {rel["id"]: rel for rel in existing_data.get("relationships", [])}
-                rel_added_count = 0
-                rel_updated_count = 0
+                # 将过滤后的结果保存到日志文件
+                try:
+                    log_dir = os.path.join(project_root, "logs", "memory_graph")
+                    os.makedirs(log_dir, exist_ok=True)
+                    
+                    log_filename = f"{datetime.now().strftime('%Y%m%d')}.jsonl"
+                    log_file = os.path.join(log_dir, log_filename)
+                    
+                    # 过滤节点属性
+                    filtered_nodes = []
+                    for node in new_nodes:
+                        filtered_nodes.append({
+                            "id": node["id"],
+                            "labels": node["labels"],
+                            "properties": KnowledgeGraphManager._filter_properties(node.get("properties", {})),
+                        })
+                    
+                    # 过滤关系属性
+                    filtered_relationships = []
+                    for rel in new_relationships:
+                        filtered_relationships.append({
+                            "id": rel["id"],
+                            "type": rel["type"],
+                            "start_node": rel["start_node"],
+                            "end_node": rel["end_node"],
+                            "properties": KnowledgeGraphManager._filter_properties(rel.get("properties", {})),
+                        })
+                    
+                    log_entry = {
+                        "nodes": filtered_nodes,
+                        "relationships": filtered_relationships,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                    
+                    with open(log_file, "w", encoding="utf-8") as f:
+                        f.write(json.dumps(log_entry, ensure_ascii=False, indent=2) + "\n")
+                    
+                    logger.info(f"记忆保存日志已写入: {log_file}")
+                except Exception as e:
+                    logger.warning(f"记忆保存日志写入失败（不影响主流程）: {e}")
                 
-                for rel in new_relationships:
-                    if rel["id"] in relationships_dict:
-                        rel_updated_count += 1
-                    else:
-                        rel_added_count += 1
-                    relationships_dict[rel["id"]] = rel
-                
-                merged_relationships = list(relationships_dict.values())
-                
-                # 构建最终数据结构
-                local_memory_data = {
-                    "nodes": merged_nodes,
-                    "relationships": merged_relationships,
-                    "metadata": {
-                        "source": "local",
-                        "saved_from": "neo4j",
-                    },
-                    "updated_at": datetime.now().isoformat(),
-                }
-                
-                # 保存到文件（合并模式）
-                with open(local_memory_file, "w", encoding="utf-8") as f:
-                    json.dump(local_memory_data, f, ensure_ascii=False, indent=2)
-                
-                logger.info(
-                    f"Memory merged to {local_memory_file}: "
-                    f"{len(merged_nodes)} total nodes ({added_count} added, {updated_count} updated), "
-                    f"{len(merged_relationships)} total relationships ({rel_added_count} added, {rel_updated_count} updated)"
-                )
-                
-                logger.info(f"记忆已保存到: {local_memory_file}")
-                logger.info("合并结果:")
-                logger.info(f"  节点: 新增 {added_count} 个, 更新 {updated_count} 个, 总计 {len(merged_nodes)} 个")
-                logger.info(f"  关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个, 总计 {len(merged_relationships)} 个")
+                logger.info(f"已处理 {len(new_nodes)} 个节点和 {len(new_relationships)} 个关系")
                 
                 # 统计被过滤的关系数量
                 filtered_count = len(relation_ids) - len(new_relationships)
@@ -2615,14 +1934,17 @@ class KnowledgeGraphManager:
 
     def upload_memory(self, elements: Dict[str, Any]) -> bool:
         """
-        从local_memory.json文件加载节点和关系到Neo4j数据库
-        采用合并策略：通过属性匹配更新已存在的项目，创建新项目
-        
-        输入：
+        将节点和关系数据加载到Neo4j数据库
+        数据格式与 downloaod_memory 保存的格式一致：
         {
-            "nodes_ids": [],      # 节点ID列表（来自local_memory.json）
-            "relation_ids": [],   # 关系ID列表（来自local_memory.json）
+            "nodes": [{"id": "...", "labels": [...], "properties": {...}}, ...],
+            "relationships": [{"id": "...", "type": "...", "start_node": "...", "end_node": "...", "properties": {...}}, ...],
+            "timestamp": "..."
         }
+        采用合并策略：通过ID匹配更新已存在的项目，创建新项目
+        
+        Args:
+            elements: 包含nodes和relationships的字典
         
         Returns:
             bool: 操作是否成功
@@ -2631,56 +1953,28 @@ class KnowledgeGraphManager:
             logger.error("Cannot upload memory: No Neo4j connection")
             return False
         
-        # 验证输入格式
         if not isinstance(elements, dict):
-            logger.error("Invalid input format: elements must be a dictionary")
-            return False
-        
-        nodes_ids = elements.get("nodes_ids", [])
-        relation_ids = elements.get("relation_ids", [])
-        
-        if not isinstance(nodes_ids, list) or not isinstance(relation_ids, list):
-            logger.error("Invalid input format: nodes_ids and relation_ids must be lists")
+            logger.error("Invalid input: elements must be a dictionary")
             return False
         
         try:
-            # 确保目录存在
-            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
-            local_memory_file = os.path.join(memory_dir, "local_memory.json")
-            
-            # 检查local_memory.json是否存在
-            if not os.path.exists(local_memory_file):
-                logger.error(f"Local memory file not found: {local_memory_file}")
-                logger.error(f"本地记忆文件不存在: {local_memory_file}")
-                return False
-            
-            # 读取local_memory.json文件
-            with open(local_memory_file, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if not content:
-                    logger.error("Local memory file is empty")
-                    logger.error("本地记忆文件为空")
-                    return False
-                local_memory_data = json.loads(content)
-            
             # 提取节点和关系数据
-            all_nodes = {node["id"]: node for node in local_memory_data.get("nodes", [])}
-            all_relationships = {rel["id"]: rel for rel in local_memory_data.get("relationships", [])}
+            nodes_to_upload = elements.get("nodes", [])
+            all_relationships = elements.get("relationships", [])
+            
+            if not nodes_to_upload and not all_relationships:
+                logger.warning("没有节点和关系数据")
+                return True
+            
+            # 构建关系字典，用于后续ID重映射
+            relationships_list = list(all_relationships)
+            
+            logger.info(f"从文件加载: {len(nodes_to_upload)} 个节点, {len(relationships_list)} 个关系")
             
             with self.driver.session() as session:
-                # 上传指定的节点
-                nodes_to_upload = []
-                if nodes_ids:
-                    logger.info(f"Preparing {len(nodes_ids)} nodes for upload...")
-                    for node_id in nodes_ids:
-                        if node_id in all_nodes:
-                            nodes_to_upload.append(all_nodes[node_id])
-                        else:
-                            logger.warning(f"Node with ID '{node_id}' not found in local memory, skipping")
-                
+                # 上传所有节点
                 added_count = 0
                 updated_count = 0
-                id_updated = False  # 标记是否有ID被更新
                 
                 for node in nodes_to_upload:
                     old_node_id = node["id"]
@@ -2700,7 +1994,6 @@ class KnowledgeGraphManager:
                         # 节点已存在，更新属性和标签
                         existing_labels = existing_node["existing_labels"]
                         
-                        # 更新属性
                         update_query = """
                         MATCH (n)
                         WHERE elementId(n) = $node_id
@@ -2745,55 +2038,42 @@ class KnowledgeGraphManager:
                         
                         if created_record:
                             new_node_id = created_record["id"]
-                            # 更新本地内存中的节点ID
-                            all_nodes[old_node_id]["id"] = new_node_id
-                            # 同时需要更新字典的键
-                            all_nodes[new_node_id] = all_nodes.pop(old_node_id)
                             
                             # 更新所有关系中引用该节点的ID
-                            for rel in all_relationships.values():
+                            for rel in relationships_list:
                                 if rel.get("start_node") == old_node_id:
                                     rel["start_node"] = new_node_id
                                 if rel.get("end_node") == old_node_id:
                                     rel["end_node"] = new_node_id
                             
                             added_count += 1
-                            id_updated = True
                             logger.info(f"Created node: {properties.get('name', 'Unknown')} (old_id: {old_node_id}, new_id: {new_node_id})")
                 
-                # 上传指定的关系
-                relationships_to_upload = []
-                if relation_ids:
-                    logger.info(f"Preparing {len(relation_ids)} relationships for upload...")
-                    for relation_id in relation_ids:
-                        if relation_id in all_relationships:
-                            rel = all_relationships[relation_id]
-                            # 检查关系的起始和结束节点是否都存在
-                            start_node_id = rel.get("start_node")
-                            end_node_id = rel.get("end_node")
-                            
-                            # 验证节点是否存在于Neo4j中
-                            check_nodes_query = """
-                            MATCH (a), (b)
-                            WHERE elementId(a) = $start_id AND elementId(b) = $end_id
-                            RETURN elementId(a) as start_id, elementId(b) as end_id
-                            """
-                            check_result = session.run(check_nodes_query, start_id=start_node_id, end_id=end_node_id)
-                            
-                            if check_result.single():
-                                relationships_to_upload.append(rel)
-                            else:
-                                logger.warning(
-                                    f"Relationship '{relation_id}' has non-existent nodes in Neo4j "
-                                    f"(start: {start_node_id}, end: {end_node_id}), skipping"
-                                )
-                        else:
-                            logger.warning(f"Relationship with ID '{relation_id}' not found in local memory, skipping")
+                # 上传所有关系（先验证节点存在性）
+                valid_relationships = []
+                for rel in relationships_list:
+                    start_node_id = rel.get("start_node")
+                    end_node_id = rel.get("end_node")
+                    
+                    check_nodes_query = """
+                    MATCH (a), (b)
+                    WHERE elementId(a) = $start_id AND elementId(b) = $end_id
+                    RETURN elementId(a) as start_id, elementId(b) as end_id
+                    """
+                    check_result = session.run(check_nodes_query, start_id=start_node_id, end_id=end_node_id)
+                    
+                    if check_result.single():
+                        valid_relationships.append(rel)
+                    else:
+                        logger.warning(
+                            f"关系 '{rel.get('id')}' 的节点不存在于Neo4j中 "
+                            f"(start: {start_node_id}, end: {end_node_id}), 跳过"
+                        )
                 
                 rel_added_count = 0
                 rel_updated_count = 0
                 
-                for rel in relationships_to_upload:
+                for rel in valid_relationships:
                     old_rel_id = rel["id"]
                     rel_type = rel.get("type", "RELATED_TO")
                     start_node_id = rel.get("start_node")
@@ -2823,7 +2103,7 @@ class KnowledgeGraphManager:
                             rel_updated_count += 1
                             logger.info(f"Updated relationship: {rel_type} (id: {old_rel_id})")
                     else:
-                        # 关系不存在，创建新关系并获取Neo4j生成的ID
+                        # 关系不存在，创建新关系
                         create_rel_query = f"""
                         MATCH (a), (b)
                         WHERE elementId(a) = $start_id AND elementId(b) = $end_id
@@ -2840,215 +2120,22 @@ class KnowledgeGraphManager:
                         created_rel_record = create_rel_result.single()
                         
                         if created_rel_record:
-                            new_rel_id = created_rel_record["id"]
-                            # 更新本地内存中的关系ID
-                            all_relationships[old_rel_id]["id"] = new_rel_id
-                            # 同时需要更新字典的键
-                            all_relationships[new_rel_id] = all_relationships.pop(old_rel_id)
-                            
                             rel_added_count += 1
-                            id_updated = True
-                            logger.info(f"Created relationship: {rel_type} (old_id: {old_rel_id}, new_id: {new_rel_id})")
-                
-                # 如果有ID被更新，保存回local_memory.json
-                if id_updated:
-                    local_memory_data["nodes"] = list(all_nodes.values())
-                    local_memory_data["relationships"] = list(all_relationships.values())
-                    local_memory_data["updated_at"] = datetime.now().isoformat()
-                    
-                    with open(local_memory_file, "w", encoding="utf-8") as f:
-                        json.dump(local_memory_data, f, ensure_ascii=False, indent=2)
-                    
-                    logger.info(f"Updated local memory file with new IDs from Neo4j")
-                    logger.info("已同步Neo4j生成的ID到本地记忆文件")
-                
-                logger.info(
-                    f"Memory uploaded to Neo4j: "
-                    f"{added_count} nodes created, {updated_count} nodes updated, "
-                    f"{rel_added_count} relationships created, {rel_updated_count} relationships updated"
-                )
+                            logger.info(f"Created relationship: {rel_type} (old_id: {old_rel_id}, new_id: {created_rel_record['id']})")
                 
                 logger.info("记忆已上传到Neo4j")
-                logger.info("上传结果:")
                 logger.info(f"  节点: 新增 {added_count} 个, 更新 {updated_count} 个")
                 logger.info(f"  关系: 新增 {rel_added_count} 个, 更新 {rel_updated_count} 个")
                 
-                # 统计跳过的项目
-                skipped_nodes = len(nodes_ids) - added_count - updated_count
-                skipped_rels = len(relation_ids) - rel_added_count - rel_updated_count
-                
-                if skipped_nodes > 0:
-                    logger.warning(f"跳过 {skipped_nodes} 个节点（未找到或其他错误）")
+                skipped_rels = len(relationships_list) - len(valid_relationships)
                 if skipped_rels > 0:
-                    logger.warning(f"跳过 {skipped_rels} 个关系（节点不存在或其他错误）")
+                    logger.warning(f"跳过 {skipped_rels} 个关系（节点不存在）")
                 
                 return True
         
         except Exception as e:
-            logger.error(f"Failed to upload memory: {e}")
             logger.error(f"上传记忆失败: {e}")
             return False
-
-    def delete_from_local_memory(self, element_ids: List[str]) -> Dict[str, Any]:
-        """
-        从local_memory.json文件中删除指定的节点和关系
-        节点标准格式：
-            {
-                "id": "node_id",
-                "labels": [...],
-                "properties": {...}
-            }
-        关系标准格式：
-            {
-                "id": "relation_id",
-                "type": "RELATION_TYPE",
-                "start_node": "start_node_id",
-                "end_node": "end_node_id",
-                "properties": {...}
-            }
-        
-        Args:
-            element_ids: 要删除的元素ID列表（节点ID或关系ID）
-        
-        Returns:
-            {
-              "success": bool,
-              "error": Optional[str],
-              "deleted_nodes": int,
-              "deleted_relationships": int,
-            }
-        """
-        if not element_ids:
-            logger.warning("No element IDs provided for deletion")
-            return {
-                "success": False,
-                "error": "No element IDs provided for deletion",
-                "deleted_nodes": 0,
-                "deleted_relationships": 0,
-            }
-        
-        try:
-            # 确保目录存在
-            memory_dir = os.path.join(os.path.dirname(__file__), "memory_graph")
-            local_memory_file = os.path.join(memory_dir, "local_memory.json")
-            
-            # 检查文件是否存在
-            if not os.path.exists(local_memory_file):
-                logger.warning(f"Local memory file not found: {local_memory_file}")
-                logger.warning(f"本地记忆文件不存在: {local_memory_file}")
-                return {
-                    "success": False,
-                    "error": "Local memory file not found",
-                    "deleted_nodes": 0,
-                    "deleted_relationships": 0,
-                }
-            
-            # 读取现有数据
-            with open(local_memory_file, "r", encoding="utf-8") as f:
-                memory_data = json.load(f)
-            
-            nodes = memory_data.get("nodes", [])
-            relationships = memory_data.get("relationships", [])
-            
-            # 记录初始数量
-            initial_node_count = len(nodes)
-            initial_rel_count = len(relationships)
-            
-            # 转换为字典以便快速查找和删除
-            nodes_dict = {node["id"]: node for node in nodes}
-            relationships_dict = {rel["id"]: rel for rel in relationships}
-            
-            # 统计删除信息
-            deleted_nodes = []
-            deleted_relationships = []
-            auto_deleted_relationships = []  # 因节点删除而自动删除的关系
-            
-            # 分离节点ID和关系ID
-            node_ids_to_delete = set()
-            relation_ids_to_delete = set()
-            
-            for element_id in element_ids:
-                if element_id in nodes_dict:
-                    node_ids_to_delete.add(element_id)
-                elif element_id in relationships_dict:
-                    relation_ids_to_delete.add(element_id)
-                else:
-                    logger.warning(f"Element ID not found in local memory: {element_id}")
-            
-            # 删除节点
-            for node_id in node_ids_to_delete:
-                if node_id in nodes_dict:
-                    deleted_nodes.append(nodes_dict[node_id])
-                    del nodes_dict[node_id]
-                    logger.info(f"Deleted node from local memory: {node_id}")
-            
-            # 查找并自动删除关联到被删除节点的关系
-            for rel_id, rel in list(relationships_dict.items()):
-                start_node = rel.get("start_node")
-                end_node = rel.get("end_node")
-                
-                # 如果关系的起始节点或结束节点在删除列表中，自动删除该关系
-                if start_node in node_ids_to_delete or end_node in node_ids_to_delete:
-                    if rel_id not in relation_ids_to_delete:
-                        auto_deleted_relationships.append(rel)
-                    del relationships_dict[rel_id]
-                    logger.info(f"Auto-deleted relationship from local memory (connected to deleted node): {rel_id}")
-            
-            # 删除显式指定的关系
-            for relation_id in relation_ids_to_delete:
-                if relation_id in relationships_dict:
-                    deleted_relationships.append(relationships_dict[relation_id])
-                    del relationships_dict[relation_id]
-                    logger.info(f"Deleted relationship from local memory: {relation_id}")
-            
-            # 转换回列表
-            remaining_nodes = list(nodes_dict.values())
-            remaining_relationships = list(relationships_dict.values())
-            
-            # 更新数据结构
-            memory_data["nodes"] = remaining_nodes
-            memory_data["relationships"] = remaining_relationships
-            memory_data["updated_at"] = datetime.now().isoformat()
-            
-            # 保存回文件
-            with open(local_memory_file, "w", encoding="utf-8") as f:
-                json.dump(memory_data, f, ensure_ascii=False, indent=2)
-            
-            # 输出统计信息
-            total_deleted_nodes = len(deleted_nodes)
-            total_deleted_rels = len(deleted_relationships) + len(auto_deleted_relationships)
-            
-            logger.info("本地记忆删除完成")
-            logger.info("删除统计:")
-            logger.info(f"  节点: 删除 {total_deleted_nodes} 个 (剩余 {len(remaining_nodes)} 个)")
-            logger.info(f"  关系: 删除 {total_deleted_rels} 个 (直接删除 {len(deleted_relationships)} 个, 自动删除 {len(auto_deleted_relationships)} 个, 剩余 {len(remaining_relationships)} 个)")
-            
-            if auto_deleted_relationships:
-                logger.info(f"因节点删除自动删除了 {len(auto_deleted_relationships)} 个关联关系")
-            
-            logger.info(
-                f"Local memory deletion completed: "
-                f"{total_deleted_nodes} nodes deleted, "
-                f"{total_deleted_rels} relationships deleted "
-                f"({len(deleted_relationships)} explicit + {len(auto_deleted_relationships)} auto)"
-            )
-            
-            return {
-                "success": True,
-                "error": None,
-                "deleted_nodes": total_deleted_nodes,
-                "deleted_relationships": total_deleted_rels,
-            }
-        
-        except Exception as e:
-            logger.error(f"Failed to delete from local memory: {e}")
-            logger.error(f"从本地记忆删除失败: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "deleted_nodes": 0,
-                "deleted_relationships": 0,
-            }
 
     def clear_all_memory(self) -> bool:
         """清空Neo4j中的全部记忆节点，彻底格式化记忆，无法回退
@@ -3222,6 +2309,249 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to load Neo4j data: {e}")
             logger.error(f"Neo4j数据下载失败: {e}")
             return False
+
+    def upload_memory_package(self, memory_data: Dict[str, Any]) -> Dict[str, Any]:
+        """将一组节点和关系批量写入Neo4j图谱。
+        
+        对于每个节点：检查是否已存在，存在则修改，不存在则创建。
+        对于每个关系：检查是否已存在，存在则修改，不存在则创建。
+        节点ID映射会自动更新到关系引用中。
+        
+        Args:
+            memory_data: 包含 nodes 和 relations 的字典
+            
+        Returns:
+            {"nodes": [...], "relations": [...]} 处理结果
+        """
+        nodes_list = memory_data.get("nodes", [])
+        relations_list = memory_data.get("relations", [])
+        
+        logger.debug(f"记忆存储接收到数据: {json.dumps(memory_data, ensure_ascii=False, indent=2)}")
+        logger.info(f"处理 {len(nodes_list)} 个节点和 {len(relations_list)} 个关系")
+        
+        try:
+            with self.driver.session() as session:
+                tx = session.begin_transaction()
+                # 遍历nodelist，处理节点
+                for node in nodes_list:
+                    try:
+                        node_id = node.get("nodeId")
+                        node_type = node.get("nodeType")
+                        node_info = node.get("nodeInfo", {})
+                        
+                        if not node_id or not node_type:
+                            logger.warning(f"Node missing required fields: {node}")
+                            continue
+                        
+                        # 检查节点是否已存在于图谱中
+                        check_query = """
+                        OPTIONAL MATCH (n) WHERE elementId(n) = $node_id
+                        RETURN elementId(n) as existing_id
+                        """
+                        
+                        check_result = tx.run(check_query, node_id=node_id).single()
+                        existing_node_id = check_result["existing_id"] if check_result else None
+                        
+                        if existing_node_id:
+                            # 节点存在，调用modify_node修改节点属性
+                            updates = {}
+                            for key, value in node_info.items():
+                                if key not in ["nodeId", "nodeType", "significance"]:  # 排除不应加入的字段
+                                    updates[key] = value
+                            # 排除所有Time时间节点，该节点不遵从modify_node逻辑，直接创建新节点
+                            if node_type == "Time":
+                                time_value = node_info.get("time", [])
+                                new_node_id = self.create_node(
+                                    session=tx,
+                                    name="",
+                                    node_type=node_type,
+                                    time_str=time_value,
+                                    time_type=node_info.get("time_type", "static"),
+                                    trust=0.5,
+                                    context=node_info.get("context", "reality现实"),
+                                    note="无"
+                                )
+                                if new_node_id:
+                                    logger.info(f"Created new Time node: {node_id} -> {new_node_id}")
+                                    old_node_id = node["nodeId"]
+                                    node["nodeId"] = new_node_id
+                                    for relation in relations_list:
+                                        if relation.get("startNode") == old_node_id:
+                                            relation["startNode"] = new_node_id
+                                        if relation.get("endNode") == old_node_id:
+                                            relation["endNode"] = new_node_id
+                                else:
+                                    logger.warning(f"Failed to create Time node: {node_id}")
+                                continue
+                            
+                            if updates:
+                                result = self.modify_node(existing_node_id, updates)
+                                if result and result != "InvalidModification":
+                                    logger.info(f"Updated existing node: {node_id}")
+                                elif result == "InvalidModification":
+                                    # 修改被拒绝，回退到创建新节点
+                                    logger.warning(f"Modify rejected for node {node_id}, falling back to create new node")
+                                    fallback_time = node_info.get("time_str", node_info.get("time", []))
+                                    if isinstance(fallback_time, str):
+                                        fallback_time = [t.strip() for t in fallback_time.split(",") if t.strip()] if fallback_time else []
+                                    new_node_id = self.create_node(
+                                        session=tx,
+                                        name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
+                                        node_type=node_type,
+                                        time_str=fallback_time,
+                                        time_type=node_info.get("time_type", "static"),
+                                        trust=node_info.get("trust", 0.5),
+                                        context=node_info.get("context", "reality现实"),
+                                        note=node_info.get("note", "无")
+                                    )
+                                    if new_node_id:
+                                        logger.info(f"Fallback created new {node_type} node: {node_id} -> {new_node_id}")
+                                        old_node_id = node["nodeId"]
+                                        node["nodeId"] = new_node_id
+                                        for relation in relations_list:
+                                            if relation.get("startNode") == old_node_id:
+                                                relation["startNode"] = new_node_id
+                                            if relation.get("endNode") == old_node_id:
+                                                relation["endNode"] = new_node_id
+                                    else:
+                                        logger.warning(f"Fallback create also failed for {node_type} node: {node_id}")
+                                else:
+                                    logger.warning(f"Failed to update node: {node_id}")
+                        else:
+                            # 节点不存在，调用create_node创建节点
+                            create_time = node_info.get("time_str", node_info.get("time", []))
+                            if isinstance(create_time, str):
+                                create_time = [t.strip() for t in create_time.split(",") if t.strip()] if create_time else []
+                            new_node_id = self.create_node(
+                                session=tx,
+                                name=node_info.get("character_name", node_info.get("location_name", node_info.get("entity_name", node_info.get("name", "")))),
+                                node_type=node_type,
+                                time_str=create_time,
+                                time_type=node_info.get("time_type", "static"),
+                                trust=node_info.get("trust", 0.5),
+                                context=node_info.get("context", "reality现实"),
+                                note=node_info.get("note", "无")
+                            )
+                            
+                            if new_node_id:
+                                logger.info(f"Created new {node_type} node: {node_id} -> {new_node_id}")
+                                
+                                # 更新当前节点的ID为实际的Neo4j节点ID
+                                old_node_id = node["nodeId"]
+                                node["nodeId"] = new_node_id
+                                
+                                # 更新relations_list中所有引用这个节点的关系
+                                for relation in relations_list:
+                                    if relation.get("startNode") == old_node_id:
+                                        relation["startNode"] = new_node_id
+                                    
+                                    if relation.get("endNode") == old_node_id:
+                                        relation["endNode"] = new_node_id
+                            else:
+                                logger.warning(f"Failed to create {node_type} node: {node_id}")
+                                
+                    except Exception as e:
+                        logger.error(f"Error processing node {node}: {e}")
+                        continue
+
+                # 先提交节点事务，确保新节点对后续 create_relation/modify_relation 的独立 session 可见
+                tx.commit()
+                logger.info(f"节点事务已提交: {len(nodes_list)} 个节点")
+
+                # 遍历relationlist，处理关系（使用独立 session，节点已持久化）
+                for relation in relations_list:
+                    try:
+                        relation_id = relation.get("relationId")
+                        relation_type = relation.get("relationType", "single")
+                        start_node_id = relation.get("startNode")
+                        end_node_id = relation.get("endNode")
+                        relation_info = relation.get("relationInfo", {})
+                        
+                        if not all([relation_id, start_node_id, end_node_id]):
+                            logger.warning(f"Relation missing required fields: {relation}")
+                            continue
+                        
+                        # 解析关系信息
+                        predicate = relation_info.get("predicate", "CONNECTED_TO")
+                        source = relation_info.get("source", "memory_record")
+                        confidence = float(relation_info.get("confidence", 0.5))
+                        importance = float(relation_info.get("importance", 0.5))
+                        evidence = relation_info.get("evidence", "")
+                        
+                        if not start_node_id or not end_node_id:
+                            logger.warning(f"Could not resolve node IDs for relation {relation_id}: {start_node_id} -> {end_node_id}")
+                            continue
+                        
+                        # 检查关系是否已存在
+                        check_relation_query = """
+                        OPTIONAL MATCH (a)-[r]->(b) 
+                        WHERE elementId(a) = $start_id AND elementId(b) = $end_id 
+                        AND elementId(r) = $relation_id
+                        RETURN elementId(r) as existing_relation_id
+                        """
+                        
+                        check_relation_result = session.run(check_relation_query, 
+                                                       start_id=start_node_id,
+                                                       end_id=end_node_id,
+                                                       relation_id=relation_id).single()
+                        
+                        existing_relation_id = check_relation_result["existing_relation_id"] if check_relation_result else None
+                        
+                        if existing_relation_id:
+                            # 关系存在，调用modify_relation修改关系属性
+                            result = self.modify_relation(existing_relation_id, predicate, source, confidence, relation_type, evidence, importance=importance)
+                            if result:
+                                logger.info(f"Updated existing relation: {relation_id}")
+                            else:
+                                logger.warning(f"Failed to update relation: {relation_id}")
+                        else:
+                            # 关系不存在，调用create_relation创建关系
+                            new_relation_id = self.create_relation(
+                                startNode_id=start_node_id,
+                                endNode_id=end_node_id,
+                                predicate=predicate,
+                                source=source,
+                                confidence=confidence,
+                                importance=importance,
+                                directivity=relation_type,
+                                evidence=evidence
+                            )
+                                
+                    except Exception as e:
+                        logger.error(f"Error processing relation {relation}: {e}")
+                        continue
+                
+                logger.info(f"Memory record processing completed: {len(nodes_list)} nodes, {len(relations_list)} relations")
+                
+                # 收集处理结果
+                processed_nodes = []
+                processed_relations = []
+                
+                for node in nodes_list:
+                    if node.get("nodeId"):
+                        processed_nodes.append({
+                            "nodeId": node["nodeId"],
+                            "nodeType": node.get("nodeType"),
+                            "action": "processed"
+                        })
+                
+                for relation in relations_list:
+                    if relation.get("relationId"):
+                        processed_relations.append({
+                            "relationId": relation.get("relationId"),
+                            "startNode": relation.get("startNode"),
+                            "endNode": relation.get("endNode"),
+                            "predicate": relation.get("relationInfo", {}).get("predicate", "CONNECTED_TO"),
+                            "action": "processed"
+                        })
+                
+                logger.info(f"记忆记录处理完成: {len(nodes_list)} 个节点, {len(relations_list)} 个关系")
+                return {"nodes": processed_nodes, "relations": processed_relations}
+                
+        except Exception as e:
+            # 事务未提交时，session 关闭会自动回滚未提交的事务
+            logger.error(f"记忆记录处理出错，事务已回滚: {e}")
+            return {"nodes": [], "relations": []}
 
 
 # 全局实例

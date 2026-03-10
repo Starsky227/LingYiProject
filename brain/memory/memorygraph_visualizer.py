@@ -38,10 +38,8 @@ class MemoryGraphViewer:
     """记忆图谱HTML可视化器"""
     
     def __init__(self):
-        self.local_memory_file = os.path.join(os.path.dirname(__file__), "memory_graph", "local_memory.json")
         self.neo4j_memory_file = os.path.join(os.path.dirname(__file__), "memory_graph", "neo4j_memory.json")
         self.graph_data = None
-        self.local_data = None
         self.neo4j_data = None
         self.html_template = None
         self.neo4j_connected = False
@@ -49,18 +47,6 @@ class MemoryGraphViewer:
     def load_memory_graph(self) -> bool:
         """加载记忆图谱数据"""
         try:
-            # 加载本地内存数据
-            if os.path.exists(self.local_memory_file):
-                with open(self.local_memory_file, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content:
-                        self.local_data = json.loads(content)
-                        logger.info(f"Loaded local memory data: {len(self.local_data.get('nodes', []))} nodes")
-                    else:
-                        self.local_data = {"nodes": [], "relationships": []}
-            else:
-                self.local_data = {"nodes": [], "relationships": []}
-            
             # 加载Neo4j内存数据
             if os.path.exists(self.neo4j_memory_file):
                 with open(self.neo4j_memory_file, 'r', encoding='utf-8') as f:
@@ -73,67 +59,14 @@ class MemoryGraphViewer:
             else:
                 self.neo4j_data = {"nodes": [], "relationships": []}
             
-            # 合并数据用于向后兼容
-            self.graph_data = self.merge_graph_data()
+            self.graph_data = self.neo4j_data
             return True
             
         except Exception as e:
             logger.error(f"Failed to load memory graph: {e}")
             return False
     
-    def merge_graph_data(self) -> Dict[str, Any]:
-        """合并本地和Neo4j数据，优先使用Neo4j数据，避免重复节点"""
-        merged_nodes = []
-        merged_relationships = []
-        node_id_map = {}  # 用于检测重复节点：key=node_id, value=index
-        relationship_map = {}  # 用于检测重复关系
-        
-        # 添加Neo4j节点
-        if self.neo4j_data and "nodes" in self.neo4j_data:
-            for node in self.neo4j_data["nodes"]:
-                node_id = str(node["id"])
-                if node_id not in node_id_map:
-                    merged_nodes.append(node)
-                    node_id_map[node_id] = len(merged_nodes) - 1
-        
-        # 添加本地节点（检查是否与Neo4j重复）
-        if self.local_data and "nodes" in self.local_data:
-            for node in self.local_data["nodes"]:
-                node_id = str(node["id"])
-                if node_id not in node_id_map:
-                    # 节点不重复，添加到合并列表
-                    merged_nodes.append(node)
-                    node_id_map[node_id] = len(merged_nodes) - 1
-                # 如果节点ID已存在（与Neo4j重复），则跳过该本地节点
-        
-        # 添加本地关系（标记为本地来源）
-        if self.local_data and "relationships" in self.local_data:
-            for rel in self.local_data["relationships"]:
-                rel_key = f"{rel['start_node']}-{rel['type']}-{rel['end_node']}"
-                rel_copy = rel.copy()
-                rel_copy["source_type"] = "local"
-                merged_relationships.append(rel_copy)
-                relationship_map[rel_key] = len(merged_relationships) - 1  # 记录关系位置
-        
-        # 添加Neo4j关系（标记为Neo4j来源，检测重复）
-        if self.neo4j_data and "relationships" in self.neo4j_data:
-            for rel in self.neo4j_data["relationships"]:
-                rel_key = f"{rel['start_node']}-{rel['type']}-{rel['end_node']}"
-                if rel_key in relationship_map:
-                    # 关系已存在，更新为双端存储
-                    existing_index = relationship_map[rel_key]
-                    merged_relationships[existing_index]["source_type"] = "both"
-                else:
-                    # 新关系，添加为Neo4j来源
-                    rel_copy = rel.copy()
-                    rel_copy["source_type"] = "neo4j"
-                    merged_relationships.append(rel_copy)
-        
-        return {
-            "nodes": merged_nodes,
-            "relationships": merged_relationships,
-            "updated_at": datetime.now().isoformat()
-        }
+
     
     def check_neo4j_connection(self) -> bool:
         """检查Neo4j连接状态"""
@@ -146,33 +79,7 @@ class MemoryGraphViewer:
             self.neo4j_connected = False
             return False
     
-    def get_node_source(self, node_id: str) -> str:
-        """获取节点来源（local, neo4j, both）"""
-        in_local = False
-        in_neo4j = False
-        
-        # 检查本地数据
-        if self.local_data and "nodes" in self.local_data:
-            for node in self.local_data["nodes"]:
-                if str(node["id"]) == str(node_id):
-                    in_local = True
-                    break
-        
-        # 检查Neo4j数据
-        if self.neo4j_data and "nodes" in self.neo4j_data:
-            for node in self.neo4j_data["nodes"]:
-                if str(node["id"]) == str(node_id):
-                    in_neo4j = True
-                    break
-        
-        if in_local and in_neo4j:
-            return "both"
-        elif in_local:
-            return "local"
-        elif in_neo4j:
-            return "neo4j"
-        else:
-            return "unknown"
+
     
     def prepare_visualization_data(self) -> Dict[str, Any]:
         """准备可视化数据"""
@@ -210,22 +117,9 @@ class MemoryGraphViewer:
             else:
                 viz_node["color"] = "#9E9E9E"  # 灰色 - 其他
             
-            # 根据数据来源设置描边颜色
-            source = self.get_node_source(node["id"])
-            if source == "local":
-                viz_node["strokeColor"] = "#808080"  # 灰色描边 - 只在本地
-                viz_node["strokeWidth"] = 3
-            elif source == "neo4j":
-                viz_node["strokeColor"] = "#00FF00"  # 绿色描边 - 只在Neo4j
-                viz_node["strokeWidth"] = 3
-            elif source == "both":
-                viz_node["strokeColor"] = "#0066FF"  # 蓝色描边 - 两者都有
-                viz_node["strokeWidth"] = 3
-            else:
-                viz_node["strokeColor"] = "#FFFFFF"  # 白色描边 - 默认
-                viz_node["strokeWidth"] = 2
-            
-            viz_node["source"] = source
+            viz_node["strokeColor"] = "#00FF00"  # 绿色描边
+            viz_node["strokeWidth"] = 3
+            viz_node["source"] = "neo4j"
             
             nodes.append(viz_node)
             node_id_map[node["id"]] = i
@@ -239,8 +133,7 @@ class MemoryGraphViewer:
                     "target": node_id_map[rel["end_node"]],
                     "type": rel["type"],
                     "properties": rel["properties"],
-                    "neo4j_id": rel["id"],
-                    "source_type": rel.get("source_type", "neo4j")  # 默认为neo4j
+                    "neo4j_id": rel["id"]
                 }
                 links.append(viz_link)
         
@@ -387,12 +280,12 @@ def check_neo4j_connection() -> bool:
         logger.error(f"检查Neo4j连接失败: {e}")
         return False
 
-def create_time_node_api(time_str: str) -> Dict[str, Any]:
+def create_time_node_api(time_str: list) -> Dict[str, Any]:
     """
     API函数：创建时间节点
     
     Args:
-        time_str: 时间字符串
+        time_str: 时间组件列表，如 ["2001年", "2月", "3日"]
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -436,14 +329,13 @@ def create_time_node_api(time_str: str) -> Dict[str, Any]:
             "created_node": None
         }
 
-def create_character_node_api(character_name: str, trust: float = 0.5, importance: float = 0.5, context: str = "reality现实") -> Dict[str, Any]:
+def create_character_node_api(character_name: str, trust: float = 0.5, context: str = "reality现实") -> Dict[str, Any]:
     """
     API函数：创建角色节点
     
     Args:
         character_name: 角色名称
         trust: 信任度 (0-1)
-        importance: 重要性 (0-1)
         context: 上下文环境 (默认"reality现实")
         
     Returns:
@@ -463,7 +355,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
         
         # 创建角色节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_character_node(session, character_name, importance, trust, context)
+            result_node = kg_manager.create_character_node(session, character_name, trust, context)
             
             if result_node:
                 logger.info(f"成功创建角色节点: {result_node}")
@@ -488,13 +380,12 @@ def create_character_node_api(character_name: str, trust: float = 0.5, importanc
             "created_node": None
         }
 
-def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str = "无", context: str = "reality现实") -> Dict[str, Any]:
+def create_entity_node_api(entity_name: str, note: str = "无", context: str = "reality现实") -> Dict[str, Any]:
     """
     API函数：创建实体节点
     
     Args:
         entity_name: 实体名称
-        importance: 重要程度 (0-1)
         note: 备注 (默认"无")
         context: 上下文环境 (默认"reality现实")
         
@@ -515,7 +406,7 @@ def create_entity_node_api(entity_name: str, importance: float = 0.5, note: str 
         
         # 创建实体节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_entity_node(session, entity_name, importance, context, note)
+            result_node = kg_manager.create_entity_node(session, entity_name, context, note)
             
             if result_node:
                 logger.info(f"成功创建实体节点: {result_node}")
@@ -695,15 +586,20 @@ def start_api_server():
         def handle_create_time_node():
             try:
                 data = request.get_json()
-                time_str = data.get('time_str', '')
+                time_str = data.get('time_str', [])
                 
-                if not time_str.strip():
+                # 兼容字符串输入：自动按逗号拆分为列表
+                if isinstance(time_str, str):
+                    import re as _re
+                    time_str = [s.strip() for s in _re.split(r'[,，]', time_str) if s.strip()]
+                
+                if not time_str:
                     return jsonify({
                         "success": False,
-                        "error": "时间字符串不能为空"
+                        "error": "时间列表不能为空"
                     }), 400
                 
-                result = create_time_node_api(time_str.strip())
+                result = create_time_node_api(time_str)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -723,7 +619,6 @@ def start_api_server():
                 data = request.get_json()
                 character_name = data.get('character_name', '')
                 trust = data.get('trust', 0.5)
-                importance = data.get('importance', 0.5)
                 context = data.get('context', 'reality现实')
                 
                 if not character_name.strip():
@@ -732,7 +627,7 @@ def start_api_server():
                         "error": "角色名称不能为空"
                     }), 400
                 
-                result = create_character_node_api(character_name.strip(), trust, importance, context)
+                result = create_character_node_api(character_name.strip(), trust, context)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -751,7 +646,6 @@ def start_api_server():
             try:
                 data = request.get_json()
                 entity_name = data.get('entity_name', '')
-                importance = data.get('importance', 0.5)
                 note = data.get('note', '无')
                 context = data.get('context', 'reality现实')
                 
@@ -761,7 +655,7 @@ def start_api_server():
                         "error": "实体名称不能为空"
                     }), 400
                 
-                result = create_entity_node_api(entity_name.strip(), importance, note, context)
+                result = create_entity_node_api(entity_name.strip(), note, context)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -902,37 +796,6 @@ def start_api_server():
                     "error": str(e)
                 }), 500
         
-        @app.route('/api/delete_from_local', methods=['POST'])
-        def handle_delete_from_local():
-            """从本地记忆文件中删除节点或关系"""
-            try:
-                # 获取知识图谱管理器实例
-                kg_manager = get_knowledge_graph_manager()
-                
-                data = request.get_json()
-                element_ids = data.get('element_ids', [])
-                
-                if not element_ids or not isinstance(element_ids, list):
-                    return jsonify({
-                        "success": False,
-                        "error": "元素ID列表不能为空"
-                    }), 400
-                
-                # 调用delete_from_local_memory函数
-                result = kg_manager.delete_from_local_memory(element_ids)
-                
-                if result["success"]:
-                    return jsonify(result), 200
-                else:
-                    return jsonify(result), 500
-                    
-            except Exception as e:
-                logger.error(f"Delete from local API error: {e}")
-                return jsonify({
-                    "success": False,
-                    "error": str(e)
-                }), 500
-        
         @app.route('/api/modify_node', methods=['POST'])
         def handle_modify_node():
             """修改节点或关系的属性"""
@@ -989,6 +852,7 @@ def start_api_server():
                 predicate = data.get('predicate', '')
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
+                importance = data.get('importance', None)
                 directivity = data.get('directivity', 'single')
                 evidence = data.get('evidence', '')
                 
@@ -1032,7 +896,8 @@ def start_api_server():
                     confidence, 
                     directivity,
                     evidence,
-                    call="active"
+                    call="active",
+                    importance=importance,
                 )
                 
                 if result:
@@ -1066,6 +931,7 @@ def start_api_server():
                 predicate = data.get('predicate', '')
                 source = data.get('source', '')
                 confidence = data.get('confidence', 0.5)
+                importance = data.get('importance', 0.5)
                 directivity = data.get('directivity', 'to_endNode')
                 evidence = data.get('evidence', 'user manual input.')
                 if directivity == 'to_startNode':
@@ -1090,13 +956,14 @@ def start_api_server():
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
                 relationship_id = kg_manager.create_relation(
-                    startNode_id.strip(), 
-                    endNode_id.strip(), 
-                    predicate.strip(), 
-                    source.strip(), 
-                    confidence, 
-                    directivity,
-                    evidence
+                    startNode_id=startNode_id.strip(), 
+                    endNode_id=endNode_id.strip(), 
+                    predicate=predicate.strip(), 
+                    source=source.strip(), 
+                    confidence=confidence, 
+                    importance=importance,
+                    directivity=directivity,
+                    evidence=evidence
                 )
                 
                 if relationship_id:
@@ -1117,6 +984,92 @@ def start_api_server():
                     "success": False,
                     "error": str(e)
                 }), 500
+        
+        @app.route('/api/collide_nodes', methods=['POST'])
+        def handle_collide_nodes():
+            """合并两个节点"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json()
+                node_id_1 = data.get('node_id_1', '')
+                node_id_2 = data.get('node_id_2', '')
+                
+                if not node_id_1 or not node_id_2:
+                    return jsonify({
+                        "success": False,
+                        "error": "两个节点ID不能为空"
+                    }), 400
+                
+                kg_manager = get_knowledge_graph_manager()
+                result_id = kg_manager.collide_nodes(node_id_1.strip(), node_id_2.strip())
+                
+                if result_id:
+                    return jsonify({
+                        "success": True,
+                        "node_id": result_id,
+                        "message": "节点合并成功"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "节点合并失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Collide nodes API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/memory_decay', methods=['POST'])
+        def handle_memory_decay():
+            """执行记忆衰退"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                data = request.get_json() or {}
+                decay_factor = data.get('decay_factor', 0.9)
+                
+                kg_manager = get_knowledge_graph_manager()
+                kg_manager.memory_decay(decay_factor=decay_factor)
+                
+                return jsonify({
+                    "success": True,
+                    "message": f"记忆衰退已执行 (decay_factor={decay_factor})"
+                }), 200
+                
+            except Exception as e:
+                logger.error(f"Memory decay API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+        
+        @app.route('/api/list_memory_snapshots', methods=['GET'])
+        def handle_list_memory_snapshots():
+            """列出logs/memory_graph目录下可用的记忆快照文件"""
+            try:
+                log_dir = os.path.join(project_root, "logs", "memory_graph")
+                if not os.path.exists(log_dir):
+                    return jsonify({"success": True, "files": []}), 200
+                
+                files = []
+                for f in sorted(os.listdir(log_dir), reverse=True):
+                    if f.endswith('.jsonl') or f.endswith('.json'):
+                        full_path = os.path.join(log_dir, f)
+                        size_kb = round(os.path.getsize(full_path) / 1024, 1)
+                        files.append({
+                            "name": f,
+                            "path": full_path,
+                            "size_kb": size_kb
+                        })
+                
+                return jsonify({"success": True, "files": files}), 200
+            except Exception as e:
+                logger.error(f"List memory snapshots error: {e}")
+                return jsonify({"success": False, "error": str(e)}), 500
         
         @app.route('/api/save_memory', methods=['POST'])
         def handle_save_memory():
@@ -1146,8 +1099,7 @@ def start_api_server():
                 if success:
                     return jsonify({
                         "success": True,
-                        "message": f"成功保存 {len(nodes_ids)} 个节点和 {len(relation_ids)} 个关系",
-                        "file": "local_memory.json"
+                        "message": f"成功保存 {len(nodes_ids)} 个节点和 {len(relation_ids)} 个关系"
                     }), 200
                 else:
                     return jsonify({
@@ -1164,35 +1116,59 @@ def start_api_server():
         
         @app.route('/api/upload_memory', methods=['POST'])
         def handle_upload_memory():
-            """从本地记忆文件上传到Neo4j数据库"""
+            """从JSON文件上传记忆到Neo4j数据库"""
             try:
                 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
                 
                 data = request.get_json()
-                nodes_ids = data.get('nodes_ids', [])
-                relation_ids = data.get('relation_ids', [])
+                file_path = data.get('file_path', '')
                 
-                if not nodes_ids and not relation_ids:
+                if not file_path:
                     return jsonify({
                         "success": False,
-                        "error": "至少需要提供一个节点或关系ID"
+                        "error": "需要提供JSON文件路径"
+                    }), 400
+                
+                if not os.path.exists(file_path):
+                    return jsonify({
+                        "success": False,
+                        "error": f"文件不存在: {file_path}"
+                    }), 400
+                
+                # 读取并解析JSON文件
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if not content:
+                        return jsonify({
+                            "success": False,
+                            "error": "文件内容为空"
+                        }), 400
+                    try:
+                        memory_data = json.loads(content)
+                    except json.JSONDecodeError as e:
+                        return jsonify({
+                            "success": False,
+                            "error": f"JSON解析失败: {e}"
+                        }), 400
+                
+                nodes = memory_data.get('nodes', [])
+                relationships = memory_data.get('relationships', [])
+                if not nodes and not relationships:
+                    return jsonify({
+                        "success": False,
+                        "error": "文件中没有节点和关系数据"
                     }), 400
                 
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
                 
                 # 调用 upload_memory 函数
-                success = kg_manager.upload_memory({
-                    "nodes_ids": nodes_ids,
-                    "relation_ids": relation_ids
-                })
+                success = kg_manager.upload_memory(memory_data)
                 
                 if success:
                     return jsonify({
                         "success": True,
-                        "message": f"成功上传 {len(nodes_ids)} 个节点和 {len(relation_ids)} 个关系到Neo4j",
-                        "uploaded_nodes": len(nodes_ids),
-                        "uploaded_relations": len(relation_ids)
+                        "message": f"成功从 {file_path} 上传 {len(nodes)} 个节点和 {len(relationships)} 个关系到Neo4j",
                     }), 200
                 else:
                     return jsonify({
@@ -1202,6 +1178,49 @@ def start_api_server():
                     
             except Exception as e:
                 logger.error(f"Upload memory API error: {e}")
+                return jsonify({
+                    "success": False,
+                    "error": str(e)
+                }), 500
+
+        @app.route('/api/upload_memory_content', methods=['POST'])
+        def handle_upload_memory_content():
+            """直接接收JSON内容并上传记忆到Neo4j数据库（用于浏览器文件选择）"""
+            try:
+                from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
+                
+                memory_data = request.get_json()
+                if not memory_data:
+                    return jsonify({
+                        "success": False,
+                        "error": "未收到有效的JSON数据"
+                    }), 400
+                
+                nodes = memory_data.get('nodes', [])
+                relationships = memory_data.get('relationships', [])
+                
+                if not nodes and not relationships:
+                    return jsonify({
+                        "success": False,
+                        "error": "文件中没有节点和关系数据"
+                    }), 400
+                
+                kg_manager = get_knowledge_graph_manager()
+                success = kg_manager.upload_memory(memory_data)
+                
+                if success:
+                    return jsonify({
+                        "success": True,
+                        "message": f"成功导入 {len(nodes)} 个节点和 {len(relationships)} 个关系"
+                    }), 200
+                else:
+                    return jsonify({
+                        "success": False,
+                        "error": "上传记忆失败"
+                    }), 500
+                    
+            except Exception as e:
+                logger.error(f"Upload memory content API error: {e}")
                 return jsonify({
                     "success": False,
                     "error": str(e)

@@ -193,6 +193,15 @@
             background: #6f42c1;
             color: white;
         }
+
+        .memory-controls {
+            background: #17a2b8;
+            color: white;
+        }
+
+        .memory-controls:hover {
+            background: #138496;
+        }
         
         .refresh-controls {
             background: #fd7e14;
@@ -235,6 +244,98 @@
             margin-right: 8px;
         }
         
+        /* 记忆存取面板样式 */
+        .memory-panel {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 380px;
+            height: 100vh;
+            background: white;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.3);
+            z-index: 1001;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+        }
+
+        .memory-panel.show {
+            right: 0;
+        }
+
+        .memory-panel-header {
+            background: #17a2b8;
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #117a8b;
+        }
+
+        .memory-panel-header h3 {
+            margin: 0;
+            font-size: 18px;
+        }
+
+        .memory-panel-content {
+            padding: 20px;
+        }
+
+        .memory-buttons-row {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .memory-function-button {
+            flex: 1;
+            padding: 20px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .memory-function-button:hover {
+            border-color: #17a2b8;
+            background: #f0fbfd;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(23, 162, 184, 0.2);
+        }
+
+        .memory-function-button:disabled {
+            background: #f5f5f5;
+            color: #cccccc;
+            border-color: #e0e0e0;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .memory-function-button:disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .memory-function-button .button-icon {
+            font-size: 28px;
+        }
+
+        .memory-function-button .button-text {
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .memory-forms {
+            border-top: 1px solid #e0e0e0;
+            padding-top: 20px;
+            margin-top: 10px;
+        }
+
         /* 节点编辑面板样式 */
         .edit-panel {
             position: fixed;
@@ -437,12 +538,12 @@
             transition: all 0.2s ease;
         }
         
-        .confirm-btn {
+        .confirm-btn, .primary-btn {
             background: #28a745;
             color: white;
         }
         
-        .confirm-btn:hover {
+        .confirm-btn:hover, .primary-btn:hover {
             background: #218838;
         }
         
@@ -643,15 +744,6 @@
             background: #ccc;
             cursor: not-allowed;
         }
-        
-        .cancel-btn {
-            background: #f44336;
-            color: white;
-        }
-        
-        .cancel-btn:hover {
-            background: #da190b;
-        }
     </style>
 </head>
 <body>
@@ -682,11 +774,6 @@
                 <div id="node-types"></div>
             </div>
             
-            <div class="stat-card">
-                <div class="stat-title">🔗 关系类型</div>
-                <div id="relation-types"></div>
-            </div>
-            
             <div class="node-details" id="node-details">
                 <div class="detail-title" id="detail-title">
                     <span>节点详情</span>
@@ -700,8 +787,10 @@
             <svg id="graph-container"></svg>
             
             <div class="controls">
+                <button class="control-button" onclick="triggerMemoryDecay()" style="background: #ff9800; color: white;">🧹 测试遗忘</button>
                 <button class="control-button refresh-controls" onclick="smartRefresh()">🔄 刷新</button>
-                <button class="control-button zoom-controls" onclick="resetZoom()">重置</button>
+                <button class="control-button zoom-controls" onclick="resetZoom()">页面重置</button>
+                <button class="control-button memory-controls" onclick="toggleMemoryPanel()">记忆存取</button>
                 <button class="control-button edit-controls" id="edit-button">节点编辑</button>
             </div>
             
@@ -727,23 +816,30 @@
                     <div class="legend-color" style="background-color: #9E9E9E; width: 10px; height: 10px; margin-right: 6px;"></div>
                     <span style="font-size: 10px;">其他</span>
                 </div>
-                
-                <div style="font-weight: bold; margin: 8px 0 6px 0; border-bottom: 1px solid #ccc; padding-bottom: 2px; font-size: 10px;">数据位置</div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #808080; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">本地</span>
-                </div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #00FF00; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">Neo4j</span>
-                </div>
-                <div class="legend-item">
-                    <div style="width: 8px; height: 8px; border: 2px solid #0066FF; border-radius: 50%; margin-right: 6px; background-color: #f0f0f0;"></div>
-                    <span style="font-size: 10px;">双源</span>
-                </div>
             </div>
         </div>
         
+        <!-- 记忆存取面板 -->
+        <div class="memory-panel" id="memory-panel">
+            <div class="memory-panel-header">
+                <h3>📦 记忆存取</h3>
+                <button class="close-button" onclick="toggleMemoryPanel()">×</button>
+            </div>
+            <div class="memory-panel-content">
+                <div class="memory-buttons-row">
+                    <button class="memory-function-button" onclick="saveMemorySnapshot()">
+                        <span class="button-icon">💾</span>
+                        <span class="button-text">保存记忆快照</span>
+                    </button>
+                    <button class="memory-function-button" onclick="loadMemorySnapshot()">
+                        <span class="button-icon">📂</span>
+                        <span class="button-text">读取记忆快照</span>
+                    </button>
+                </div>
+            </div>
+            <div class="memory-forms"></div>
+        </div>
+
         <!-- 节点编辑面板 -->
         <div class="edit-panel" id="edit-panel">
             <div class="edit-panel-header">
@@ -770,7 +866,7 @@
                     </button>
                     <button class="edit-function-button save-btn" onclick="showSaveForm()">
                         <span class="button-icon">🌐</span>
-                        <span class="button-text">迁移</span>
+                        <span class="button-text">合并</span>
                     </button>
                 </div>
             </div>
@@ -782,47 +878,13 @@
     </div>
 
     <script>
-        // 存储类型颜色配置常量
-        const STORAGE_TYPE_COLORS = {
-            local: '#f39c12',    // 明亮黄色（仅本地）
-            neo4j: '#27ae60',    // 明亮绿色（仅Neo4j）
-            both: '#3498db'      // 明亮蓝色（本地+Neo4j）
-        };
-        
-        // 获取存储类型对应的颜色
-        function getStorageTypeColor(sourceType) {
-            return STORAGE_TYPE_COLORS[sourceType] || STORAGE_TYPE_COLORS.neo4j;
-        }
-        
-        // 获取存储类型对应的箭头标记ID
-        function getStorageTypeArrow(sourceType) {
-            return `url(#arrow-${sourceType || 'neo4j'})`;
-        }
-        
-        // 获取UI中数据位置指示器的背景色
-        function getStorageUIBackground(sourceText) {
-            if (sourceText === '仅Neo4j' || sourceText === 'Neo4j') {
-                return '#d4edda';
-            } else if (sourceText === '仅本地') {
-                return '#fff3cd';
-            } else {
-                return '#d1ecf1';
-            }
-        }
-        
-        // 获取UI中数据位置指示器的文字颜色
-        function getStorageUIColor(sourceText) {
-            if (sourceText === '仅Neo4j' || sourceText === 'Neo4j') {
-                return STORAGE_TYPE_COLORS.neo4j;
-            } else if (sourceText === '仅本地') {
-                return STORAGE_TYPE_COLORS.local;
-            } else {
-                return STORAGE_TYPE_COLORS.both;
-            }
-        }
+        // 全局颜色常量
+        const LINK_COLOR = '#27ae60';   // 关系线条颜色（绿色）
+        const NODE_STROKE_COLOR = '#00FF00';  // 节点描边颜色
+        const NODE_STROKE_WIDTH = 3;
         
         // 排除在编辑表单中显示和收集的系统属性
-        const EXCLUDED_PROPERTIES = ['significance', 'name', 'created_at', 'last_updated', 'node_type'];
+        const EXCLUDED_PROPERTIES = ['name', 'created_at', 'last_updated', 'node_type'];
         
         // 图谱数据占位符
         const graphData = {{GRAPH_DATA}};
@@ -866,23 +928,19 @@
             .force("center", d3.forceCenter(width / 2, height / 2))
             .force("collision", d3.forceCollide().radius(d => d.size + 5));
         
-        // 创建箭头标记（为不同存储位置创建不同颜色的箭头）
+        // 创建箭头标记
         const defs = container.append("defs");
-        
-        // 创建存储类型箭头标记（使用常量颜色）
-        Object.keys(STORAGE_TYPE_COLORS).forEach(storageType => {
-            defs.append("marker")
-                .attr("id", `arrow-${storageType}`)
-                .attr("viewBox", "0 -5 10 10")
-                .attr("refX", 25)
-                .attr("refY", 0)
-                .attr("markerWidth", 5)
-                .attr("markerHeight", 5)
-                .attr("orient", "auto")
-                .append("path")
-                .attr("d", "M0,-5L10,0L0,5")
-                .attr("fill", STORAGE_TYPE_COLORS[storageType]);
-        });
+        defs.append("marker")
+            .attr("id", "arrow")
+            .attr("viewBox", "0 -5 10 10")
+            .attr("refX", 25)
+            .attr("refY", 0)
+            .attr("markerWidth", 5)
+            .attr("markerHeight", 5)
+            .attr("orient", "auto")
+            .append("path")
+            .attr("d", "M0,-5L10,0L0,5")
+            .attr("fill", LINK_COLOR);
         
         // 检测双向关系并设置偏移
         function detectBidirectionalLinks(links) {
@@ -954,17 +1012,8 @@
             .data(graphData.links)
             .enter().append("line")
             .attr("class", "link")
-            .attr("marker-end", d => getStorageTypeArrow(d.source_type))
-            .attr("stroke", d => {
-                // 调试：打印关系的source_type
-                console.log('关系颜色设置 - ID:', d.neo4j_id, 'Type:', d.type, 'Source_type:', d.source_type);
-                
-                // 根据存储位置设置颜色（使用统一的颜色函数）
-                if (!d.source_type || !STORAGE_TYPE_COLORS[d.source_type]) {
-                    console.warn('关系未知存储位置:', d.source_type, '关系:', d);
-                }
-                return getStorageTypeColor(d.source_type);
-            })
+            .attr("marker-end", "url(#arrow)")
+            .attr("stroke", LINK_COLOR)
             .attr("stroke-width", "3")
             .on("click", showLinkDetails);
         
@@ -976,8 +1025,8 @@
             .attr("class", "node")
             .attr("r", d => d.size)
             .attr("fill", d => d.color)
-            .attr("stroke", d => d.strokeColor)
-            .attr("stroke-width", d => d.strokeWidth)
+            .attr("stroke", NODE_STROKE_COLOR)
+            .attr("stroke-width", NODE_STROKE_WIDTH)
             .on("click", showNodeDetails)
             .call(d3.drag()
                 .on("start", dragstarted)
@@ -1127,25 +1176,10 @@
             // 如果保存界面已打开，实时更新保存内容
             updateSaveFormIfVisible();
             
-            let sourceText = '';
-            if (d.source === 'local') {
-                sourceText = '仅本地';
-            } else if (d.source === 'neo4j') {
-                sourceText = '仅Neo4j';
-            } else if (d.source === 'both') {
-                sourceText = '本地+Neo4j';
-            } else {
-                sourceText = '未知';
-            }
-            
             let html = `
                 <div class="property-item">
                     <span class="property-key">节点ID:</span>
                     <span class="property-value">${d.neo4j_id}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">数据位置:</span>
-                    <span class="property-value">${sourceText}</span>
                 </div>
                 <div class="property-item">
                     <span class="property-key">标签:</span>
@@ -1173,7 +1207,6 @@
         // 显示关系详情
         function showLinkDetails(event, d) {
             console.log('显示关系详情 - 原始数据:', d);
-            console.log('关系source_type:', d.source_type);
             
             // 检查是否有多个同向关系
             const sameDirectionLinks = graphData.links.filter(link => 
@@ -1406,26 +1439,10 @@
             const sourceNode = graphData.nodes.find(node => node.id === d.source.id);
             const targetNode = graphData.nodes.find(node => node.id === d.target.id);
             
-            // 确定存储位置文本
-            let sourceText = '';
-            if (d.source_type === 'local') {
-                sourceText = '仅本地';
-            } else if (d.source_type === 'neo4j') {
-                sourceText = '仅Neo4j';
-            } else if (d.source_type === 'both') {
-                sourceText = '本地+Neo4j';
-            } else {
-                sourceText = '未知';
-            }
-            
             let html = `
                 <div class="property-item">
                     <span class="property-key">关系ID:</span>
                     <span class="property-value">${d.neo4j_id}</span>
-                </div>
-                <div class="property-item">
-                    <span class="property-key">数据位置:</span>
-                    <span class="property-value">${sourceText}</span>
                 </div>
                 <div class="property-item">
                     <span class="property-key">关系类型:</span>
@@ -1534,21 +1551,31 @@
                 `;
             }
             nodeTypesDiv.innerHTML = nodeTypesHtml;
-            
-            // 更新关系类型统计
-            const relationTypesDiv = document.getElementById("relation-types");
-            let relationTypesHtml = "";
-            for (const [type, count] of Object.entries(stats.relation_types || {})) {
-                relationTypesHtml += `
-                    <div class="stat-item">
-                        <span>${type}:</span>
-                        <span>${count}</span>
-                    </div>
-                `;
-            }
-            relationTypesDiv.innerHTML = relationTypesHtml;
         }
         
+        // 测试遗忘（记忆衰退）
+        async function triggerMemoryDecay() {
+            if (!confirm('确定要执行记忆衰退吗？\n\n所有关系的 significance 值将根据 importance 进行衰减。\n此操作不可撤销。')) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/memory_decay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ decay_factor: 0.9 })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    alert('记忆衰退已执行！\n' + result.message);
+                } else {
+                    alert('记忆衰退失败：' + (result.error || '未知错误'));
+                }
+            } catch (error) {
+                console.error('记忆衰退失败:', error);
+                alert('记忆衰退请求失败：' + error.message);
+            }
+        }
+
         // 智能刷新：优先使用动态更新，失败时使用页面刷新
         function smartRefresh() {
             console.log('执行智能刷新...');
@@ -1652,19 +1679,6 @@
                 `;
             }
             nodeTypesDiv.innerHTML = nodeTypesHtml;
-            
-            // 关系类型统计
-            const relationTypesDiv = document.getElementById("relation-types");
-            let relationTypesHtml = "";
-            for (const [type, count] of Object.entries(graphData.stats.relation_types)) {
-                relationTypesHtml += `
-                    <div class="stat-item">
-                        <span>${type}:</span>
-                        <span>${count}</span>
-                    </div>
-                `;
-            }
-            relationTypesDiv.innerHTML = relationTypesHtml;
         }
         
         function updateNodeSelectionLists() {
@@ -1844,8 +1858,7 @@
         function updateSaveFormIfVisible() {
             const saveBtn = document.querySelector('.save-btn');
             if (saveBtn && saveBtn.classList.contains('active')) {
-                // 保存界面已打开，更新内容但不重置按钮状态
-                updateSaveFormContent();
+                updateCollideFormContent();
             }
         }
         
@@ -1881,12 +1894,12 @@
         function updateSelectedItemsStyle() {
             // 重置所有节点的样式
             container.selectAll(".node")
-                .attr("stroke", d => d.strokeColor)
-                .attr("stroke-width", d => d.strokeWidth);
+                .attr("stroke", NODE_STROKE_COLOR)
+                .attr("stroke-width", NODE_STROKE_WIDTH);
             
             // 重置所有关系的样式
             container.selectAll(".link")
-                .attr("stroke", d => getStorageTypeColor(d.source_type))
+                .attr("stroke", LINK_COLOR)
                 .attr("stroke-width", "3");
             
             // 如果在删除模式下，为选中的项目添加红色描边
@@ -2005,9 +2018,8 @@
                             </div>
                         </div>
                         <div class="form-actions">
-                            <button class="action-btn danger-btn" onclick="confirmDelete()">从云图删除</button>
-                            <button class="action-btn danger-btn" onclick="confirmDeleteFromLocal()" style="background-color: #e67e22;">从本地删除</button>
-                            <button class="action-btn cancel-btn" onclick="clearRecentNodes(); hideEditForms()">取消</button>
+                            <button class="action-btn danger-btn" onclick="confirmDelete()">删除</button>
+                            <button class="action-btn cancel-btn" onclick="clearRecentNodes(); updateDeleteFormContent()">清空已选</button>
                         </div>
                     </div>
                 `;
@@ -2103,26 +2115,14 @@
                 // 处理不同类型项目的显示
                 let itemTypeText = '';
                 let itemNameText = '';
-                let sourceText = '';
                 let propertiesHtml = '';
                 
                 if (selectedItem.type === 'node') {
                     itemTypeText = '节点';
                     itemNameText = item.label;
-                    
-                    if (item.source === 'local') {
-                        sourceText = '仅本地';
-                    } else if (item.source === 'neo4j') {
-                        sourceText = '仅Neo4j';
-                    } else if (item.source === 'both') {
-                        sourceText = '本地+Neo4j';
-                    } else {
-                        sourceText = '未知';
-                    }
                 } else if (selectedItem.type === 'relationship') {
                     itemTypeText = '关系';
                     itemNameText = item.type;
-                    sourceText = 'Neo4j'; // 关系通常来自Neo4j
                 }
                 
                 // 显示可编辑的项目属性（过滤掉系统管理的属性）
@@ -2176,10 +2176,6 @@
                                 <div class="property-item" style="margin: 6px 0; display: flex; justify-content: space-between;">
                                     <span style="font-weight: 600; color: #0c5460;">${itemTypeText}ID:</span>
                                     <span style="font-family: monospace; background: #fff; padding: 2px 6px; border-radius: 3px; border: 1px solid #ddd;">${item.neo4j_id}</span>
-                                </div>
-                                <div class="property-item" style="margin: 6px 0; display: flex; justify-content: space-between;">
-                                    <span style="font-weight: 600; color: #0c5460;">数据位置:</span>
-                                    <span style="padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; background: ${getStorageUIBackground(sourceText)}; color: ${getStorageUIColor(sourceText)};">${sourceText}</span>
                                 </div>
                                 ${extraInfo}
                             </div>
@@ -2399,6 +2395,11 @@
                                 <input type="number" id="link-confidence" min="0" max="1" step="0.1" value="0.75" required>
                             </div>
                             <div class="form-group">
+                                <label for="link-importance">重要性：</label>
+                                <input type="number" id="link-importance" min="0" max="1" step="0.1" value="0.5" required>
+                                <small style="color: #6c757d; font-style: italic;">影响记忆衰退速度，越高越不容易遗忘</small>
+                            </div>
+                            <div class="form-group">
                                 <label for="link-evidence">关系证据：</label>
                                 <textarea id="link-evidence" style="min-height: 60px; resize: vertical;" placeholder="请输入关系证据（为什么设置这个置信度）">user manual input</textarea>
                             </div>
@@ -2451,315 +2452,100 @@
         function showSaveForm() {
             hideEditForms();
             
-            // 启用保存模式
-            saveMode = true;
+            // 更新合并表单内容
+            updateCollideFormContent();
             
-            // 更新保存表单内容
-            updateSaveFormContent();
-            
-            // 设置按钮状态
             resetButtonStates();
             document.querySelector('.save-btn').classList.add('active');
-            
-            // 更新所有选中项目的样式
-            updateSelectedItemsStyle();
         }
         
-        // 更新保存表单内容
-        function updateSaveFormContent() {
+        // 更新合并表单内容
+        function updateCollideFormContent() {
             const editForms = document.querySelector('.edit-forms');
             
-            if (recentSelectedNodes.length === 0) {
-                // 未选中任何项目
+            if (recentSelectedNodes.length < 2) {
+                // 选中的节点不足两个
                 editForms.innerHTML = `
                     <div class="edit-form">
-                        <h4>保存记忆</h4>
+                        <h4>合并节点</h4>
                         <div class="warning-text">
-                            请先点击选中一个或多个节点或关系后再进行保存操作。
+                            请点击选择两个不同的节点进行合并。<br>
+                            当前已选择 ${recentSelectedNodes.length} 个节点。
                         </div>
+                        ${recentSelectedNodes.length > 0 ? `
+                            <div class="form-group">
+                                <label>已选择的节点：</label>
+                                <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px;">
+                                    <strong>节点1：</strong>${recentSelectedNodes[0].data.label}<br>
+                                    <strong>类型：</strong>${recentSelectedNodes[0].data.labels.join(", ")}
+                                </div>
+                            </div>
+                        ` : ''}
                     </div>
                 `;
             } else {
-                // 计算将要保存的所有项目
-                let totalNodeCount = 0;
-                let totalRelationshipCount = 0;
-                let itemsList = [];
+                const item1 = recentSelectedNodes[1];
+                const item2 = recentSelectedNodes[0];
                 
-                recentSelectedNodes.forEach((item, index) => {
-                    if (item.type === 'node') {
-                        totalNodeCount += 1;
-                        // 计算每个节点的相关关系数量
-                        const relatedCount = graphData.links.filter(link => 
-                            link.source.id === item.data.id || link.target.id === item.data.id
-                        ).length;
-                        itemsList.push(`<strong>节点${index + 1}:</strong> ${item.data.label} (节点, 包含${relatedCount}个关系)`);
-                    } else if (item.type === 'relationship') {
-                        totalRelationshipCount += 1;
-                        const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
-                        const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
-                        itemsList.push(`<strong>关系${index + 1}:</strong> ${item.data.type} (从 "${sourceNode ? sourceNode.label : 'Unknown'}" 到 "${targetNode ? targetNode.label : 'Unknown'}")`);
-                    }
-                });
-                
-                // 收集所有选中项目涉及的节点ID
-                let allNodeIds = new Set();
-                recentSelectedNodes.forEach(item => {
-                    if (item.type === 'node') {
-                        allNodeIds.add(item.data.id);
-                    } else if (item.type === 'relationship') {
-                        allNodeIds.add(item.data.source.id);
-                        allNodeIds.add(item.data.target.id);
-                    }
-                });
-                
-                // 计算实际会保存的关系数量（只保存两端节点都在选中范围内的关系）
-                let validRelationshipCount = 0;
-                graphData.links.forEach(link => {
-                    if (allNodeIds.has(link.source.id) && allNodeIds.has(link.target.id)) {
-                        validRelationshipCount++;
-                    }
-                });
-                
-                editForms.innerHTML = `
-                    <div class="edit-form">
-                        <h4>保存记忆 (共${recentSelectedNodes.length}个项目)</h4>
-                        <div class="form-group">
-                            <label>选中的项目列表：</label>
-                            <div style="padding: 8px; background: #f8f9fa; border-radius: 4px; margin-top: 5px; max-height: 200px; overflow-y: auto;">
-                                ${itemsList.join('<br>')}
+                // 检查是否有非节点类型的项目
+                if (item1.type !== 'node' || item2.type !== 'node') {
+                    const nonNodeItems = [];
+                    if (item1.type !== 'node') nonNodeItems.push(`\u9879\u76ee1: ${item1.type === 'relationship' ? '\u5173\u7cfb' : '\u672a\u77e5\u7c7b\u578b'}`);
+                    if (item2.type !== 'node') nonNodeItems.push(`\u9879\u76ee2: ${item2.type === 'relationship' ? '\u5173\u7cfb' : '\u672a\u77e5\u7c7b\u578b'}`);
+                    
+                    editForms.innerHTML = `
+                        <div class="edit-form">
+                            <h4>合并节点</h4>
+                            <div style="padding: 15px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 6px; margin-bottom: 15px;">
+                                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 18px; margin-right: 8px;">⚠️</span>
+                                    <span style="font-weight: 600; color: #721c24;">请选择两个节点</span>
+                                </div>
+                                <div style="color: #721c24; font-size: 14px; line-height: 1.4;">
+                                    合并功能只能在两个节点之间进行。<br>
+                                    当前选择包含非节点类型项目：${nonNodeItems.join('\u3001')}<br>
+                                    请重新选择两个节点进行合并。
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button class="action-btn cancel-btn" onclick="clearRecentNodes()">重新选择</button>
                             </div>
                         </div>
-                        <div class="info-text" style="background: #d1ecf1; color: #0c5460; padding: 10px; border-radius: 4px; margin: 10px 0;">
-                            将保存到 local_memory.json：${allNodeIds.size} 个节点和 ${validRelationshipCount} 个关系
-                        </div>
+                    `;
+                    return;
+                }
+                
+                const node1 = item1.data;
+                const node2 = item2.data;
+                
+                // 显示合并表单
+                editForms.innerHTML = `
+                    <div class="edit-form">
+                        <h4>合并节点</h4>
                         <div class="form-group">
-                            <label>保存说明：</label>
-                            <ul style="font-size: 12px; color: #666; margin: 5px 0; padding-left: 20px;">
-                                <li>节点：只保存选中的节点，自动保存节点链接的关系</li>
-                                <li>关系：只有当关系两端的节点都被选中，关系才会被保存，以避免关系指向空值</li>
-                                <li>数据将保存到 brain/memory/memory_graph/local_memory.json</li>
-                            </ul>
+                            <label>合并方向：</label>
+                            <select id="collide-direction" onchange="updateCollideWarning()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px;">
+                                <option value="2to1">将「${node2.label}」合并至「${node1.label}」（保留「${node1.label}」）</option>
+                                <option value="1to2">将「${node1.label}」合并至「${node2.label}」（保留「${node2.label}」）</option>
+                            </select>
+                        </div>
+                        <div id="collide-warning" style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin-bottom: 15px;">
+                            <div style="display: flex; align-items: center; margin-bottom: 6px;">
+                                <span style="font-size: 16px; margin-right: 8px;">⚠️</span>
+                                <span style="font-weight: 600; color: #856404;">合并说明</span>
+                            </div>
+                            <div style="color: #856404; font-size: 13px; line-height: 1.5;">
+                                • 「${node2.label}」上的所有关系将迁移至「${node1.label}」<br>
+                                • 「${node2.label}」节点将被删除<br>
+                                • 此操作不可撤销
+                            </div>
                         </div>
                         <div class="form-actions">
-                            <button class="action-btn primary-btn" onclick="confirmSave()">保存至本地</button>
-                            <button class="action-btn primary-btn" onclick="confirmUpload()" style="background: #28a745;">保存至云图</button>
-                            <button class="action-btn cancel-btn" onclick="clearRecentNodes(); hideEditForms()">取消</button>
+                            <button class="action-btn danger-btn" onclick="confirmCollide()">确认合并</button>
+                            <button class="action-btn cancel-btn" onclick="clearRecentNodes()">重新选择</button>
                         </div>
                     </div>
                 `;
-            }
-        }
-        
-        // 确认保存函数
-        async function confirmSave() {
-            if (recentSelectedNodes.length === 0) {
-                alert('请先选择要保存的节点或关系');
-                return;
-            }
-
-            try {
-                // 显示加载状态
-                const confirmBtn = document.querySelector('.edit-forms .primary-btn');
-                if (!confirmBtn) {
-                    alert('错误：保存表单未正确加载，请重新打开保存功能');
-                    return;
-                }
-                const originalText = confirmBtn.textContent;
-                confirmBtn.textContent = '保存中...';
-                confirmBtn.disabled = true;
-                
-                // 按类型分组待保存项目
-                const nodesToSave = recentSelectedNodes.filter(item => item.type === 'node');
-                const relationshipsToSave = recentSelectedNodes.filter(item => item.type === 'relationship');
-                
-                // 收集所有选中项目的节点ID到节点列表
-                let nodeIds = [];
-                
-                // 收集选中的节点
-                for (const nodeItem of nodesToSave) {
-                    nodeIds.push(nodeItem.data.neo4j_id);
-                }
-                
-                // 收集选中的关系及其涉及的节点
-                for (const relationshipItem of relationshipsToSave) {
-                    // 关系涉及的节点也需要添加
-                    const sourceNodeId = relationshipItem.data.source.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.source.id)?.neo4j_id;
-                    const targetNodeId = relationshipItem.data.target.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.target.id)?.neo4j_id;
-                    
-                    if (sourceNodeId && !nodeIds.includes(sourceNodeId)) {
-                        nodeIds.push(sourceNodeId);
-                    }
-                    if (targetNodeId && !nodeIds.includes(targetNodeId)) {
-                        nodeIds.push(targetNodeId);
-                    }
-                }
-                
-                // 收集所有节点所链接的关系的ID到关系列表
-                let relationIds = [];
-                
-                // 收集选中节点之间的所有关系
-                const nodeIdSet = new Set(nodeIds);
-                graphData.links.forEach(link => {
-                    const sourceNodeId = link.source.neo4j_id || graphData.nodes.find(n => n.id === link.source.id)?.neo4j_id;
-                    const targetNodeId = link.target.neo4j_id || graphData.nodes.find(n => n.id === link.target.id)?.neo4j_id;
-                    
-                    // 如果关系的两端节点都在选中范围内，则添加该关系
-                    if (sourceNodeId && targetNodeId && nodeIdSet.has(sourceNodeId) && nodeIdSet.has(targetNodeId)) {
-                        if (!relationIds.includes(link.neo4j_id)) {
-                            relationIds.push(link.neo4j_id);
-                        }
-                    }
-                });
-                
-                console.log('保存请求:', { nodes_ids: nodeIds, relation_ids: relationIds });
-                
-                // 调用knowledge_graph_manager.py的save_memory函数进行保存
-                const response = await fetch('/api/save_memory', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        nodes_ids: nodeIds,
-                        relation_ids: relationIds
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`✅ 记忆保存成功！\n节点: ${nodeIds.length} 个\n关系: ${relationIds.length} 个\n文件: ${result.file || 'local_memory.json'}`);
-                    
-                    // 清空选择
-                    recentSelectedNodes = [];
-                    
-                    // 隐藏编辑表单
-                    hideEditForms();
-                    
-                    // 自动刷新图谱数据以显示保存后的状态
-                    console.log('保存成功，正在刷新图谱数据...');
-                    smartRefresh();
-                } else {
-                    alert(`❌ 保存失败: ${result.error || '未知错误'}`);
-                }
-                
-            } catch (error) {
-                console.error('保存操作失败:', error);
-                alert(`❌ 保存操作失败：${error.message}`);
-            } finally {
-                // 恢复按钮状态
-                const confirmBtn = document.querySelector('.edit-forms .primary-btn');
-                if (confirmBtn) {
-                    confirmBtn.textContent = '确认保存';
-                    confirmBtn.disabled = false;
-                }
-            }
-        }
-        
-        // 确认上传到云图函数
-        async function confirmUpload() {
-            if (recentSelectedNodes.length === 0) {
-                alert('请先选择要上传的节点或关系');
-                return;
-            }
-
-            try {
-                // 显示加载状态
-                const uploadBtn = document.querySelectorAll('.edit-forms .primary-btn')[1];
-                if (!uploadBtn) {
-                    alert('错误：上传按钮未正确加载，请重新打开保存功能');
-                    return;
-                }
-                const originalText = uploadBtn.textContent;
-                uploadBtn.textContent = '上传中...';
-                uploadBtn.disabled = true;
-                
-                // 按类型分组待上传项目
-                const nodesToUpload = recentSelectedNodes.filter(item => item.type === 'node');
-                const relationshipsToUpload = recentSelectedNodes.filter(item => item.type === 'relationship');
-                
-                // 收集所有选中项目的节点ID到节点列表
-                let nodeIds = [];
-                
-                // 收集选中的节点
-                for (const nodeItem of nodesToUpload) {
-                    nodeIds.push(nodeItem.data.neo4j_id);
-                }
-                
-                // 收集选中的关系及其涉及的节点
-                for (const relationshipItem of relationshipsToUpload) {
-                    // 关系涉及的节点也需要添加
-                    const sourceNodeId = relationshipItem.data.source.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.source.id)?.neo4j_id;
-                    const targetNodeId = relationshipItem.data.target.neo4j_id || graphData.nodes.find(n => n.id === relationshipItem.data.target.id)?.neo4j_id;
-                    
-                    if (sourceNodeId && !nodeIds.includes(sourceNodeId)) {
-                        nodeIds.push(sourceNodeId);
-                    }
-                    if (targetNodeId && !nodeIds.includes(targetNodeId)) {
-                        nodeIds.push(targetNodeId);
-                    }
-                }
-                
-                // 收集所有节点所链接的关系的ID到关系列表
-                let relationIds = [];
-                
-                // 收集选中节点之间的所有关系
-                const nodeIdSet = new Set(nodeIds);
-                graphData.links.forEach(link => {
-                    const sourceNodeId = link.source.neo4j_id || graphData.nodes.find(n => n.id === link.source.id)?.neo4j_id;
-                    const targetNodeId = link.target.neo4j_id || graphData.nodes.find(n => n.id === link.target.id)?.neo4j_id;
-                    
-                    // 如果关系的两端节点都在选中范围内，则添加该关系
-                    if (sourceNodeId && targetNodeId && nodeIdSet.has(sourceNodeId) && nodeIdSet.has(targetNodeId)) {
-                        const linkNeo4jId = link.neo4j_id;
-                        if (linkNeo4jId && !relationIds.includes(linkNeo4jId)) {
-                            relationIds.push(linkNeo4jId);
-                        }
-                    }
-                });
-                
-                console.log('上传请求:', { nodes_ids: nodeIds, relation_ids: relationIds });
-                
-                // 调用knowledge_graph_manager.py的upload_memory函数进行上传
-                const response = await fetch('/api/upload_memory', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        nodes_ids: nodeIds,
-                        relation_ids: relationIds
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert(`✅ 记忆上传成功！\n节点: ${nodeIds.length} 个\n关系: ${relationIds.length} 个\n已上传到Neo4j数据库`);
-                    
-                    // 清空选择
-                    recentSelectedNodes = [];
-                    
-                    // 隐藏编辑表单
-                    hideEditForms();
-                    
-                    // 自动刷新图谱数据以显示上传后的状态
-                    console.log('上传成功，正在刷新图谱数据...');
-                    smartRefresh();
-                } else {
-                    alert(`❌ 上传失败: ${result.error || '未知错误'}`);
-                }
-                
-            } catch (error) {
-                console.error('上传操作失败:', error);
-                alert(`❌ 上传操作失败：${error.message}`);
-            } finally {
-                // 恢复按钮状态
-                const uploadBtn = document.querySelectorAll('.edit-forms .primary-btn')[1];
-                if (uploadBtn) {
-                    uploadBtn.textContent = '保存至云图';
-                    uploadBtn.disabled = false;
-                }
             }
         }
         
@@ -2785,118 +2571,6 @@
         }
         
         // 确认删除函数
-        // 从本地删除函数
-        async function confirmDeleteFromLocal() {
-            if (recentSelectedNodes.length === 0) {
-                alert('请先选择要删除的节点或关系');
-                return;
-            }
-            
-            // 计算将要删除的所有内容
-            let totalNodeCount = 0;
-            let totalRelationshipCount = 0;
-            let itemDescriptions = [];
-            
-            recentSelectedNodes.forEach((item, index) => {
-                if (item.type === 'node') {
-                    totalNodeCount += 1;
-                    const relatedCount = graphData.links.filter(link => 
-                        link.source.id === item.data.id || link.target.id === item.data.id
-                    ).length;
-                    totalRelationshipCount += relatedCount;
-                    itemDescriptions.push(`节点"${item.data.label}"（包含${relatedCount}个关系）`);
-                } else if (item.type === 'relationship') {
-                    totalRelationshipCount += 1;
-                    const sourceNode = graphData.nodes.find(node => node.id === item.data.source.id);
-                    const targetNode = graphData.nodes.find(node => node.id === item.data.target.id);
-                    itemDescriptions.push(`关系"${item.data.type}" (从"${sourceNode ? sourceNode.label : 'Unknown'}"到"${targetNode ? targetNode.label : 'Unknown'}")`);
-                }
-            });
-            
-            // 构建确认删除消息
-            let confirmMessage = `确认从本地记忆文件中删除以下${recentSelectedNodes.length}个项目？\n\n`;
-            confirmMessage += `删除列表：\n`;
-            itemDescriptions.forEach((desc, index) => {
-                confirmMessage += `${index + 1}. ${desc}\n`;
-            });
-            confirmMessage += `\n此操作将总共删除：\n`;
-            if (totalNodeCount > 0) {
-                confirmMessage += `• ${totalNodeCount} 个节点\n`;
-            }
-            if (totalRelationshipCount > 0) {
-                confirmMessage += `• ${totalRelationshipCount} 个关系\n`;
-            }
-            confirmMessage += `\n注意：此操作仅删除本地记忆文件(local_memory.json)中的数据，不影响Neo4j数据库。\n\n确定要继续吗？`;
-            
-            // 进行删除确认
-            if (!confirm(confirmMessage)) {
-                return;
-            }
-            
-            try {
-                // 显示加载状态
-                const confirmBtns = document.querySelectorAll('.danger-btn');
-                const localDeleteBtn = confirmBtns[1]; // 第二个按钮是"从本地删除"
-                const originalText = localDeleteBtn.textContent;
-                localDeleteBtn.textContent = '删除中...';
-                localDeleteBtn.disabled = true;
-                
-                // 收集所有要删除的元素ID
-                const elementIds = recentSelectedNodes.map(item => item.data.neo4j_id);
-                
-                // 调用本地删除API
-                const response = await fetch('/api/delete_from_local', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        element_ids: elementIds
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    // 清空最近选择的项目
-                    recentSelectedNodes = [];
-                    // 隐藏编辑表单
-                    hideEditForms();
-                    // 隐藏详情面板
-                    document.getElementById("node-details").style.display = "none";
-                    
-                    // 使用动态更新代替页面刷新
-                    const updateSuccess = await updateGraphData();
-                    
-                    let resultMessage = `从本地删除完成！\n\n`;
-                    resultMessage += `成功删除：${result.deleted_nodes || 0} 个节点，${result.deleted_relationships || 0} 个关系\n`;
-                    
-                    if (updateSuccess) {
-                        resultMessage += `\n图谱已自动更新显示最新数据。`;
-                    } else {
-                        resultMessage += `\n图谱数据更新失败，请手动刷新页面。`;
-                    }
-                    
-                    alert(resultMessage);
-                } else {
-                    alert(`从本地删除失败：${result.error || '未知错误'}`);
-                }
-                
-            } catch (error) {
-                console.error('从本地删除操作失败:', error);
-                alert(`从本地删除操作失败：${error.message}`);
-            } finally {
-                // 恢复按钮状态
-                const confirmBtns = document.querySelectorAll('.danger-btn');
-                const localDeleteBtn = confirmBtns[1];
-                if (localDeleteBtn) {
-                    localDeleteBtn.textContent = '从本地删除';
-                    localDeleteBtn.disabled = false;
-                }
-            }
-        }
-        
-        // 从云图删除函数
         async function confirmDelete() {
             if (recentSelectedNodes.length === 0) {
                 alert('请先选择要删除的节点或关系');
@@ -3062,7 +2736,6 @@
             if (nodeType === 'Entity') {
                 // 获取实体的当前值，确保安全转义
                 const entityName = (item.properties.name || item.label || '').replace(/"/g, '&quot;');
-                const entityImportance = (item.properties.importance || item.properties['实体重要性'] || '').toString().replace(/"/g, '&quot;');
                 const entityDescription = (item.properties.note || item.properties['实体描述'] || item.properties.description || '无').replace(/"/g, '&quot;');
                 const entityContext = (item.properties.context || 'reality现实').replace(/"/g, '&quot;');
                 
@@ -3072,10 +2745,6 @@
                         <div class="form-group" style="margin-bottom: 12px;">
                             <label for="edit-entity-name" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">实体名称：</label>
                             <input type="text" id="edit-entity-name" value="${entityName}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="请输入实体名称">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 12px;">
-                            <label for="edit-entity-importance" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">实体重要性：</label>
-                            <input type="text" id="edit-entity-importance" value="${entityImportance}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.75）">
                         </div>
                         <div class="form-group" style="margin-bottom: 12px;">
                             <label for="edit-entity-context" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">上下文：</label>
@@ -3091,7 +2760,6 @@
                 // 获取角色的当前值，确保安全转义
                 const characterName = (item.properties.name || item.label || '').replace(/"/g, '&quot;');
                 const characterTrust = (item.properties.trust || item.properties['角色置信度'] || '').toString().replace(/"/g, '&quot;');
-                const characterImportance = (item.properties.importance || item.properties['角色重要性'] || '').toString().replace(/"/g, '&quot;');
                 const characterContext = (item.properties.context || 'reality现实').replace(/"/g, '&quot;');
                 
                 propertiesHtml = `
@@ -3104,10 +2772,6 @@
                         <div class="form-group" style="margin-bottom: 12px;">
                             <label for="edit-character-trust" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">角色置信度：</label>
                             <input type="text" id="edit-character-trust" value="${characterTrust}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.75）">
-                        </div>
-                        <div class="form-group" style="margin-bottom: 12px;">
-                            <label for="edit-character-importance" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">角色重要性：</label>
-                            <input type="text" id="edit-character-importance" value="${characterImportance}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.75）">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label for="edit-character-context" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">上下文：</label>
@@ -3147,6 +2811,8 @@
                     const relationshipName = (item.type || '').replace(/"/g, '&quot;');
                     const relationshipConfidence = (item.properties && (item.properties.confidence || item.properties.weight)) ? 
                         (item.properties.confidence || item.properties.weight).toString().replace(/"/g, '&quot;') : '0.75';
+                    const relationshipImportance = (item.properties && item.properties.importance != null) ? 
+                        item.properties.importance.toString().replace(/"/g, '&quot;') : '0.5';
                     const relationshipSource = (item.properties && item.properties.source) ? 
                         item.properties.source.toString().replace(/"/g, '&quot;') : '';
                     const relationshipEvidence = (item.properties && item.properties.evidence) ? 
@@ -3162,6 +2828,10 @@
                             <div class="form-group" style="margin-bottom: 12px;">
                                 <label for="edit-relationship-confidence" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">置信度：</label>
                                 <input type="number" id="edit-relationship-confidence" value="${relationshipConfidence}" min="0" max="1" step="0.1" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.75）">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 12px;">
+                                <label for="edit-relationship-importance" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">重要性：</label>
+                                <input type="number" id="edit-relationship-importance" value="${relationshipImportance}" min="0" max="1" step="0.1" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.5）">
                             </div>
                             <div class="form-group" style="margin-bottom: 12px;">
                                 <label for="edit-relationship-source" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">关系来源：</label>
@@ -3201,6 +2871,7 @@
                 
                 const relationshipNameInput = document.getElementById('edit-relationship-name');
                 const relationshipConfidenceInput = document.getElementById('edit-relationship-confidence');
+                const relationshipImportanceInput = document.getElementById('edit-relationship-importance');
                 const relationshipSourceInput = document.getElementById('edit-relationship-source');
                 const relationshipEvidenceInput = document.getElementById('edit-relationship-evidence');
                 const relationshipDirectionInput = document.getElementById('edit-relationship-direction');
@@ -3219,6 +2890,16 @@
                         modifiedProperties['confidence'] = confidence;
                     } else {
                         alert('置信度必须在0-1之间');
+                        return;
+                    }
+                }
+                
+                if (relationshipImportanceInput && relationshipImportanceInput.value.trim()) {
+                    const importance = parseFloat(relationshipImportanceInput.value.trim());
+                    if (!isNaN(importance) && importance >= 0 && importance <= 1) {
+                        modifiedProperties['importance'] = importance;
+                    } else {
+                        alert('重要性必须在0-1之间');
                         return;
                     }
                 }
@@ -3267,8 +2948,9 @@
                         body: JSON.stringify({
                             relation_id: selectedItem.data.neo4j_id,
                             predicate: newRelationshipName,
-                            source: modifiedProperties.source || selectedItem.data.source_type || 'neo4j',
+                            source: modifiedProperties.source || 'neo4j',
                             confidence: modifiedProperties.confidence || 0.75,
+                            importance: modifiedProperties.importance,
                             directivity: direction,
                             evidence: modifiedProperties.evidence || ''
                         })
@@ -3322,21 +3004,11 @@
             if (newNodeType === 'Entity') {
                 // 收集实体属性
                 const entityNameInput = document.getElementById('edit-entity-name');
-                const entityImportanceInput = document.getElementById('edit-entity-importance');
                 const entityDescriptionInput = document.getElementById('edit-entity-description');
                 const entityContextInput = document.getElementById('edit-entity-context');
                 
                 if (entityNameInput && entityNameInput.value.trim()) {
                     modifiedProperties['name'] = entityNameInput.value.trim();
-                }
-                if (entityImportanceInput && entityImportanceInput.value.trim()) {
-                    const importance = parseFloat(entityImportanceInput.value.trim());
-                    if (!isNaN(importance) && importance >= 0 && importance <= 1) {
-                        modifiedProperties['importance'] = importance;
-                    } else if (entityImportanceInput.value.trim() !== '') {
-                        alert('实体重要性必须在0-1之间');
-                        return;
-                    }
                 }
                 if (entityContextInput && entityContextInput.value.trim()) {
                     modifiedProperties['context'] = entityContextInput.value.trim();
@@ -3349,7 +3021,6 @@
                 // 收集角色属性
                 const characterNameInput = document.getElementById('edit-character-name');
                 const characterTrustInput = document.getElementById('edit-character-trust');
-                const characterImportanceInput = document.getElementById('edit-character-importance');
                 const characterContextInput = document.getElementById('edit-character-context');
                 
                 if (characterNameInput && characterNameInput.value.trim()) {
@@ -3361,15 +3032,6 @@
                         modifiedProperties['trust'] = trust;
                     } else if (characterTrustInput.value.trim() !== '') {
                         alert('角色置信度必须在0-1之间');
-                        return;
-                    }
-                }
-                if (characterImportanceInput && characterImportanceInput.value.trim()) {
-                    const importance = parseFloat(characterImportanceInput.value.trim());
-                    if (!isNaN(importance) && importance >= 0 && importance <= 1) {
-                        modifiedProperties['importance'] = importance;
-                    } else if (characterImportanceInput.value.trim() !== '') {
-                        alert('角色重要性必须在0-1之间');
                         return;
                     }
                 }
@@ -3480,6 +3142,7 @@
             // 获取表单数据
             const predicate = document.getElementById('link-predicate').value.trim();
             const confidence = parseFloat(document.getElementById('link-confidence').value);
+            const importance = parseFloat(document.getElementById('link-importance').value);
             const evidenceInput = document.getElementById('link-evidence');
             const evidence = evidenceInput ? evidenceInput.value.trim() || 'user manual input' : 'user manual input';
             const directionSelect = document.getElementById('link-direction');
@@ -3492,6 +3155,11 @@
             
             if (isNaN(confidence) || confidence < 0 || confidence > 1) {
                 alert('置信度必须在0-1之间');
+                return;
+            }
+            
+            if (isNaN(importance) || importance < 0 || importance > 1) {
+                alert('重要性必须在0-1之间');
                 return;
             }
             
@@ -3508,7 +3176,7 @@
                 directionText = `${node1.label} → ${node2.label}`;
             }
             
-            const confirmMessage = `确认创建以下链接？\n\n关系：${predicate}\n方向：${directionText}\n置信度：${confidence}\n\n此操作将在Neo4j数据库中创建新的关系。`;
+            const confirmMessage = `确认创建以下链接？\n\n关系：${predicate}\n方向：${directionText}\n置信度：${confidence}\n重要性：${importance}\n\n此操作将在Neo4j数据库中创建新的关系。`;
             
             if (!confirm(confirmMessage)) {
                 return;
@@ -3533,6 +3201,7 @@
                         predicate: predicate,
                         source: 'manual_input',
                         confidence: confidence,
+                        importance: importance,
                         directivity: direction,
                         evidence: evidence
                     })
@@ -3564,6 +3233,92 @@
                 const confirmBtn = document.querySelector('.primary-btn');
                 if (confirmBtn) {
                     confirmBtn.textContent = originalText;
+                    confirmBtn.disabled = false;
+                }
+            }
+        }
+        
+        // 确认合并节点
+        function updateCollideWarning() {
+            const direction = document.getElementById('collide-direction').value;
+            const node1 = recentSelectedNodes[1].data;
+            const node2 = recentSelectedNodes[0].data;
+            const keepNode = direction === '2to1' ? node1 : node2;
+            const mergeNode = direction === '2to1' ? node2 : node1;
+            const warningDiv = document.getElementById('collide-warning');
+            warningDiv.innerHTML = `
+                <div style="display: flex; align-items: center; margin-bottom: 6px;">
+                    <span style="font-size: 16px; margin-right: 8px;">⚠️</span>
+                    <span style="font-weight: 600; color: #856404;">合并说明</span>
+                </div>
+                <div style="color: #856404; font-size: 13px; line-height: 1.5;">
+                    • 「${mergeNode.label}」上的所有关系将迁移至「${keepNode.label}」<br>
+                    • 「${mergeNode.label}」节点将被删除<br>
+                    • 此操作不可撤销
+                </div>
+            `;
+        }
+
+        async function confirmCollide() {
+            if (recentSelectedNodes.length < 2) {
+                alert('请先选择两个节点进行合并');
+                return;
+            }
+            
+            const direction = document.getElementById('collide-direction').value;
+            const n1 = recentSelectedNodes[1].data;
+            const n2 = recentSelectedNodes[0].data;
+            // node_id_1 = 保留节点, node_id_2 = 被删除节点
+            const keepNode = direction === '2to1' ? n1 : n2;
+            const mergeNode = direction === '2to1' ? n2 : n1;
+            
+            const confirmMessage = `确认合并节点？\n\n保留节点：${keepNode.label} (${keepNode.labels.join(", ")})\n合并节点：${mergeNode.label} (${mergeNode.labels.join(", ")})\n\n「${mergeNode.label}」上的所有关系将迁移至「${keepNode.label}」，「${mergeNode.label}」将被删除。\n\n此操作不可撤销，确定要继续吗？`;
+            
+            if (!confirm(confirmMessage)) {
+                return;
+            }
+            
+            try {
+                const confirmBtn = document.querySelector('.danger-btn');
+                const originalText = confirmBtn.textContent;
+                confirmBtn.textContent = '合并中...';
+                confirmBtn.disabled = true;
+                
+                const response = await fetch('/api/collide_nodes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        node_id_1: keepNode.neo4j_id,
+                        node_id_2: mergeNode.neo4j_id
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    recentSelectedNodes = [];
+                    hideEditForms();
+                    document.getElementById("node-details").style.display = "none";
+                    
+                    const updateSuccess = await updateGraphData();
+                    if (updateSuccess) {
+                        alert(`合并成功！\n\n「${mergeNode.label}」已合并到「${keepNode.label}」\n图谱已自动更新。`);
+                    } else {
+                        alert(`合并成功！\n\n「${mergeNode.label}」已合并到「${keepNode.label}」\n图谱数据更新失败，请手动刷新页面。`);
+                    }
+                } else {
+                    alert(`合并失败：${result.error || '未知错误'}`);
+                }
+                
+            } catch (error) {
+                console.error('合并操作失败:', error);
+                alert(`合并操作失败：${error.message}`);
+            } finally {
+                const confirmBtn = document.querySelector('.danger-btn');
+                if (confirmBtn) {
+                    confirmBtn.textContent = '确认合并';
                     confirmBtn.disabled = false;
                 }
             }
@@ -3628,7 +3383,7 @@
                     <h4>创建时间节点</h4>
                     <div class="form-group">
                         <label for="time-input">请输入时间：</label>
-                        <input type="text" id="time-input" placeholder="例如：2024年12月5日14点30分" class="time-input" />
+                        <input type="text" id="time-input" placeholder="例如：2024年,12月,5日,14点,30分（用逗号分隔）" class="time-input" />
                         <div class="time-format-help">
                             支持格式：
                             <ul>
@@ -3672,10 +3427,6 @@
                         <input type="text" id="entity-name-input" placeholder="请输入实体名称" class="time-input" />
                     </div>
                     <div class="form-group">
-                        <label for="entity-importance-input">实体重要性：</label>
-                        <input type="text" id="entity-importance-input" placeholder="取值范围0-1（默认0.75）" class="time-input" />
-                    </div>
-                    <div class="form-group">
                         <label for="entity-description-input">实体描述：</label>
                         <textarea id="entity-description-input" placeholder="备注信息（选填）" class="time-input" rows="3"></textarea>
                     </div>
@@ -3710,10 +3461,6 @@
                     <div class="form-group">
                         <label for="character-trust-input">角色置信度：</label>
                         <input type="text" id="character-trust-input" placeholder="取值范围0-1（默认0.75）" class="time-input" />
-                    </div>
-                    <div class="form-group">
-                        <label for="character-importance-input">角色重要性：</label>
-                        <input type="text" id="character-importance-input" placeholder="取值范围0-1（默认0.75）" class="time-input" />
                     </div>
                     <div class="form-group">
                         <label for="character-context-input">上下文环境：</label>
@@ -3783,6 +3530,14 @@
                 return;
             }
             
+            // 将逗号分隔的输入拆分为列表（支持中英文逗号）
+            const timeList = timeStr.split(/[,，]/).map(s => s.trim()).filter(s => s);
+            if (timeList.length === 0) {
+                alert('请输入有效的时间信息');
+                timeInput.focus();
+                return;
+            }
+            
             // 显示加载状态
             const createBtn = document.querySelector('.create-btn');
             const originalText = createBtn.textContent;
@@ -3796,7 +3551,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    time_str: timeStr
+                    time_str: timeList
                 })
             })
             .then(response => response.json())
@@ -3829,24 +3584,15 @@
         // 创建实体节点
         function createEntityNode() {
             const nameInput = document.getElementById('entity-name-input');
-            const importanceInput = document.getElementById('entity-importance-input');
             const descriptionInput = document.getElementById('entity-description-input');
             const contextInput = document.getElementById('entity-context-input');
             const entityName = nameInput.value.trim();
-            const importance = parseFloat(importanceInput.value.trim()) || 0.5;
             const entityDescription = descriptionInput.value.trim() || '无';
             const context = contextInput.value.trim() || 'reality现实';
             
             if (!entityName) {
                 alert('请输入实体名称');
                 nameInput.focus();
-                return;
-            }
-            
-            // 验证重要性范围
-            if (importance < 0 || importance > 1) {
-                alert('实体重要性必须在0-1之间');
-                importanceInput.focus();
                 return;
             }
             
@@ -3864,7 +3610,6 @@
                 },
                 body: JSON.stringify({
                     entity_name: entityName,
-                    importance: importance,
                     context: context,
                     note: entityDescription
                 })
@@ -3900,11 +3645,9 @@
         function createCharacterNode() {
             const nameInput = document.getElementById('character-name-input');
             const trustInput = document.getElementById('character-trust-input');
-            const importanceInput = document.getElementById('character-importance-input');
             const contextInput = document.getElementById('character-context-input');
             const characterName = nameInput.value.trim();
             const trust = parseFloat(trustInput.value.trim()) || 0.5;
-            const importance = parseFloat(importanceInput.value.trim()) || 0.5;
             const context = contextInput.value.trim() || 'reality现实';
             
             if (!characterName) {
@@ -3913,16 +3656,10 @@
                 return;
             }
             
-            // 验证置信度和重要性范围
+            // 验证置信度范围
             if (trust < 0 || trust > 1) {
                 alert('角色置信度必须在0-1之间');
                 trustInput.focus();
-                return;
-            }
-            
-            if (importance < 0 || importance > 1) {
-                alert('角色重要性必须在0-1之间');
-                importanceInput.focus();
                 return;
             }
             
@@ -3941,7 +3678,6 @@
                 body: JSON.stringify({
                     character_name: characterName,
                     trust: trust,
-                    importance: importance,
                     context: context
                 })
             })
@@ -4059,8 +3795,8 @@
                 .attr("class", "node")
                 .attr("r", d => d.size)
                 .attr("fill", d => d.color)
-                .attr("stroke", d => d.strokeColor)
-                .attr("stroke-width", d => d.strokeWidth)
+                .attr("stroke", NODE_STROKE_COLOR)
+                .attr("stroke-width", NODE_STROKE_WIDTH)
                 .on("click", showNodeDetails)
                 .call(d3.drag()
                     .on("start", dragstarted)
@@ -4071,32 +3807,23 @@
             // 更新所有节点的属性（包括现有的）
             node.attr("r", d => d.size)
                 .attr("fill", d => d.color)
-                .attr("stroke", d => d.strokeColor)
-                .attr("stroke-width", d => d.strokeWidth);
+                .attr("stroke", NODE_STROKE_COLOR)
+                .attr("stroke-width", NODE_STROKE_WIDTH);
             
             // 重新绑定并更新链接
             link = link.data(graphData.links, d => d.neo4j_id || d.id);
             link.exit().remove();
             link = link.enter().append("line")
                 .attr("class", "link")
-                .attr("marker-end", d => getStorageTypeArrow(d.source_type))
-                .attr("stroke", d => getStorageTypeColor(d.source_type))
+                .attr("marker-end", "url(#arrow)")
+                .attr("stroke", LINK_COLOR)
                 .attr("stroke-width", "3")
                 .on("click", showLinkDetails)
                 .merge(link);
             
             // 更新所有链接的颜色（包括现有的）
-            link.attr("stroke", d => {
-                    // 调试：打印关系的source_type
-                    console.log('更新关系颜色 - ID:', d.neo4j_id, 'Type:', d.type, 'Source_type:', d.source_type);
-                    
-                    // 根据存储位置设置颜色
-                    if (!d.source_type || !STORAGE_TYPE_COLORS[d.source_type]) {
-                        console.warn('更新时关系未知存储位置:', d.source_type, '关系:', d);
-                    }
-                    return getStorageTypeColor(d.source_type);
-                })
-                .attr("marker-end", d => getStorageTypeArrow(d.source_type));
+            link.attr("stroke", LINK_COLOR)
+                .attr("marker-end", "url(#arrow)");
             
             // 重新绑定并更新节点标签
             nodeLabels = nodeLabels.data(graphData.nodes, d => d.id);
@@ -4200,6 +3927,254 @@
             }
         }
         
+        // 记忆存取面板切换
+        function toggleMemoryPanel() {
+            const panel = document.getElementById('memory-panel');
+            // 关闭编辑面板（如果打开的话）
+            const editPanel = document.getElementById('edit-panel');
+            if (editPanel.classList.contains('show')) {
+                editPanel.classList.remove('show');
+            }
+            panel.classList.toggle('show');
+        }
+
+        // 保存记忆快照：选中全部节点，保存至本地
+        async function saveMemorySnapshot() {
+            const memoryForms = document.querySelector('.memory-forms');
+            memoryForms.innerHTML = `
+                <div class="edit-form">
+                    <h4>💾 保存记忆快照</h4>
+                    <div style="padding: 12px; background: #e8f4fd; border-radius: 6px; border: 1px solid #bee5eb; margin-bottom: 15px;">
+                        <div style="color: #0c5460; font-size: 14px; line-height: 1.6;">
+                            将当前图谱中的 <strong>${graphData.nodes.length}</strong> 个节点和 <strong>${graphData.links.length}</strong> 个关系全部保存为本地快照文件。
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="action-btn primary-btn" id="memory-save-btn" onclick="confirmMemorySnapshot()">确认保存</button>
+                        <button class="action-btn cancel-btn" onclick="document.querySelector('.memory-forms').innerHTML=''">取消</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 确认保存记忆快照
+        async function confirmMemorySnapshot() {
+            const saveBtn = document.getElementById('memory-save-btn');
+            if (!saveBtn) return;
+            const originalText = saveBtn.textContent;
+            saveBtn.textContent = '保存中...';
+            saveBtn.disabled = true;
+
+            try {
+                // 收集全部节点ID
+                let nodeIds = graphData.nodes.map(n => n.neo4j_id);
+
+                // 收集全部关系ID
+                let relationIds = graphData.links.map(l => l.neo4j_id);
+
+                console.log('记忆快照保存请求:', { nodes_ids: nodeIds, relation_ids: relationIds });
+
+                const response = await fetch('/api/save_memory', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        nodes_ids: nodeIds,
+                        relation_ids: relationIds
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const memoryForms = document.querySelector('.memory-forms');
+                    memoryForms.innerHTML = `
+                        <div class="edit-form">
+                            <div style="padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 32px; margin-bottom: 8px;">✅</div>
+                                <div style="font-weight: 600; color: #155724; font-size: 16px; margin-bottom: 6px;">快照保存成功</div>
+                                <div style="color: #155724; font-size: 13px;">节点: ${nodeIds.length} 个 ｜ 关系: ${relationIds.length} 个</div>
+                                <div style="color: #155724; font-size: 12px; margin-top: 4px;">已保存至日志文件</div>
+                            </div>
+                        </div>
+                    `;
+                    smartRefresh();
+                } else {
+                    alert('❌ 快照保存失败: ' + (result.error || '未知错误'));
+                    saveBtn.textContent = originalText;
+                    saveBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('快照保存失败:', error);
+                alert('❌ 快照保存失败：' + error.message);
+                saveBtn.textContent = originalText;
+                saveBtn.disabled = false;
+            }
+        }
+
+        // 读取记忆快照
+        async function loadMemorySnapshot() {
+            const memoryForms = document.querySelector('.memory-forms');
+            memoryForms.innerHTML = `
+                <div class="edit-form">
+                    <h4>📂 读取记忆快照</h4>
+                    <div style="padding: 12px; background: #e8f4fd; border-radius: 6px; border: 1px solid #bee5eb; margin-bottom: 15px;">
+                        <div style="color: #0c5460; font-size: 14px; line-height: 1.6;">
+                            从快照列表中选择，或从本地选择文件导入到记忆图谱中。
+                        </div>
+                    </div>
+                    <div id="snapshot-file-list" style="margin-bottom: 12px;">
+                        <div style="text-align: center; padding: 10px; color: #888;">加载快照列表中...</div>
+                    </div>
+                    <div style="margin-bottom: 12px;">
+                        <label style="font-weight: 600; font-size: 13px; display: block; margin-bottom: 6px;">或从本地选择文件：</label>
+                        <input type="file" id="snapshot-file-input" accept=".json,.jsonl" 
+                            style="display: none;" onchange="onSnapshotFileSelected(this)">
+                        <div id="snapshot-file-chosen" style="display: flex; align-items: center; gap: 8px;">
+                            <button onclick="document.getElementById('snapshot-file-input').click()" 
+                                style="padding: 8px 14px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; font-size: 13px; transition: background 0.2s;"
+                                onmouseover="this.style.background='#e9ecef'" onmouseout="this.style.background='#f8f9fa'">📁 选择文件</button>
+                            <span id="snapshot-file-name" style="font-size: 13px; color: #888;">未选择文件</span>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="action-btn primary-btn" id="load-snapshot-btn" onclick="confirmLoadSnapshot()">确认导入</button>
+                        <button class="action-btn cancel-btn" onclick="document.querySelector('.memory-forms').innerHTML=''">取消</button>
+                    </div>
+                </div>
+            `;
+
+            // 获取可用快照文件列表
+            try {
+                const response = await fetch('/api/list_memory_snapshots');
+                const result = await response.json();
+                const listDiv = document.getElementById('snapshot-file-list');
+
+                if (result.success && result.files.length > 0) {
+                    let html = '<div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">可用快照文件：</div>';
+                    html += '<div style="max-height: 180px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px;">';
+                    result.files.forEach((file, index) => {
+                        html += `
+                            <div class="snapshot-file-item" onclick="selectSnapshotFile('${file.path.replace(/\\/g, '\\\\')}')" 
+                                style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center; transition: background 0.2s;"
+                                onmouseover="this.style.background='#e8f4fd'" onmouseout="this.style.background='transparent'">
+                                <span style="font-size: 13px;">📄 ${file.name}</span>
+                                <span style="font-size: 12px; color: #888;">${file.size_kb} KB</span>
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    listDiv.innerHTML = html;
+                } else {
+                    listDiv.innerHTML = '<div style="padding: 10px; color: #888; font-size: 13px; text-align: center;">暂无快照文件，请从本地选择文件</div>';
+                }
+            } catch (error) {
+                console.error('获取快照列表失败:', error);
+                document.getElementById('snapshot-file-list').innerHTML = 
+                    '<div style="padding: 10px; color: #dc3545; font-size: 13px;">获取快照列表失败</div>';
+            }
+        }
+
+        // 选择快照文件（从列表中选择，使用服务端路径）
+        let _selectedSnapshotPath = null;
+        let _selectedSnapshotFile = null;
+
+        function selectSnapshotFile(filePath) {
+            _selectedSnapshotPath = filePath;
+            _selectedSnapshotFile = null;
+            // 清除文件选择器状态
+            document.getElementById('snapshot-file-input').value = '';
+            document.getElementById('snapshot-file-name').textContent = '未选择文件';
+            document.getElementById('snapshot-file-name').style.color = '#888';
+            // 高亮选中项
+            document.querySelectorAll('.snapshot-file-item').forEach(item => {
+                item.style.background = 'transparent';
+                item.style.fontWeight = 'normal';
+            });
+            event.currentTarget.style.background = '#d4edda';
+            event.currentTarget.style.fontWeight = '600';
+        }
+
+        // 通过系统文件选择器选择文件
+        function onSnapshotFileSelected(input) {
+            if (input.files && input.files[0]) {
+                _selectedSnapshotFile = input.files[0];
+                _selectedSnapshotPath = null;
+                document.getElementById('snapshot-file-name').textContent = input.files[0].name;
+                document.getElementById('snapshot-file-name').style.color = '#155724';
+                // 取消列表高亮
+                document.querySelectorAll('.snapshot-file-item').forEach(item => {
+                    item.style.background = 'transparent';
+                    item.style.fontWeight = 'normal';
+                });
+            }
+        }
+
+        // 确认导入快照
+        async function confirmLoadSnapshot() {
+            if (!_selectedSnapshotPath && !_selectedSnapshotFile) {
+                alert('请从列表中选择快照或通过文件选择器选择文件');
+                return;
+            }
+
+            const loadBtn = document.getElementById('load-snapshot-btn');
+            const originalText = loadBtn.textContent;
+            loadBtn.textContent = '导入中...';
+            loadBtn.disabled = true;
+
+            try {
+                let response;
+
+                if (_selectedSnapshotPath) {
+                    // 从快照列表选择的，使用服务端文件路径
+                    response = await fetch('/api/upload_memory', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ file_path: _selectedSnapshotPath })
+                    });
+                } else {
+                    // 从文件选择器选择的，读取内容后上传
+                    const fileContent = await _selectedSnapshotFile.text();
+                    const memoryData = JSON.parse(fileContent);
+                    response = await fetch('/api/upload_memory_content', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(memoryData)
+                    });
+                }
+
+                const result = await response.json();
+
+                if (result.success) {
+                    const memoryForms = document.querySelector('.memory-forms');
+                    memoryForms.innerHTML = `
+                        <div class="edit-form">
+                            <div style="padding: 15px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 6px; text-align: center;">
+                                <div style="font-size: 32px; margin-bottom: 8px;">✅</div>
+                                <div style="font-weight: 600; color: #155724; font-size: 16px; margin-bottom: 6px;">记忆导入成功</div>
+                                <div style="color: #155724; font-size: 13px;">${result.message || '记忆已成功加载到图谱中'}</div>
+                            </div>
+                        </div>
+                    `;
+                    _selectedSnapshotPath = null;
+                    _selectedSnapshotFile = null;
+                    smartRefresh();
+                } else {
+                    alert('❌ 导入失败: ' + (result.error || '未知错误'));
+                    loadBtn.textContent = originalText;
+                    loadBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('导入快照失败:', error);
+                if (error instanceof SyntaxError) {
+                    alert('❌ 导入失败：文件不是有效的JSON格式');
+                } else {
+                    alert('❌ 导入失败：' + error.message);
+                }
+                loadBtn.textContent = originalText;
+                loadBtn.disabled = false;
+            }
+        }
+
         // 修改toggleEditPanel函数，增加连接状态检查
         function toggleEditPanel() {
             console.log('🔄 toggleEditPanel被调用');
@@ -4213,7 +4188,17 @@
             
             console.log('✅ Neo4j已连接，切换编辑面板');
             const panel = document.getElementById('edit-panel');
+            // 关闭记忆面板（如果打开的话）
+            const memoryPanel = document.getElementById('memory-panel');
+            if (memoryPanel.classList.contains('show')) {
+                memoryPanel.classList.remove('show');
+            }
             panel.classList.toggle('show');
+            
+            // 如果关闭面板，退出编辑子模式（删除模式、保存模式等）
+            if (!panel.classList.contains('show')) {
+                hideEditForms();
+            }
             
             // 如果打开面板，更新节点选择列表
             if (panel.classList.contains('show')) {
@@ -4231,7 +4216,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    time_str: '测试时间'
+                    time_str: ['测试时间']
                 })
             })
             .then(response => {
