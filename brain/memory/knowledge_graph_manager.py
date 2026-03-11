@@ -1329,7 +1329,7 @@ class KnowledgeGraphManager:
             logger.error(f"Failed to collide nodes '{node_id_1}' and '{node_id_2}': {e}")
             return None
 
-    def memory_decay(self, decay_factor: float = 0.9) -> None:
+    def memory_decay(self, decay_factor: float = 0.8) -> None:
         """
         记忆衰退机制
         对于所有的关系，如果其有significance参数，设置其
@@ -1359,11 +1359,133 @@ class KnowledgeGraphManager:
                 decay_count = result.single()["updated_count"]
                 logger.info(f"Memory decay applied to {decay_count} relationships (decay_factor={decay_factor})")
 
-                # 2. 删除significance低于0.1的关系
+                # 2. 基于时间精细度的关系梯度提升
+                # 不同精细度的时间节点有不同的significance阈值，低于阈值则提升至上一级时间节点
+                granularity_thresholds = {
+                    "秒": 0.9,
+                    "分": 0.75,
+                    "点": 0.55,
+                    "日": 0.35,
+                    "月": 0.2,
+                }
+
+                promoted_count = 0
+
+                # 获取所有连接Time节点的非BELONGS_TO关系
+                result = session.run(
+                    """
+                    MATCH (a)-[r]->(b)
+                    WHERE r.significance IS NOT NULL
+                      AND (a:Time OR b:Time)
+                      AND type(r) <> 'BELONGS_TO'
+                    RETURN elementId(r) as rel_id, elementId(a) as start_id, elementId(b) as end_id,
+                           type(r) as rel_type,
+                           labels(a) as start_labels, labels(b) as end_labels,
+                           a.name as start_name, b.name as end_name,
+                           r.significance as significance
+                    """
+                )
+                time_rels = list(result)
+
+                for record in time_rels:
+                    rel_id = record["rel_id"]
+                    significance = record["significance"]
+                    start_labels = record["start_labels"] or []
+                    end_labels = record["end_labels"] or []
+
+                    # 确定时间节点和另一端节点
+                    if "Time" in end_labels:
+                        time_node_id = record["end_id"]
+                        other_node_id = record["start_id"]
+                        time_name = record["end_name"]
+                        is_time_at_end = True
+                    elif "Time" in start_labels:
+                        time_node_id = record["start_id"]
+                        other_node_id = record["end_id"]
+                        time_name = record["start_name"]
+                        is_time_at_end = False
+                    else:
+                        continue
+
+                    if not time_name:
+                        continue
+
+                    # 根据时间节点名称后缀判断精细度，非标准精细度（周、轮次等）不处理
+                    threshold = None
+                    for suffix, thresh in granularity_thresholds.items():
+                        if time_name.endswith(suffix):
+                            threshold = thresh
+                            break
+
+                    if threshold is None or significance >= threshold:
+                        continue
+
+                    # 查找上一级时间节点
+                    parent_result = session.run(
+                        """
+                        MATCH (t:Time)-[:BELONGS_TO]->(parent:Time)
+                        WHERE elementId(t) = $time_node_id
+                        RETURN elementId(parent) as parent_id, parent.name as parent_name
+                        """,
+                        time_node_id=time_node_id,
+                    )
+                    parent_record = parent_result.single()
+
+                    if not parent_record:
+                        continue
+
+                    parent_id = parent_record["parent_id"]
+                    parent_name = parent_record["parent_name"]
+
+                    # 将关系迁移至上一级时间节点，significance重置为1
+                    if is_time_at_end:
+                        promote_result = session.run(
+                            """
+                            MATCH (other) WHERE elementId(other) = $other_id
+                            MATCH (parent:Time) WHERE elementId(parent) = $parent_id
+                            MATCH ()-[old_r]->() WHERE elementId(old_r) = $rel_id
+                            WITH other, parent, old_r, properties(old_r) as old_props, type(old_r) as old_type
+                            DELETE old_r
+                            WITH other, parent, old_props, old_type
+                            CALL apoc.create.relationship(other, old_type, old_props, parent) YIELD rel
+                            RETURN elementId(rel) as new_rel_id
+                            """,
+                            other_id=other_node_id,
+                            parent_id=parent_id,
+                            rel_id=rel_id,
+                        )
+                    else:
+                        promote_result = session.run(
+                            """
+                            MATCH (other) WHERE elementId(other) = $other_id
+                            MATCH (parent:Time) WHERE elementId(parent) = $parent_id
+                            MATCH ()-[old_r]->() WHERE elementId(old_r) = $rel_id
+                            WITH other, parent, old_r, properties(old_r) as old_props, type(old_r) as old_type
+                            DELETE old_r
+                            WITH other, parent, old_props, old_type
+                            CALL apoc.create.relationship(parent, old_type, old_props, other) YIELD rel
+                            RETURN elementId(rel) as new_rel_id
+                            """,
+                            other_id=other_node_id,
+                            parent_id=parent_id,
+                            rel_id=rel_id,
+                        )
+
+                    if promote_result.single():
+                        promoted_count += 1
+                        logger.debug(
+                            f"Promoted relation from time '{time_name}' to '{parent_name}' (significance={significance:.2f})"
+                        )
+
+                if promoted_count > 0:
+                    logger.info(f"Promoted {promoted_count} relationships to parent time nodes")
+
+                # 3. 删除significance低于0.1的剩余关系
                 result = session.run(
                     """
                     MATCH ()-[r]->()
                     WHERE r.significance IS NOT NULL AND r.significance < 0.1
+                      AND type(r) <> 'BELONGS_TO'
                     DELETE r
                     RETURN count(r) as deleted_count
                     """
@@ -1372,7 +1494,7 @@ class KnowledgeGraphManager:
                 if deleted_rels > 0:
                     logger.info(f"Deleted {deleted_rels} relationships with significance < 0.1")
 
-                # 3. 清理孤立时间节点（没有入关系的Time节点）
+                # 4. 清理孤立时间节点（没有入关系的Time节点）
                 result = session.run(
                     """
                     MATCH (t:Time)
@@ -1385,7 +1507,7 @@ class KnowledgeGraphManager:
                 if deleted_time > 0:
                     logger.info(f"Deleted {deleted_time} orphaned Time nodes")
 
-                # 4. 清理其余孤立节点（既无入关系也无出关系的非Time节点）
+                # 5. 清理其余孤立节点（既无入关系也无出关系的非Time节点）
                 result = session.run(
                     """
                     MATCH (n)
@@ -2552,6 +2674,43 @@ class KnowledgeGraphManager:
             # 事务未提交时，session 关闭会自动回滚未提交的事务
             logger.error(f"记忆记录处理出错，事务已回滚: {e}")
             return {"nodes": [], "relations": []}
+
+    def note_memory_used(self, relation_ids: list[str]) -> bool:
+        """
+        记忆被调用时触发，将记忆的significance调整至1。
+        若importance不高于0.95，importance增加0.01
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot note memory used: No Neo4j connection")
+            return False
+
+        if not relation_ids:
+            return True
+
+        try:
+            with self.driver.session() as session:
+                result = session.run(
+                    """
+                    UNWIND $rel_ids AS rid
+                    MATCH ()-[r]->()
+                    WHERE elementId(r) = rid AND r.significance IS NOT NULL
+                    SET r.significance = 1.0,
+                        r.importance = CASE
+                            WHEN r.importance IS NOT NULL AND r.importance <= 0.95
+                            THEN r.importance + 0.01
+                            ELSE r.importance
+                        END
+                    RETURN count(r) as updated_count
+                    """,
+                    rel_ids=relation_ids,
+                )
+                updated = result.single()["updated_count"]
+                logger.debug(f"记忆调用标记完成: {updated}/{len(relation_ids)} 个关系已更新")
+                return True
+
+        except Exception as e:
+            logger.error(f"记忆调用标记失败: {e}")
+            return False
 
 
 # 全局实例

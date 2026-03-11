@@ -132,6 +132,7 @@ class MemorySystemConfig(BaseModel):
     embedding_api_key: str = Field(default="sk-placeholder-key-not-set", description="向量分析API密钥")
     embedding_base_url: str = Field(default="https://api.openai.com/v1", description="向量分析API基础URL")
     embedding_model: str = Field(default="text-embedding-3-small", description="向量分析使用的模型")
+    memory_decay_factor: float = Field(default=0.8, ge=0.0, le=1.0, description="记忆衰减因子，范围0-1，值越小衰减越快,1不衰减")
 
 class APIServerConfig(BaseModel):
     """API服务器配置"""

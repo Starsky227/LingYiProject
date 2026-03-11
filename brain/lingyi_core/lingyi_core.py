@@ -2,7 +2,8 @@ import logging
 from openai import OpenAI
 from system.config import config
 from brain.memory.search_memory import full_memory_search
-from brain.memory.record_memory import MemoryWriter, MemoryContext
+from brain.memory.record_memory import MemoryWriter
+from brain.memory.memory_context import MemoryContext
 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
 
 logger = logging.getLogger(__name__)
@@ -28,11 +29,15 @@ class LingYiCore:
             self._memory_contexts[session_key] = MemoryContext(session_id=session_key)
         return MemoryWriter(kg_manager=self._kg_manager, memory_context=self._memory_contexts[session_key])
 
-    def process_incoming_information(self, information: str, session_key: str = "default") -> str:
+    def process_qq_group_message(self, information: str, session_key: str = "default", key_word_list: list[str] = None) -> str:
         """处理输入信息，生成回复"""
         print(f"收到输入信息: {information}")
-        # 1. 搜索相关记忆
-        related_memory = full_memory_search(information, save_temp_memory=False)
+
+        # 获取 memory_writer（内含该会话的 MemoryContext）
+        memory_writer = self._get_memory_writer(session_key)
+
+        # 1. 搜索相关记忆（自动从 MemoryContext 获取上下文）
+        related_memory = full_memory_search(information, save_temp_memory=False, add_keywords=key_word_list, memory_context=memory_writer.memory_context)
         logger.debug(f"检索到 {len(related_memory.get('nodes', []))} 个相关记忆节点")
         
         '''# 2. 调用主模型生成回复
@@ -59,7 +64,6 @@ class LingYiCore:
             return ""'''
         
         # 3. 记录记忆
-        memory_writer = self._get_memory_writer(session_key)
         memory_writer.full_memory_record(information, related_memory)
         
         # return reply

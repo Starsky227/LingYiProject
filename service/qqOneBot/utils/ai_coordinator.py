@@ -26,11 +26,20 @@ class AICoordinator:
         self.onebot = onebot
     
     async def temp_message_handeling(self, session: ConversationSession, event: dict[str, Any]) -> None:
-        """临时代码，直接处理消息，不经过队列和频率控制"""
+        """临时代码，直接处理消息"""
         # 调用conversation session的parse_message_content
         message_content = session.parse_message_content(event)
+        meta = session.extract_event_metadata(event)
+        
+        # 组装关键词列表：包含发送者和群组信息
+        key_word_list = [
+            str(meta["user_id"]),
+            meta["display_name"],
+            meta["group_display_name"],
+        ]
+        
         # 将结果直接提供给ai的process_incoming_information
-        reply = self.ai.process_incoming_information(message_content, session_key=session.session_key)
+        reply = self.ai.process_qq_group_message(message_content, session_key=session.session_key, key_word_list=key_word_list)
         
         if not reply:
             return

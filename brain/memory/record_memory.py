@@ -16,7 +16,6 @@ import sys
 import json
 import logging
 from typing import Dict, Any, List
-from collections import deque
 from datetime import datetime
 from openai import OpenAI
 
@@ -66,46 +65,7 @@ EVENT_EXTRACT_PROMPT = load_prompt_file("event_extract.txt", "事件提取")
 logger = logging.getLogger(__name__)
 
 
-class MemoryContext:
-    """会话上下文管理器，用于记录对话历史和事件提取结果"""
-    
-    def __init__(self, session_id: str, max_messages: int = 25):
-        self.session_id = session_id
-        self.messages = deque(maxlen=max_messages)
-        self.extracted_events = deque(maxlen=10)  # 记录提取的事件
-        self.last_updated = None
-
-    def add_message(self, role: str, content: str):
-        """添加对话消息"""
-        self.messages.append({
-            "role": role,
-            "content": content,
-            "time": datetime.now().isoformat(),
-        })
-        self.last_updated = datetime.now()
-
-    def add_extracted_event(self, event_data: Dict[str, Any]):
-        """记录提取的事件数据"""
-        self.extracted_events.append({
-            "event_data": event_data,
-            "session_id": self.session_id,
-            "time": datetime.now().isoformat(),
-        })
-        self.last_updated = datetime.now()
-
-    def get_context(self) -> List[Dict[str, Any]]:
-        """获取对话上下文"""
-        return list(self.messages)
-    
-    def get_extracted_events(self) -> List[Dict[str, Any]]:
-        """获取提取的事件列表"""
-        return list(self.extracted_events)
-
-    def clear(self):
-        """清空上下文"""
-        self.messages.clear()
-        self.extracted_events.clear()
-        self.last_updated = None
+from brain.memory.memory_context import MemoryContext
 
 
 class MemoryWriter:
@@ -122,12 +82,12 @@ class MemoryWriter:
         self.memory_context = memory_context
     
     
-    def passive_event_extraction(self, recent_message: List[Dict[str, Any]], related_memory: Dict[str, Any] = None) -> None:
+    def passive_event_extraction(self, recent_messages: List[Dict[str, Any]], related_memory: Dict[str, Any] = None) -> None:
         """
         阅读群消息，判断是否值得记忆，并提取需要记忆的事件信息
         
         Args:
-            recent_message: 最近的消息列表，格式：[{"role": "user", "content": "...", "time": "..."}, ...]
+            recent_messages: 最近的消息列表，格式：[{"role": "user", "content": "...", "time": "..."}, ...]
             related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}，为空时自动从temp_memory.json读取
         """
 
@@ -154,24 +114,14 @@ class MemoryWriter:
         input_messages.append({"role": "user", "content": related_memory_text})
 
         # 使用传入的 recent_message 参数构建消息段落
-        if recent_message:
-            # 构建消息段落
-            messages_paragraph = "收到消息：\n"
-            
-            if len(recent_message) > 1:
-                # 有多条消息，前面的作为历史消息
-                for msg in recent_message[:-1]:
-                    messages_paragraph += msg.get("content", "") + "\n"
-                
-                messages_paragraph += "\n【最新消息】\n"
-                messages_paragraph += recent_message[-1].get("content", "")
+        if recent_messages:
+            if len(recent_messages) > 1:
+                history_text = "\n".join(msg.get("content", "") for msg in recent_messages[:-1])
+                messages_paragraph = f"历史消息：\n{history_text}\n需要处理的新消息：\n{recent_messages[-1].get('content', '')}"
             else:
-                # 只有一条消息
-                messages_paragraph = "【历史消息】\n暂无历史消息\n\n【最新消息】\n"
-                messages_paragraph += recent_message[0].get("content", "")
+                messages_paragraph = f"历史消息：\n暂无历史消息\n需要处理的新消息：\n{recent_messages[0].get('content', '')}"
         else:
-            # 没有消息
-            messages_paragraph = "【历史消息】\n暂无历史消息\n\n【最新消息】\n暂无消息"
+            messages_paragraph = "历史消息：\n暂无历史消息\n需要处理的新消息：\n暂无消息"
         
         input_messages.append({"role": "user", "content": messages_paragraph})
 
@@ -331,12 +281,12 @@ class MemoryWriter:
         """
         from brain.memory.search_memory import full_memory_search
 
-        # 1. 搜索相关记忆（如果未提供）
+        # 1. 搜索相关记忆（如果未提供），搜索时使用当前上下文（不含本条消息）
         if related_memory is None:
-            related_memory = full_memory_search(message, save_temp_memory=True)
+            related_memory = full_memory_search(message, save_temp_memory=True, memory_context=self.memory_context)
         logger.debug(f"检索到 {len(related_memory.get('nodes', []))} 个相关记忆节点")
 
-        # 2. 添加到会话上下文
+        # 2. 将当前消息加入会话上下文
         if self.memory_context:
             self.memory_context.add_message("user", message)
             recent_messages = self.memory_context.get_context()
@@ -395,7 +345,7 @@ def main():
             recent_messages = session_context.get_context()
             
             # 调用被测试的函数
-            event_extractor.passive_event_extraction(recent_message=recent_messages)
+            event_extractor.passive_event_extraction(recent_messages=recent_messages)
             
             print("事件提取测试完成!")
             

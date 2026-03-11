@@ -410,48 +410,63 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
         for reached_node in connected_nodes:
             # 将查询结果存储到nodes_to_add和relations_to_add中以便后续处理
             reached_node_id = reached_node["connected_id"]
-            if reached_node_id and reached_node_id not in all_nodes:
-                connected_labels = reached_node["connected_labels"] or []
-                rel_id = reached_node["rel_id"]
-                rel_data = {
-                    "id": rel_id,
-                    "type": reached_node["rel_type"],
-                    "start_node": reached_node["rel_start"],
-                    "end_node": reached_node["rel_end"],
-                    "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
-                }
-                node_data = {
-                    "id": reached_node_id,
-                    "labels": connected_labels,
-                    "properties": _remove_embedding(dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {})
-                }
-                
-                if "Time" in connected_labels:
-                    # 时间节点直接并入all_nodes，不参与AI筛选
-                    all_nodes[reached_node_id] = node_data
-                    all_relationships[rel_id] = rel_data
-                    time_node_ids_to_expand.append(reached_node_id)
-                else:
-                    # 非时间节点走正常筛选流程
-                    nodes_to_add[reached_node_id] = node_data
-                    relations_to_add[rel_id] = rel_data
-                    # 将节点关系转换为简洁的方向性文字版交由AI审阅
-                    root_name = reached_node["root_properties"].get("name", "Unknown") if reached_node["root_properties"] else "Unknown"
-                    connected_name = reached_node["connected_properties"].get("name", "Unknown") if reached_node["connected_properties"] else "Unknown"
-                    rel_type = reached_node["rel_type"]
-                    
-                    if reached_node["rel_start"] == reached_node["root_id"]:
-                        display = f"({root_name}) -[{rel_type}]-> ({connected_name})"
-                    else:
-                        display = f"({root_name}) <-[{rel_type}]- ({connected_name})"
-                    
-                    memories_to_be_viewed[reached_node_id] = {
-                        "ids": {
-                            "node_id": reached_node_id,
-                            "relation_id": reached_node["rel_id"]
-                        },
-                        "display": display
+            if not reached_node_id:
+                continue
+            
+            rel_id = reached_node["rel_id"]
+            
+            # 如果连接的节点已在all_nodes中（如两个初始节点互相连接），仅捕获关系
+            if reached_node_id in all_nodes:
+                if rel_id and rel_id not in all_relationships:
+                    all_relationships[rel_id] = {
+                        "id": rel_id,
+                        "type": reached_node["rel_type"],
+                        "start_node": reached_node["rel_start"],
+                        "end_node": reached_node["rel_end"],
+                        "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
                     }
+                continue
+            
+            connected_labels = reached_node["connected_labels"] or []
+            rel_data = {
+                "id": rel_id,
+                "type": reached_node["rel_type"],
+                "start_node": reached_node["rel_start"],
+                "end_node": reached_node["rel_end"],
+                "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
+            }
+            node_data = {
+                "id": reached_node_id,
+                "labels": connected_labels,
+                "properties": _remove_embedding(dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {})
+            }
+            
+            if "Time" in connected_labels:
+                # 时间节点直接并入all_nodes，不参与AI筛选
+                all_nodes[reached_node_id] = node_data
+                all_relationships[rel_id] = rel_data
+                time_node_ids_to_expand.append(reached_node_id)
+            else:
+                # 非时间节点走正常筛选流程
+                nodes_to_add[reached_node_id] = node_data
+                relations_to_add[rel_id] = rel_data
+                # 将节点关系转换为简洁的方向性文字版交由AI审阅
+                root_name = reached_node["root_properties"].get("name", "Unknown") if reached_node["root_properties"] else "Unknown"
+                connected_name = reached_node["connected_properties"].get("name", "Unknown") if reached_node["connected_properties"] else "Unknown"
+                rel_type = reached_node["rel_type"]
+                
+                if reached_node["rel_start"] == reached_node["root_id"]:
+                    display = f"({root_name}) -[{rel_type}]-> ({connected_name})"
+                else:
+                    display = f"({root_name}) <-[{rel_type}]- ({connected_name})"
+                
+                memories_to_be_viewed[reached_node_id] = {
+                    "ids": {
+                        "node_id": reached_node_id,
+                        "relation_id": reached_node["rel_id"]
+                    },
+                    "display": display
+                }
         
         # 沿Time节点向下游展开：查找指向Time节点的节点(child Time或关联的非Time节点)
         expanded_time_ids = set()
@@ -556,7 +571,7 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
         return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = "") -> Dict[str, Any]:
+def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = "", add_keywords: List[str] = None) -> Dict[str, Any]:
     """
     根据输入的关键词列表提取相应的节点及信息。
     
@@ -564,7 +579,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
         kg_manager: KnowledgeGraphManager实例
         keywords: 预定义的关键词列表
         summary: 话题摘要，用于对模糊匹配的节点进行AI筛选
-        
+        add_keywords: 为手动输入的额外关键词列表
     Returns Dict[str, Any]:
         {"nodes": [所有的节点字典],
         "relationships": [节点字典对应的联系],
@@ -580,6 +595,8 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
     
     try:
         nodes_dict = {}  # 使用字典避免重复节点
+        all_candidate_nodes = {}  # 收集所有模糊匹配的候选节点
+        all_candidate_data = {}   # 收集所有模糊匹配的候选数据（供AI筛选）
         
         with kg_manager.driver.session() as session:
             for keyword in keywords:
@@ -624,7 +641,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
                                 semantic_match_query = """
                                 CALL db.index.vector.queryNodes($index_name, 5, $keyword_embedding)
                                 YIELD node, score
-                                WHERE score > 0.6
+                                WHERE score > 0.7
                                 RETURN elementId(node) as id, labels(node) as labels, 
                                        properties(node) as properties, score as similarity
                                 """
@@ -643,40 +660,70 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
                         semantic_matches = semantic_matches_all[:5]
                         
                         if semantic_matches:
-                            # 收集候选节点，准备交由AI筛选
-                            candidate_nodes = {}
-                            candidate_data = {}
+                            # 收集候选节点，稍后统一交由AI筛选
                             for record in semantic_matches:
                                 node_id = record["id"]
-                                if node_id not in nodes_dict:
+                                if node_id not in nodes_dict and node_id not in all_candidate_nodes:
                                     node_name = record["properties"].get("name", "Unknown") if record["properties"] else "Unknown"
                                     similarity = record["similarity"]
                                     logger.debug(f"  - Matched '{node_name}' with similarity {similarity:.3f}")
-                                    candidate_nodes[node_id] = {
+                                    all_candidate_nodes[node_id] = {
                                         "id": node_id,
                                         "labels": record["labels"] or [],
                                         "properties": _remove_embedding(dict(record["properties"]) if record["properties"] else {})
                                     }
-                                    candidate_data[node_id] = {
+                                    all_candidate_data[node_id] = {
                                         "ids": {"node_id": node_id, "relation_id": None},
                                         "display": node_name
                                     }
-                            
-                            # 如果有summary则通过AI筛选，否则全部保留
-                            if summary and candidate_data:
-                                filtered_result = _filter_related_nodes(candidate_data, summary)
-                                filtered_ids = filtered_result.get("filtered_node_ids", [])
-                                for nid in filtered_ids:
-                                    if nid in candidate_nodes:
-                                        nodes_dict[nid] = candidate_nodes[nid]
-                                logger.debug(f"模糊匹配筛选: {len(candidate_nodes)}个候选 -> {len(filtered_ids)}个保留")
-                            else:
-                                nodes_dict.update(candidate_nodes)
                         else:
                             logger.info(f"No semantic matches found for keyword: '{keyword}'")
                     else:
                         logger.warning(f"Failed to generate embedding for keyword: '{keyword}'")
             
+            # 所有关键词处理完毕后，统一对模糊匹配候选进行一次AI筛选
+            if all_candidate_nodes:
+                if summary and all_candidate_data:
+                    filtered_result = _filter_related_nodes(all_candidate_data, summary)
+                    filtered_ids = filtered_result.get("filtered_node_ids", [])
+                    for nid in filtered_ids:
+                        if nid in all_candidate_nodes:
+                            nodes_dict[nid] = all_candidate_nodes[nid]
+                    logger.debug(f"模糊匹配统一筛选: {len(all_candidate_nodes)}个候选 -> {len(filtered_ids)}个保留")
+                else:
+                    nodes_dict.update(all_candidate_nodes)
+            
+            # 将add_keywords中硬性写入的关键词进行搜索并加入结果（仅精确匹配）
+            for add_keyword in add_keywords or []:
+                if not add_keyword or not add_keyword.strip():
+                    continue
+                    
+                add_keyword = add_keyword.strip()
+                logger.debug(f"Searching for add_keyword: {add_keyword}")
+                
+                # 对于每个关键词仅进行精确匹配 - 查找名称完全匹配的节点
+                exact_match_query = """
+                MATCH (n)
+                WHERE n.name = $keyword
+                RETURN elementId(n) as id, labels(n) as labels, properties(n) as properties
+                """
+                
+                exact_results = session.run(exact_match_query, keyword=add_keyword)
+                exact_matches = list(exact_results)
+                
+                if exact_matches:
+                    logger.debug(f"Found {len(exact_matches)} exact matches for add_keyword '{add_keyword}'")
+                    for record in exact_matches:
+                        node_id = record["id"]
+                        if node_id not in nodes_dict:
+                            nodes_dict[node_id] = {
+                                "id": node_id,
+                                "labels": record["labels"] or [],
+                                "properties": _remove_embedding(dict(record["properties"]) if record["properties"] else {})
+                            }
+                else:
+                    logger.debug(f"No exact match found for add_keyword '{add_keyword}'")
+
             # 转换为列表格式
             nodes_list = list(nodes_dict.values())
             outer_node_ids = [node["id"] for node in nodes_list]
@@ -695,7 +742,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
         return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50, save_temp_memory: bool = False) -> Dict[str, Any]:
+def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50, save_temp_memory: bool = False, add_keywords: List[str] = None) -> Dict[str, Any]:
     """
     通过_extract_keywords获得基础节点数据。
     而后通过反复调用_expand_memory_grabbed获取相关联的节点和关系。
@@ -739,7 +786,7 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
 
         # 第一步：提取基础节点
         with kg_manager.driver.session() as session:
-            nodes_data = _extract_nodes_by_keyword(kg_manager, keywords, summary)
+            nodes_data = _extract_nodes_by_keyword(kg_manager, keywords, summary, add_keywords=add_keywords)
             
             if not nodes_data.get("nodes"):
                 logger.error("[记忆查询] 未找到匹配的节点")
@@ -793,24 +840,44 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
         logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
         return {"nodes": [], "relationships": []}
 
-def full_memory_search(message: str, save_temp_memory: bool = False) -> Dict[str, Any]:
+def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None, memory_context=None) -> Dict[str, Any]:
     """
     直接从输入文本进行完整的记忆搜索流程，包含关键词提取和相关记忆查询。
+    如果提供了memory_context，会自动获取历史消息拼接到搜索文本中。
     
     Args:
-        message: 输入文本消息
+        message: 输入文本消息（当前新消息）
         save_temp_memory: 是否保存临时记忆结果
+        add_keywords: 为手动输入的额外关键词列表
+        memory_context: MemoryContext实例，用于获取历史对话上下文
         
     Returns Dict[str, Any]:
         {"nodes": [...], "relationships": [...]}
     """
-    extract_result = extract_keyword_from_text(message)
+    # 如果有上下文，拼接历史消息供关键词提取参考
+    if memory_context:
+        history = memory_context.get_context()
+        if history:
+            history_text = "\n".join(msg.get("content", "") for msg in history)
+            search_text = f"历史消息：\n{history_text}\n需要处理的新消息：\n{message}"
+        else:
+            search_text = message
+    else:
+        search_text = message
+    
+    extract_result = extract_keyword_from_text(search_text)
     keywords = extract_result.get("keywords", [])
     summary = extract_result.get("summary", "")
     
     logger.info(f"从输入消息提取到关键词: {keywords}, 摘要: {summary}")
     
-    relevant_memories = get_relevant_memories(keywords, summary, save_temp_memory=save_temp_memory)
+    relevant_memories = get_relevant_memories(keywords, summary, save_temp_memory=save_temp_memory, add_keywords=add_keywords)
+    
+    # 使用note_memory_used刷新所有被使用的记忆relation的significance值（以及对应的importance）
+    relation_ids = [rel["id"] for rel in relevant_memories.get("relationships", []) if rel.get("id")]
+    if relation_ids:
+        kg_manager = get_knowledge_graph_manager()
+        kg_manager.note_memory_used(relation_ids)
     
     return relevant_memories
 

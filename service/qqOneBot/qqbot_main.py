@@ -50,7 +50,7 @@ def _init_file_handler(root_logger: logging.Logger) -> None:
 async def main() -> None:
     """主函数"""
     logger = logging.getLogger(__name__)
-    logger.info("[启动] 正在初始化 Undefined 机器人...")
+    logger.info("[启动] 正在初始化 Lingyi ...")
 
     try:
         logger.info(f"[配置] 机器人 QQ: {config.qq_config.bot_qq}")

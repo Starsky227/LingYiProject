@@ -1030,14 +1030,13 @@ def start_api_server():
                 from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
                 
                 data = request.get_json() or {}
-                decay_factor = data.get('decay_factor', 0.9)
                 
                 kg_manager = get_knowledge_graph_manager()
-                kg_manager.memory_decay(decay_factor=decay_factor)
+                kg_manager.memory_decay()
                 
                 return jsonify({
                     "success": True,
-                    "message": f"记忆衰退已执行 (decay_factor={decay_factor})"
+                    "message": f"记忆衰退已执行 (decay_factor=默认)"
                 }), 200
                 
             except Exception as e:

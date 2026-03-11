@@ -748,7 +748,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>🧠 心智云图</h1>
+        <h1>🧠 记忆云图</h1>
     </div>
     
     <div class="container">
@@ -2518,15 +2518,43 @@
                 const node1 = item1.data;
                 const node2 = item2.data;
                 
+                // 辅助函数：获取节点context
+                const getContext = (n) => {
+                    if (n.properties && n.properties.context) return n.properties.context;
+                    return '无';
+                };
+                
                 // 显示合并表单
                 editForms.innerHTML = `
                     <div class="edit-form">
                         <h4>合并节点</h4>
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+                            <div style="flex: 1; padding: 10px; background: #e8f4fd; border: 1px solid #bee5eb; border-radius: 6px; font-size: 12px; line-height: 1.6;">
+                                <div style="font-weight: 600; color: #0c5460; margin-bottom: 6px; font-size: 13px;">🅰 节点A（先选）</div>
+                                <div><span style="color: #666;">ID：</span>${node1.neo4j_id}</div>
+                                <div><span style="color: #666;">类型：</span>${node1.labels.join(', ')}</div>
+                                <div><span style="color: #666;">名称：</span>${node1.label}</div>
+                                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #bee5eb;">
+                                    <span style="color: #666;">context：</span>
+                                    <span style="word-break: break-all;">${getContext(node1)}</span>
+                                </div>
+                            </div>
+                            <div style="flex: 1; padding: 10px; background: #f0e6ff; border: 1px solid #d4b8ff; border-radius: 6px; font-size: 12px; line-height: 1.6;">
+                                <div style="font-weight: 600; color: #4a148c; margin-bottom: 6px; font-size: 13px;">🅱 节点B（后选）</div>
+                                <div><span style="color: #666;">ID：</span>${node2.neo4j_id}</div>
+                                <div><span style="color: #666;">类型：</span>${node2.labels.join(', ')}</div>
+                                <div><span style="color: #666;">名称：</span>${node2.label}</div>
+                                <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #d4b8ff;">
+                                    <span style="color: #666;">context：</span>
+                                    <span style="word-break: break-all;">${getContext(node2)}</span>
+                                </div>
+                            </div>
+                        </div>
                         <div class="form-group">
                             <label>合并方向：</label>
                             <select id="collide-direction" onchange="updateCollideWarning()" style="width: 100%; padding: 6px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px;">
-                                <option value="2to1">将「${node2.label}」合并至「${node1.label}」（保留「${node1.label}」）</option>
-                                <option value="1to2">将「${node1.label}」合并至「${node2.label}」（保留「${node2.label}」）</option>
+                                <option value="1to2">节点A -> 节点B（保留B）</option>
+                                <option value="2to1">节点B -> 节点A（保留A）</option>
                             </select>
                         </div>
                         <div id="collide-warning" style="padding: 12px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; margin-bottom: 15px;">
@@ -2535,8 +2563,8 @@
                                 <span style="font-weight: 600; color: #856404;">合并说明</span>
                             </div>
                             <div style="color: #856404; font-size: 13px; line-height: 1.5;">
-                                • 「${node2.label}」上的所有关系将迁移至「${node1.label}」<br>
-                                • 「${node2.label}」节点将被删除<br>
+                                • 节点A「${node1.label}」上的所有关系将迁移至节点B「${node2.label}」<br>
+                                • 节点A「${node1.label}」将被删除<br>
                                 • 此操作不可撤销
                             </div>
                         </div>
@@ -2663,13 +2691,9 @@
                         });
                     }
                     
-                    if (updateSuccess) {
-                        resultMessage += `\n图谱已自动更新显示最新数据。`;
-                    } else {
-                        resultMessage += `\n图谱数据更新失败，请手动刷新页面。`;
+                    if (!updateSuccess) {
+                        console.warn('图谱数据动态更新失败，请手动刷新页面。');
                     }
-                    
-                    alert(resultMessage);
                 } else {
                     alert(`从云图删除失败：${result.error || '未知错误'}`);
                 }
@@ -2965,10 +2989,8 @@
                         document.getElementById("node-details").style.display = "none";
                         // 使用动态更新代替页面刷新
                         const updateSuccess = await updateGraphData();
-                        if (updateSuccess) {
-                            alert(`关系修改成功！\n\n${directionText}\n关系类型：${newRelationshipName}\n\n图谱已自动更新显示最新数据。`);
-                        } else {
-                            alert(`关系修改成功！\n\n图谱数据更新失败，请手动刷新页面。`);
+                        if (!updateSuccess) {
+                            console.warn('图谱数据动态更新失败，请手动刷新页面。');
                         }
                     } else {
                         alert(`关系修改失败：${result.error || '未知错误'}`);
@@ -3110,10 +3132,8 @@
                     document.getElementById("node-details").style.display = "none";
                     // 使用动态更新代替页面刷新
                     const updateSuccess = await updateGraphData();
-                    if (updateSuccess) {
-                        alert(`节点修改成功！\n\n节点ID：${result.element_id}\n节点类型：${newNodeType}\n\n图谱已自动更新显示最新数据。`);
-                    } else {
-                        alert(`节点修改成功！\n\n图谱数据更新失败，请手动刷新页面。`);
+                    if (!updateSuccess) {
+                        console.warn('图谱数据动态更新失败，请手动刷新页面。');
                     }
                 } else {
                     alert(`节点修改失败：${result.error || '未知错误'}`);
@@ -3216,10 +3236,8 @@
                     hideEditForms();
                     // 使用动态更新代替页面刷新
                     const updateSuccess = await updateGraphData();
-                    if (updateSuccess) {
-                        alert(`链接创建成功！\n\n关系ID：${result.relationship_id}\n图谱已自动更新显示最新数据。`);
-                    } else {
-                        alert(`链接创建成功！\n\n关系ID：${result.relationship_id}\n图谱数据更新失败，请手动刷新页面。`);
+                    if (!updateSuccess) {
+                        console.warn('图谱数据动态更新失败，请手动刷新页面。');
                     }
                 } else {
                     alert(`链接创建失败：${result.error || '未知错误'}`);
@@ -3245,6 +3263,8 @@
             const node2 = recentSelectedNodes[0].data;
             const keepNode = direction === '2to1' ? node1 : node2;
             const mergeNode = direction === '2to1' ? node2 : node1;
+            const keepLabel = direction === '2to1' ? 'A' : 'B';
+            const mergeLabel = direction === '2to1' ? 'B' : 'A';
             const warningDiv = document.getElementById('collide-warning');
             warningDiv.innerHTML = `
                 <div style="display: flex; align-items: center; margin-bottom: 6px;">
@@ -3252,8 +3272,8 @@
                     <span style="font-weight: 600; color: #856404;">合并说明</span>
                 </div>
                 <div style="color: #856404; font-size: 13px; line-height: 1.5;">
-                    • 「${mergeNode.label}」上的所有关系将迁移至「${keepNode.label}」<br>
-                    • 「${mergeNode.label}」节点将被删除<br>
+                    • 节点${mergeLabel}「${mergeNode.label}」上的所有关系将迁移至节点${keepLabel}「${keepNode.label}」<br>
+                    • 节点${mergeLabel}「${mergeNode.label}」将被删除<br>
                     • 此操作不可撤销
                 </div>
             `;
@@ -3272,7 +3292,9 @@
             const keepNode = direction === '2to1' ? n1 : n2;
             const mergeNode = direction === '2to1' ? n2 : n1;
             
-            const confirmMessage = `确认合并节点？\n\n保留节点：${keepNode.label} (${keepNode.labels.join(", ")})\n合并节点：${mergeNode.label} (${mergeNode.labels.join(", ")})\n\n「${mergeNode.label}」上的所有关系将迁移至「${keepNode.label}」，「${mergeNode.label}」将被删除。\n\n此操作不可撤销，确定要继续吗？`;
+            const keepLabel = direction === '2to1' ? 'A' : 'B';
+            const mergeLabel = direction === '2to1' ? 'B' : 'A';
+            const confirmMessage = `确认合并节点？\n\n保留：节点${keepLabel}「${keepNode.label}」(${keepNode.labels.join(", ")})\n删除：节点${mergeLabel}「${mergeNode.label}」(${mergeNode.labels.join(", ")})\n\n节点${mergeLabel}「${mergeNode.label}」上的所有关系将迁移至节点${keepLabel}「${keepNode.label}」，节点${mergeLabel}将被删除。\n\n此操作不可撤销，确定要继续吗？`;
             
             if (!confirm(confirmMessage)) {
                 return;
@@ -3303,10 +3325,8 @@
                     document.getElementById("node-details").style.display = "none";
                     
                     const updateSuccess = await updateGraphData();
-                    if (updateSuccess) {
-                        alert(`合并成功！\n\n「${mergeNode.label}」已合并到「${keepNode.label}」\n图谱已自动更新。`);
-                    } else {
-                        alert(`合并成功！\n\n「${mergeNode.label}」已合并到「${keepNode.label}」\n图谱数据更新失败，请手动刷新页面。`);
+                    if (!updateSuccess) {
+                        console.warn('图谱数据动态更新失败，请手动刷新页面。');
                     }
                 } else {
                     alert(`合并失败：${result.error || '未知错误'}`);
@@ -3561,10 +3581,8 @@
                     hideEditForms();
                     // 使用动态更新代替页面刷新
                     updateGraphData().then(updateSuccess => {
-                        if (updateSuccess) {
-                            alert(`时间节点创建成功: ${data.message}\n\n图谱已自动更新显示最新数据。`);
-                        } else {
-                            alert(`时间节点创建成功: ${data.message}\n\n图谱数据更新失败，请手动刷新页面。`);
+                        if (!updateSuccess) {
+                            console.warn('图谱数据动态更新失败，请手动刷新页面。');
                         }
                     });
                 } else {
@@ -3621,10 +3639,8 @@
                     hideEditForms();
                     // 使用动态更新代替页面刷新
                     updateGraphData().then(updateSuccess => {
-                        if (updateSuccess) {
-                            alert(`实体节点创建成功: ${data.message}\n\n图谱已自动更新显示最新数据。`);
-                        } else {
-                            alert(`实体节点创建成功: ${data.message}\n\n图谱数据更新失败，请手动刷新页面。`);
+                        if (!updateSuccess) {
+                            console.warn('图谱数据动态更新失败，请手动刷新页面。');
                         }
                     });
                 } else {
@@ -3688,10 +3704,8 @@
                     hideEditForms();
                     // 使用动态更新代替页面刷新
                     updateGraphData().then(updateSuccess => {
-                        if (updateSuccess) {
-                            alert(`角色节点创建成功: ${data.message}\n\n图谱已自动更新显示最新数据。`);
-                        } else {
-                            alert(`角色节点创建成功: ${data.message}\n\n图谱数据更新失败，请手动刷新页面。`);
+                        if (!updateSuccess) {
+                            console.warn('图谱数据动态更新失败，请手动刷新页面。');
                         }
                     });
                 } else {
@@ -3745,10 +3759,8 @@
                     hideEditForms();
                     // 使用动态更新代替页面刷新
                     updateGraphData().then(updateSuccess => {
-                        if (updateSuccess) {
-                            alert(`地点节点创建成功: ${data.message}\n\n图谱已自动更新显示最新数据。`);
-                        } else {
-                            alert(`地点节点创建成功: ${data.message}\n\n图谱数据更新失败，请手动刷新页面。`);
+                        if (!updateSuccess) {
+                            console.warn('图谱数据动态更新失败，请手动刷新页面。');
                         }
                     });
                 } else {
