@@ -388,7 +388,7 @@ def get_config() -> LingYiConfig:
 
 # 初始化时打印配置信息
 if config.system.debug:
-    print(f"NagaAgent {config.system.version} 配置已加载")
+    print(f"LingYi {config.system.version} 配置已加载")
     print(f"API服务器: {'启用' if config.api_server.enabled else '禁用'} ({config.api_server.host}:{config.api_server.port})")
     print(f"GRAG记忆系统: {'启用' if config.grag.enabled else '禁用'}")
 

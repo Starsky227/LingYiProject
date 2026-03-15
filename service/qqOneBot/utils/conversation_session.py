@@ -1,19 +1,17 @@
 """为不同会话准备的独立的上下文存储，及其他内容的记录空间"""
 
-import asyncio
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any
 
 from system.config import config
 from utils.common import extract_text
 
 logger = logging.getLogger(__name__)
 
-# hold释放时的回调类型: async def callback(session, events) -> None
-HoldReleaseCallback = Callable[["ConversationSession", list[dict[str, Any]]], Coroutine]
 
 class ConversationSession:
 
@@ -22,16 +20,6 @@ class ConversationSession:
         self.session_id = session_id
         self.session_key = f"{session_type}_{session_id}"
         self.context: list[dict[str, Any]] = []
-        self.last_response_time: float = 0
-        self.speak_freq: int = config.qq_config.speak_freq
-        self.on_hold = False
-        self.hold_message_id: int | None = None
-        self._hold_timer_task: asyncio.Task | None = None
-        self._on_hold_release: HoldReleaseCallback | None = None
-
-    def set_hold_release_callback(self, callback: HoldReleaseCallback) -> None:
-        """注册hold释放时的回调函数"""
-        self._on_hold_release = callback
 
     def add_message(self, event: dict[str, Any]) -> None:
         """
@@ -56,62 +44,14 @@ class ConversationSession:
         'group_id': 485228134, 
         'group_name': '麻辣子（重启中）'}
         
-        添加消息到上下文，最多保留25条
+        添加消息到上下文，最多保留15条
         """
         self.context.append(event)
-        if len(self.context) > 25:
-            self.context = self.context[-25:]
+        if len(self.context) > 15:
+            self.context = self.context[-15:]
         
         # 写入历史记录
         self.write_message_history(event)
-
-    def check_frequency(self) -> str:
-        """检查频率控制，返回状态: 'hold' | 'ready'
-        
-        - 'hold': 未达到speak_freq间隔，已自动设置hold状态并启动计时器
-        - 'ready': 达到speak_freq间隔，可以处理消息
-        """
-        current_time = time.time()
-        time_since_last = current_time - self.last_response_time
-
-        if time_since_last <= self.speak_freq:
-            remaining = self.speak_freq - time_since_last
-            logger.debug(
-                f"会话 {self.session_key} 未达到speak_freq间隔 "
-                f"({time_since_last:.1f}s < {self.speak_freq}s)，hold {remaining:.1f}s"
-            )
-            self._enter_hold(self.context[-1].get("message_id") if self.context else None, remaining)
-            return "hold"
-
-        return "ready"
-
-    def _enter_hold(self, message_id: int | None, wait_time: float) -> None:
-        """进入hold状态并启动自动释放计时器"""
-        self.on_hold = True
-        self.hold_message_id = message_id
-        # 取消旧的计时器（如果有）
-        if self._hold_timer_task and not self._hold_timer_task.done():
-            self._hold_timer_task.cancel()
-        self._hold_timer_task = asyncio.create_task(self._hold_timer(wait_time))
-
-    async def _hold_timer(self, wait_time: float) -> None:
-        """hold计时器，到期后自动释放并触发回调"""
-        try:
-            await asyncio.sleep(wait_time)
-            if not self.on_hold:
-                return
-
-            logger.debug(f"会话 {self.session_key} 解除hold状态，开始处理积累的消息")
-            self.on_hold = False
-
-            if self._on_hold_release and self.context:
-                # 将积累的消息交给回调处理
-                pending_events = list(self.context)
-                await self._on_hold_release(self, pending_events)
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error(f"会话 {self.session_key} hold计时器出错: {e}", exc_info=True)
 
     def extract_event_metadata(self, event: dict[str, Any]) -> dict[str, Any]:
         """从事件中提取发送者和群组元数据
@@ -157,6 +97,12 @@ class ConversationSession:
         role_suffix = f"{meta['role']}" if meta["role"] else ""
         return f"{meta['group_display_name']} {time_str} <{meta['display_name']}({meta['user_id']}){role_suffix}> {text}\n"
 
+    def get_formatted_context(self) -> str:
+        """将 context 中的所有事件格式化为历史消息文本"""
+        if not self.context:
+            return ""
+        return "".join(self.parse_message_content(event) for event in self.context)
+
     def write_message_history(self, event: dict[str, Any]) -> None:
         """将消息写入历史记录文件"""
         try:
@@ -177,7 +123,65 @@ class ConversationSession:
         except Exception as e:
             logger.warning(f"写入消息历史失败: {e}")
 
-    def mark_responded(self) -> None:
-        """标记已响应，更新时间戳并保留最近10条上下文"""
-        self.last_response_time = time.time()
-        self.context = self.context[-10:]
+    def _get_last_recorded_timestamp(self) -> float | None:
+        """从日志文件中读取最后一条记录的时间戳（秒级 UNIX 时间）"""
+        log_dir = Path(f"logs/qqOnebot/chat_history/{self.session_id}")
+        if not log_dir.exists():
+            return None
+
+        # 按文件名降序排列找到最新的日志文件
+        log_files = sorted(log_dir.glob("*.txt"), reverse=True)
+        if not log_files:
+            return None
+
+        # 从最新日志文件的末尾找最后一行有效时间戳
+        time_pattern = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
+        for log_file in log_files:
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+            except Exception:
+                continue
+
+            for line in reversed(lines):
+                match = time_pattern.search(line)
+                if match:
+                    try:
+                        dt = datetime.strptime(match.group(), "%Y-%m-%d %H:%M:%S")
+                        return dt.timestamp()
+                    except ValueError:
+                        continue
+        return None
+
+    async def backfill_history(self, onebot) -> None:
+        """启动时从 OneBot 拉取群历史消息，补全本地日志（仅群聊会话有效）"""
+        if self.session_type not in ("group", "qq_group"):
+            return
+
+        group_id = self.session_id
+        last_ts = self._get_last_recorded_timestamp()
+
+        try:
+            history_messages = await onebot.get_group_msg_history(group_id)
+        except Exception as e:
+            logger.warning(f"拉取群 {group_id} 历史消息失败: {e}")
+            return
+
+        if not history_messages:
+            return
+
+        # 按时间升序排列
+        history_messages.sort(key=lambda m: m.get("time", 0))
+
+        new_count = 0
+        for msg in history_messages:
+            msg_ts = msg.get("time", 0)
+            # 跳过已记录的消息（时间戳 <= 日志末尾）
+            if last_ts is not None and msg_ts <= last_ts:
+                continue
+            # 写入日志
+            self.write_message_history(msg)
+            new_count += 1
+
+        if new_count:
+            logger.info(f"群 {group_id} 补全了 {new_count} 条历史消息")

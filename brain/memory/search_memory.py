@@ -840,32 +840,20 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
         logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
         return {"nodes": [], "relationships": []}
 
-def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None, memory_context=None) -> Dict[str, Any]:
+def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None) -> Dict[str, Any]:
     """
     直接从输入文本进行完整的记忆搜索流程，包含关键词提取和相关记忆查询。
-    如果提供了memory_context，会自动获取历史消息拼接到搜索文本中。
     
     Args:
-        message: 输入文本消息（当前新消息）
+        message: 输入文本消息
         save_temp_memory: 是否保存临时记忆结果
         add_keywords: 为手动输入的额外关键词列表
-        memory_context: MemoryContext实例，用于获取历史对话上下文
         
     Returns Dict[str, Any]:
         {"nodes": [...], "relationships": [...]}
     """
-    # 如果有上下文，拼接历史消息供关键词提取参考
-    if memory_context:
-        history = memory_context.get_context()
-        if history:
-            history_text = "\n".join(msg.get("content", "") for msg in history)
-            search_text = f"历史消息：\n{history_text}\n需要处理的新消息：\n{message}"
-        else:
-            search_text = message
-    else:
-        search_text = message
     
-    extract_result = extract_keyword_from_text(search_text)
+    extract_result = extract_keyword_from_text(message)
     keywords = extract_result.get("keywords", [])
     summary = extract_result.get("summary", "")
     

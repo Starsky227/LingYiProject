@@ -14,8 +14,10 @@ sys.path.insert(0, project_root)
 from brain.lingyi_core.lingyi_core import LingYiCore
 from service.qqOneBot import onebot
 from service.qqOneBot.handler import MessageHandler
+from service.qqOneBot.utils.ai_coordinator import load_prompt_file
 from system.config import config
 from onebot import OneBotClient
+from qq_tools.tool_registry import BaseRegistry
 
 
 def _get_log_level() -> tuple[int, str]:
@@ -63,12 +65,21 @@ async def main() -> None:
     logger.info("[初始化] 正在加载核心组件...")
     try:
         onebot = OneBotClient(config.qq_config.onebot_ws_url, config.qq_config.onebot_token)
-        qq_prompt_path = os.path.join(os.path.dirname(__file__), "utils", "qq_prompt.txt")
+        qq_prompt_path = os.path.join(os.path.dirname(__file__), "Prompt", "qq_prompt.txt")
         with open(qq_prompt_path, "r", encoding="utf-8") as f:
             qq_prompt = f.read().strip()
-        ai = LingYiCore(qq_prompt)
+        memory_record_prompt = load_prompt_file("qqMemoryRecord.txt", "记忆存储")
+        event_extract_prompt = load_prompt_file("qqEventExtract.txt", "事件提取")
+
+        # 初始化工具注册表，自动发现 qq_tools 下所有工具
+        tools_dir = Path(__file__).parent / "qq_tools"
+        tool_registry = BaseRegistry(base_dir=tools_dir, kind="tool")
+        tool_registry.load_items()
+        logger.info(f"[初始化] 已注册 {len(tool_registry.get_schema())} 个QQ工具")
+
+        ai = LingYiCore(qq_prompt, available_tools=tool_registry.get_schema())
         # 创建handler
-        handler = MessageHandler(onebot, ai)
+        handler = MessageHandler(onebot, ai, tool_registry=tool_registry)
 
         onebot.set_message_handler(handler.handle_message)
         logger.info("[初始化] 核心组件加载完成")

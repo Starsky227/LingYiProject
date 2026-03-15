@@ -16,14 +16,15 @@ import json
 import logging
 from dataclasses import asdict
 from datetime import datetime
-from openai import OpenAI
-from system.config import config
-from typing import List, Dict, Any, Optional
 
 # 获取项目根目录
 project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
+from openai import OpenAI
+from system.config import config
+from typing import List, Dict, Any, Optional
 
 # API 配置
 API_KEY = config.memory_api.embedding_api_key
@@ -62,11 +63,6 @@ def load_prompt_file(filename: str, description: str = "") -> str:
 MEMORY_RECORD_PROMPT = load_prompt_file("memory_record.txt", "记忆存储")
 
 
-# 添加项目根目录到模块搜索路径
-project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
 try:
     from neo4j import GraphDatabase
     from neo4j.exceptions import ServiceUnavailable, AuthError, TransientError
@@ -74,7 +70,6 @@ except ImportError:
     print("Neo4j driver not installed. Please install with: pip install neo4j")
     sys.exit(1)
 
-from system.config import config
 from system.system_checker import is_neo4j_available
 
 logger = logging.getLogger(__name__)
@@ -114,7 +109,8 @@ class KnowledgeGraphManager:
                 database=database,
                 max_connection_lifetime=30 * 60,  # 30 minutes
                 max_connection_pool_size=50,
-                connection_acquisition_timeout=30,  # 30 seconds
+                connection_acquisition_timeout=10,  # 10 seconds
+                connection_timeout=5,  # 5 seconds
             )
 
             # 测试连接
@@ -2445,6 +2441,10 @@ class KnowledgeGraphManager:
         Returns:
             {"nodes": [...], "relations": [...]} 处理结果
         """
+        if not self._ensure_connection():
+            logger.warning("Neo4j未连接，跳过记忆上传")
+            return {"nodes": [], "relations": []}
+
         nodes_list = memory_data.get("nodes", [])
         relations_list = memory_data.get("relations", [])
         

@@ -16,6 +16,7 @@ import sys
 import json
 import logging
 from typing import Dict, Any, List
+from collections import deque
 from datetime import datetime
 from openai import OpenAI
 
@@ -40,14 +41,20 @@ client = OpenAI(
 
 def load_prompt_file(filename: str, description: str = "") -> str:
     """
-    加载提示词文件的通用函数
+    加载提示词文件的通用函数，支持从任意位置导入调用。
     Args:
-        filename: 文件名（如 "memory_record.txt"）
+        filename: 相对于项目根目录的路径（如 "brain/memory/prompt/memory_record.txt"）
+                  或仅文件名（如 "memory_record.txt"，将在当前文件同级的 prompt 目录下查找）
         description: 文件描述（用于错误提示）
     Returns:
         文件内容字符串，失败时返回空字符串
     """
+    # 优先尝试基于当前文件同级的 prompt 目录
     prompt_path = os.path.join(os.path.dirname(__file__), "prompt", filename)
+    # 如果当前文件同级的 prompt 目录下找不到，回退到项目根目录
+    if not os.path.exists(prompt_path):
+        prompt_path = os.path.join(project_root, filename)
+    
     if not os.path.exists(prompt_path):
         error_msg = f"{description}提示词文件不存在: {prompt_path}"
         logger.error(error_msg)
@@ -65,34 +72,36 @@ EVENT_EXTRACT_PROMPT = load_prompt_file("event_extract.txt", "事件提取")
 logger = logging.getLogger(__name__)
 
 
-from brain.memory.memory_context import MemoryContext
-
-
 class MemoryWriter:
     """记忆写入处理器"""
     
-    def __init__(self, kg_manager=None, memory_context=None):
+    def __init__(self, kg_manager=None, memory_record_prompt: str = None, event_extract_prompt: str = None, max_event_history: int = 25):
         """
         初始化记忆写入器
         Args:
             kg_manager: KnowledgeGraphManager实例，用于实际的数据库操作
-            memory_context: MemoryContext实例，用于记录对话上下文
+            memory_record_prompt: 自定义记忆存储提示词内容，为None时使用默认prompt
+            event_extract_prompt: 自定义事件提取提示词内容，为None时使用默认prompt
+            max_event_history: 已提取事件的最大记录数
         """
         self.kg_manager = kg_manager
-        self.memory_context = memory_context
+        self.memory_record_prompt = memory_record_prompt if memory_record_prompt else MEMORY_RECORD_PROMPT
+        self.event_extract_prompt = event_extract_prompt if event_extract_prompt else EVENT_EXTRACT_PROMPT
+        self._extracted_events: deque = deque(maxlen=max_event_history)  # 记录已提取的事件，避免重复
     
     
-    def passive_event_extraction(self, recent_messages: List[Dict[str, Any]], related_memory: Dict[str, Any] = None) -> None:
+    def passive_event_extraction(self, message: str, related_memory: Dict[str, Any] = None) -> None:
         """
         阅读群消息，判断是否值得记忆，并提取需要记忆的事件信息
         
         Args:
-            recent_messages: 最近的消息列表，格式：[{"role": "user", "content": "...", "time": "..."}, ...]
+            message: 当前消息内容
+
             related_memory: 相关记忆节点，格式：{"nodes": [...], "relations": [...]}，为空时自动从temp_memory.json读取
         """
 
         # 准备输入数据
-        input_messages = [{"role": "system", "content": EVENT_EXTRACT_PROMPT}]
+        input_messages = [{"role": "system", "content": self.event_extract_prompt}]
         
         # 如果没有输入related_memory，则读取temp_memory.json文件中的相关记忆数据
         if related_memory is None:
@@ -113,17 +122,14 @@ class MemoryWriter:
             related_memory_text = "\n暂无相关记忆，可直接进行处理。"
         input_messages.append({"role": "user", "content": related_memory_text})
 
-        # 使用传入的 recent_message 参数构建消息段落
-        if recent_messages:
-            if len(recent_messages) > 1:
-                history_text = "\n".join(msg.get("content", "") for msg in recent_messages[:-1])
-                messages_paragraph = f"历史消息：\n{history_text}\n需要处理的新消息：\n{recent_messages[-1].get('content', '')}"
-            else:
-                messages_paragraph = f"历史消息：\n暂无历史消息\n需要处理的新消息：\n{recent_messages[0].get('content', '')}"
-        else:
-            messages_paragraph = "历史消息：\n暂无历史消息\n需要处理的新消息：\n暂无消息"
-        
-        input_messages.append({"role": "user", "content": messages_paragraph})
+        # 获取已提取过的event列表，避免重复提取和记录
+        if self._extracted_events:
+            existing_events = list(self._extracted_events)
+            existing_events_text = f"以下是之前已经提取过的事件（请勿重复提取）:\n{json.dumps(existing_events, ensure_ascii=False, indent=2)}"
+            input_messages.append({"role": "user", "content": existing_events_text})
+
+        # 加入待处理的文本
+        input_messages.append({"role": "user", "content": f"需要处理的新消息：\n{message}"})
 
         # 调用模型
         response = client.responses.create(
@@ -150,13 +156,13 @@ class MemoryWriter:
             else:
                 json_content = full_response.strip()
             
-            extract_events = json.loads(json_content)
+            extracted_events = json.loads(json_content)
             
             # 兼容单个dict和list格式
-            if isinstance(extract_events, dict):
-                extract_events = [extract_events]
+            if isinstance(extracted_events, dict):
+                extracted_events = [extracted_events]
             
-            logger.debug(f"解析出的事件数据: {json.dumps(extract_events, ensure_ascii=False, indent=2)}")
+            logger.debug(f"解析出的事件数据: {json.dumps(extracted_events, ensure_ascii=False, indent=2)}")
                 
         except json.JSONDecodeError as e:
             logger.error(f"无法解析模型返回的JSON格式: {e}")
@@ -167,25 +173,28 @@ class MemoryWriter:
             return
 
         # 遍历事件列表，逐个记忆并将结果并入related_memory
-        if not extract_events or not isinstance(extract_events, list):
+        if not extracted_events or not isinstance(extracted_events, list):
             logger.debug("未提取到有效事件，跳过记忆记录")
             return
         
-        for extract_event in extract_events:
-            if not isinstance(extract_event, dict):
+        for extracted_event in extracted_events:
+            if not isinstance(extracted_event, dict):
                 continue
-            if not extract_event.get('event'):
+            if not extracted_event.get('event'):
                 logger.debug("事件字段为空，跳过记忆记录")
                 continue
-            if 'description' not in extract_event:
+            if 'description' not in extracted_event:
                 logger.debug("缺少description字段，跳过记忆记录")
                 continue
             
-            logger.debug(f"提取到事件: {extract_event.get('event', '')}")
+            logger.debug(f"提取到事件: {extracted_event.get('event', '')}")
+            
+            # 记录已提取的事件，避免后续重复
+            self._extracted_events.append(extracted_event.get('event'))
             
             # 调用记忆记录功能
             result = self.passive_memory_record(
-                memory_to_record=extract_event,
+                memory_to_record=extracted_event,
                 related_memory=related_memory,
             )
             
@@ -227,7 +236,7 @@ class MemoryWriter:
 
         # 添加系统prompt和当前的记忆信息
         input_messages.extend([
-            {"role": "system", "content": MEMORY_RECORD_PROMPT},
+            {"role": "system", "content": self.memory_record_prompt},
             {"role": "user", "content": related_memory_text},
             {"role": "user", "content": str(memory_to_record)}
         ])
@@ -283,30 +292,21 @@ class MemoryWriter:
 
         # 1. 搜索相关记忆（如果未提供），搜索时使用当前上下文（不含本条消息）
         if related_memory is None:
-            related_memory = full_memory_search(message, save_temp_memory=True, memory_context=self.memory_context)
+            related_memory = full_memory_search(message, save_temp_memory=True)
         logger.debug(f"检索到 {len(related_memory.get('nodes', []))} 个相关记忆节点")
 
-        # 2. 将当前消息加入会话上下文
-        if self.memory_context:
-            self.memory_context.add_message("user", message)
-            recent_messages = self.memory_context.get_context()
-        else:
-            recent_messages = [{"role": "user", "content": message}]
-
-        # 3. 事件提取 + 记忆写入
-        self.passive_event_extraction(recent_messages, related_memory)
+        # 2. 事件提取 + 记忆写入
+        self.passive_event_extraction(message, related_memory)
 
 def main():
     """测试被动事件提取功能"""
     from brain.memory.knowledge_graph_manager import KnowledgeGraphManager
     
-    # 初始化知识图谱管理器、会话上下文和记忆写入器
+    # 初始化知识图谱管理器和记忆写入器
     kg_manager = KnowledgeGraphManager()
-    session_context = MemoryContext("test_session_001")
-    event_extractor = MemoryWriter(kg_manager, session_context)
+    event_extractor = MemoryWriter(kg_manager)
     
     print("=== 事件提取功能测试 ===")
-    print(f"会话ID: {session_context.session_id}")
     print("输入 'quit' 或 'exit' 退出测试")
     print()
     
@@ -314,41 +314,17 @@ def main():
     
     while True:
         print(f"--- 第 {round_count} 轮测试 ---")
+        print(f"当前已提取事件数: {len(event_extractor._extracted_events)}")
         
-        # 显示当前上下文状态
-        current_messages = session_context.get_context()
-        current_events = session_context.get_extracted_events()
-        print(f"当前历史消息数: {len(current_messages)}")
-        print(f"当前已提取事件数: {len(current_events)}")
-        
-        # 从用户输入获取对话记录
-        print("请输入对话记录，建议格式：[时间戳] <角色> 对话内容")
-        print("输入示例：[2026/1/7T16:01] <角色> 对话内容")
-        print("回车键结束当前轮次输入")
-        
-        event_text = []
         user_input = input("输入对话记录: ").strip()
         if user_input.lower() in ['quit', 'exit']:
             print("退出测试...")
             return
-        # 将用户输入转换为所需格式
-        event_text.append({"role": "user", "content": user_input})
-        
-        # 将消息添加到上下文中
-        for msg in event_text:
-            session_context.add_message(msg["role"], msg["content"])
         
         try:
             print("开始测试事件提取功能...")
-            
-            # 从 session_context 获取消息历史
-            recent_messages = session_context.get_context()
-            
-            # 调用被测试的函数
-            event_extractor.passive_event_extraction(recent_messages=recent_messages)
-            
+            event_extractor.passive_event_extraction(message=user_input)
             print("事件提取测试完成!")
-            
             print()
             print("=" * 50)
             print()

@@ -68,7 +68,7 @@ class SystemChecker:
             print(f"   Neo4j配置: {uri} (用户: {user}, 数据库: {database})")
             driver = None
             try:
-                driver = GraphDatabase.driver(uri, auth=(user, password))
+                driver = GraphDatabase.driver(uri, auth=(user, password), connection_timeout=5)
                 driver.verify_connectivity()
                 print(f"   ✅ Neo4j连接成功")
                 _neo4j_available = True
