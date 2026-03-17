@@ -1,5 +1,3 @@
-
-from datetime import datetime, time
 import os
 import sys
 from typing import Any, Optional
@@ -15,7 +13,7 @@ from brain.lingyi_core.lingyi_core import LingYiCore
 from system.config import config
 from utils.conversation_session import ConversationSession
 from utils.common import extract_text
-from onebot import OneBotClient, get_message_content
+from onebot import get_message_content, parse_message_time
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +92,7 @@ class AICoordinator:
             group_id = event.get("group_id", 0)
             message_type = "private" if group_id == 0 else "group"
 
-        time_str = datetime.fromtimestamp(event.get("time", time.time())).strftime("%Y-%m-%d %H:%M:%S")
+        time_str = parse_message_time(event)
 
         sender = event.get("sender", {})
         user_id = sender.get("user_id", "unknown")
@@ -110,7 +108,8 @@ class AICoordinator:
         else:
             group_display_name = ""
         
-        message = get_message_content(event.get("message", []))
+        message = extract_text(get_message_content(event))
+
         return {
             'message_type': message_type,
             'time_str': time_str,

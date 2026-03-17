@@ -134,6 +134,13 @@ class MemorySystemConfig(BaseModel):
     embedding_model: str = Field(default="text-embedding-3-small", description="向量分析使用的模型")
     memory_decay_factor: float = Field(default=0.8, ge=0.0, le=1.0, description="记忆衰减因子，范围0-1，值越小衰减越快,1不衰减")
 
+class VisionAPIConfig(BaseModel):
+    """图像分析API配置"""
+    enabled: bool = Field(default=True, description="是否启用图像分析API")
+    vision_api_key: str = Field(default="sk-placeholder-key-not-set", description="图像分析API密钥")
+    vision_base_url: str = Field(default="https://api.openai.com/v1", description="图像分析API基础URL")
+    vision_model: str = Field(default="gpt-image-1.5-2025-12-16", description="图像分析使用的模型")
+
 class APIServerConfig(BaseModel):
     """API服务器配置"""
     enabled: bool = Field(default=True, description="是否启用API服务器")
@@ -280,6 +287,7 @@ class LingYiConfig(BaseModel):
     system: SystemConfig = Field(default_factory=SystemConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     memory_api: MemorySystemConfig = Field(default_factory=MemorySystemConfig)
+    vision_api: VisionAPIConfig = Field(default_factory=VisionAPIConfig)
     api_server: APIServerConfig = Field(default_factory=APIServerConfig)
     grag: GRAGConfig = Field(default_factory=GRAGConfig)
     handoff: HandoffConfig = Field(default_factory=HandoffConfig)

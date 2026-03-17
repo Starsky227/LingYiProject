@@ -140,10 +140,10 @@ def search_nodes_by_embedding(text: str, top_k: int = 5) -> List[Dict[str, Any]]
                     query = """
                     CALL db.index.vector.queryNodes($index_name, $top_k, $query_embedding)
                     YIELD node, score
-                    WHERE score > 0.5
+                    WHERE score > $similarity_threshold
                     RETURN elementId(node) as id, node.name as name, score as similarity
                     """
-                    results = session.run(query, index_name=index_name, top_k=top_k, query_embedding=query_embedding)
+                    results = session.run(query, index_name=index_name, top_k=top_k, query_embedding=query_embedding, similarity_threshold=config.grag.similarity_threshold)
                     
                     for record in results:
                         node_id = record["id"]
@@ -641,14 +641,15 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
                                 semantic_match_query = """
                                 CALL db.index.vector.queryNodes($index_name, 5, $keyword_embedding)
                                 YIELD node, score
-                                WHERE score > 0.7
+                                WHERE score > $similarity_threshold
                                 RETURN elementId(node) as id, labels(node) as labels, 
                                        properties(node) as properties, score as similarity
                                 """
                                 idx_results = session.run(
                                     semantic_match_query, 
                                     index_name=index_name, 
-                                    keyword_embedding=keyword_embedding
+                                    keyword_embedding=keyword_embedding,
+                                    similarity_threshold=config.grag.similarity_threshold,
                                 )
                                 semantic_matches_all.extend(list(idx_results))
                             except Exception as idx_e:

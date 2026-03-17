@@ -4,7 +4,7 @@ import asyncio
 import logging
 import sys
 import os
-from logging.handlers import RotatingFileHandler
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 # 添加项目根目录到模块搜索路径
@@ -12,7 +12,6 @@ project_root = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".
 sys.path.insert(0, project_root)
 
 from brain.lingyi_core.lingyi_core import LingYiCore
-from service.qqOneBot import onebot
 from service.qqOneBot.handler import MessageHandler
 from service.qqOneBot.utils.ai_coordinator import load_prompt_file
 from system.config import config
@@ -28,23 +27,23 @@ def _get_log_level() -> tuple[int, str]:
 
 
 def _init_file_handler(root_logger: logging.Logger) -> None:
-    """初始化文件轮转日志处理器"""
-    log_file_path = "logs/onebot_logs/bot.log"
-    log_max_size = 10 *1024 * 1024 # 10 MB
-    log_backup_count = 5
-
-    log_dir = Path(log_file_path).parent
+    """初始化按日期轮转的文件日志处理器，保存到 logs/qqOnebot/logger/ 目录"""
+    log_dir = Path("logs/qqOnebot/logger")
     log_dir.mkdir(parents=True, exist_ok=True)
 
+    log_file_path = log_dir / "bot.log"
+
     file_log_format = (
-        "%(asctime)s [%(levelname)s] [%(request_id)s] %(name)s: %(message)s"
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
     )
-    handler = RotatingFileHandler(
+    handler = TimedRotatingFileHandler(
         log_file_path,
-        maxBytes=log_max_size,
-        backupCount=log_backup_count,
+        when="midnight",
+        interval=1,
+        backupCount=15,
         encoding="utf-8",
     )
+    handler.suffix = "%Y-%m-%d.log"
     handler.setFormatter(logging.Formatter(file_log_format))
     root_logger.addHandler(handler)
 
@@ -68,14 +67,20 @@ async def main() -> None:
         qq_prompt_path = os.path.join(os.path.dirname(__file__), "Prompt", "qq_prompt.txt")
         with open(qq_prompt_path, "r", encoding="utf-8") as f:
             qq_prompt = f.read().strip()
-        memory_record_prompt = load_prompt_file("qqMemoryRecord.txt", "记忆存储")
-        event_extract_prompt = load_prompt_file("qqEventExtract.txt", "事件提取")
 
         # 初始化工具注册表，自动发现 qq_tools 下所有工具
         tools_dir = Path(__file__).parent / "qq_tools"
         tool_registry = BaseRegistry(base_dir=tools_dir, kind="tool")
         tool_registry.load_items()
         logger.info(f"[初始化] 已注册 {len(tool_registry.get_schema())} 个QQ工具")
+
+        # 注册 agentserver 下的 agent 作为额外工具（如 file_analysis_agent）
+        try:
+            from agentserver.agent_registry import register_agents_to_registry
+            agent_count = register_agents_to_registry(tool_registry)
+            logger.info(f"[初始化] 已注册 {agent_count} 个Agent工具")
+        except Exception as e:
+            logger.warning(f"[初始化] Agent工具注册失败（不影响基本功能）: {e}")
 
         ai = LingYiCore(qq_prompt, available_tools=tool_registry.get_schema())
         # 创建handler
@@ -117,6 +122,10 @@ def run() -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger().setLevel(level)
+
+    # 初始化文件日志（按日期轮转，保留15天）
+    _init_file_handler(logging.getLogger())
+
     asyncio.run(main())
 
 

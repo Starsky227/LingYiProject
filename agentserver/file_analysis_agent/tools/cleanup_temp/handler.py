@@ -1,0 +1,37 @@
+from pathlib import Path
+from typing import Any, Dict
+import logging
+import shutil
+
+logger = logging.getLogger(__name__)
+
+
+async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """清理系统生成的临时文件和缓存"""
+    task_uuid: str = args.get("task_uuid", "")
+
+    _project_root = Path(__file__).resolve().parents[4]
+    cache_dir = _project_root / "cache" / "downloads"
+
+    if not cache_dir.exists():
+        return "下载缓存目录不存在"
+
+    try:
+        if task_uuid:
+            target_dir = cache_dir / task_uuid
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+                return f"已清理下载缓存目录: {target_dir}"
+            else:
+                return f"下载缓存目录不存在: {target_dir}"
+        else:
+            count = 0
+            for item in cache_dir.iterdir():
+                if item.is_dir():
+                    shutil.rmtree(item)
+                    count += 1
+            return f"已清理 {count} 个下载缓存目录"
+
+    except Exception as e:
+        logger.exception(f"清理下载缓存目录失败: {e}")
+        return "清理下载缓存目录失败，请稍后重试"

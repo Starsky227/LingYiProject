@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-NagaAgent独立服务 - 基于博弈论的电脑控制智能体
-提供意图识别和电脑控制任务执行功能
+AgentServer 服务 — Agent 管理、任务调度与工具包 API
+
+提供 agent 发现、任务记忆管理、文件编辑工具包等 HTTP 端点。
+Agent 本身由 LingYi_core 通过 tool_executor 直接调用，
+此服务器负责管理和监控。
 """
 
 import asyncio
@@ -16,190 +19,58 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from system.config import config
-# from system.background_analyzer import get_background_analyzer
-from agentserver.agent_computer_control import ComputerControlAgent
+from agentserver.agent_registry import discover_agents
 from agentserver.task_scheduler import get_task_scheduler, TaskStep
 from agentserver.toolkit_manager import toolkit_manager
 
 # 配置日志
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI应用生命周期"""
-    # startup
+    """FastAPI 应用生命周期"""
     try:
-        # 初始化意图分析器
-        # Modules.analyzer = get_background_analyzer()
-        # 初始化电脑控制智能体
-        Modules.computer_control = ComputerControlAgent()
         # 初始化任务调度器
         Modules.task_scheduler = get_task_scheduler()
-        
-        # 设置LLM配置用于智能压缩
-        if hasattr(config, 'api') and config.api:
+
+        # 设置 LLM 配置用于智能压缩
+        if hasattr(config, "api") and config.api:
             llm_config = {
                 "model": config.api.model,
                 "api_key": config.api.api_key,
-                "api_base": config.api.base_url
+                "api_base": config.api.base_url,
             }
             Modules.task_scheduler.set_llm_config(llm_config)
-        
-        logger.info("NagaAgent电脑控制服务初始化完成")
+
+        # 发现可用 agent
+        Modules.available_agents = discover_agents()
+        agent_names = [a["name"] for a in Modules.available_agents]
+        logger.info(f"AgentServer 初始化完成，发现 {len(agent_names)} 个 agent: {agent_names}")
     except Exception as e:
         logger.error(f"服务初始化失败: {e}")
         raise
 
-    # 运行期
     yield
 
-    # shutdown
     try:
-        logger.info("NagaAgent电脑控制服务已关闭")
+        logger.info("AgentServer 服务已关闭")
     except Exception as e:
         logger.error(f"服务关闭失败: {e}")
 
-app = FastAPI(title="NagaAgent Computer Control Server", version="1.0.0", lifespan=lifespan)
+
+app = FastAPI(title="AgentServer", version="2.0.0", lifespan=lifespan)
+
 
 class Modules:
     """全局模块管理器"""
-    analyzer = None
-    computer_control = None
     task_scheduler = None
+    available_agents: List[Dict[str, Any]] = []
 
 def _now_iso() -> str:
     """获取当前时间ISO格式"""
     return datetime.now().isoformat()
 
-async def _process_computer_control_task(instruction: str, session_id: Optional[str] = None) -> Dict[str, Any]:
-    """处理电脑控制任务"""
-    try:
-        logger.info(f"开始处理电脑控制任务: {instruction}")
-        
-        # 直接调用电脑控制智能体
-        result = await Modules.computer_control.handle_handoff({
-            "action": "automate_task",
-            "target": instruction,
-            "parameters": {}
-        })
-        
-        logger.info(f"电脑控制任务完成: {instruction}")
-        return {
-            "success": True,
-            "result": result,
-            "task_type": "computer_control",
-            "instruction": instruction
-        }
-        
-    except Exception as e:
-        logger.error(f"电脑控制任务失败: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "task_type": "computer_control",
-            "instruction": instruction
-        }
-
-async def _execute_agent_tasks_async(agent_calls: List[Dict[str, Any]], session_id: str, 
-                                   analysis_session_id: str, request_id: str, callback_url: Optional[str] = None):
-    """异步执行Agent任务 - 应用与MCP服务器相同的会话管理逻辑"""
-    try:
-        logger.info(f"[异步执行] 开始执行 {len(agent_calls)} 个Agent任务")
-        
-        # 处理每个Agent任务
-        results = []
-        for i, agent_call in enumerate(agent_calls):
-            try:
-                instruction = agent_call.get("instruction", "")
-                tool_name = agent_call.get("tool_name", "未知工具")
-                service_name = agent_call.get("service_name", "未知服务")
-                
-                logger.info(f"[异步执行] 执行任务 {i+1}/{len(agent_calls)}: {tool_name} - {instruction}")
-                
-                # 添加任务步骤到调度器
-                await Modules.task_scheduler.add_task_step(request_id, TaskStep(
-                    step_id=f"step_{i+1}",
-                    task_id=request_id,
-                    purpose=f"执行Agent任务: {tool_name}",
-                    content=instruction,
-                    output="",
-                    analysis=None,
-                    success=True
-                ))
-                
-                # 执行电脑控制任务
-                result = await _process_computer_control_task(instruction, session_id)
-                results.append({
-                    "agent_call": agent_call,
-                    "result": result,
-                    "step_index": i
-                })
-                
-                # 更新任务步骤结果
-                await Modules.task_scheduler.add_task_step(request_id, TaskStep(
-                    step_id=f"step_{i+1}_result",
-                    task_id=request_id,
-                    purpose=f"任务结果: {tool_name}",
-                    content=f"执行结果: {result.get('success', False)}",
-                    output=str(result.get('result', '')),
-                    analysis={"analysis": f"任务类型: {result.get('task_type', 'unknown')}, 工具: {tool_name}, 服务: {service_name}"},
-                    success=result.get('success', False),
-                    error=result.get('error')
-                ))
-                
-                logger.info(f"[异步执行] 任务 {i+1} 完成: {result.get('success', False)}")
-                
-            except Exception as e:
-                logger.error(f"[异步执行] 任务 {i+1} 执行失败: {e}")
-                results.append({
-                    "agent_call": agent_call,
-                    "result": {"success": False, "error": str(e)},
-                    "step_index": i
-                })
-        
-        # 发送回调通知（如果提供了回调URL）
-        if callback_url:
-            await _send_callback_notification(callback_url, request_id, session_id, analysis_session_id, results)
-        
-        logger.info(f"[异步执行] 所有Agent任务执行完成: {len(results)} 个任务")
-        
-    except Exception as e:
-        logger.error(f"[异步执行] Agent任务执行失败: {e}")
-        # 发送错误回调
-        if callback_url:
-            await _send_callback_notification(callback_url, request_id, session_id, analysis_session_id, [], str(e))
-
-async def _send_callback_notification(callback_url: str, request_id: str, session_id: str, 
-                                    analysis_session_id: str, results: List[Dict[str, Any]], error: Optional[str] = None):
-    """发送回调通知 - 应用与MCP服务器相同的回调机制"""
-    try:
-        import httpx
-        
-        callback_payload = {
-            "request_id": request_id,
-            "session_id": session_id,
-            "analysis_session_id": analysis_session_id,
-            "success": error is None,
-            "error": error,
-            "results": results,
-            "completed_at": _now_iso()
-        }
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(callback_url, json=callback_payload)
-            if response.status_code == 200:
-                logger.info(f"[回调通知] Agent任务结果回调成功: {request_id}")
-            else:
-                logger.error(f"[回调通知] Agent任务结果回调失败: {response.status_code}")
-                
-    except Exception as e:
-        logger.error(f"[回调通知] 发送Agent任务回调失败: {e}")
 
 # ============ API端点 ============
 
@@ -209,167 +80,27 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": _now_iso(),
-        "modules": {
-            "analyzer": Modules.analyzer is not None,
-            "computer_control": Modules.computer_control is not None
-        }
+        "agents": [a["name"] for a in Modules.available_agents],
+        "agent_count": len(Modules.available_agents),
     }
 
-@app.post("/schedule")
-async def schedule_agent_tasks(payload: Dict[str, Any]):
-    """统一的任务调度端点 - 应用与MCP服务器相同的会话管理逻辑"""
-    if not Modules.computer_control or not Modules.task_scheduler:
-        raise HTTPException(503, "电脑控制智能体或任务调度器未就绪")
-    
-    # 提取新的请求格式参数
-    query = payload.get("query", "")
-    agent_calls = payload.get("agent_calls", [])
-    session_id = payload.get("session_id")
-    analysis_session_id = payload.get("analysis_session_id")
-    request_id = payload.get("request_id", str(uuid.uuid4()))
-    callback_url = payload.get("callback_url")
-    
-    try:
-        logger.info(f"[统一调度] 接收Agent任务调度请求: {query}")
-        logger.info(f"[统一调度] 会话ID: {session_id}, 分析会话ID: {analysis_session_id}, 请求ID: {request_id}")
-        
-        if not agent_calls:
-            return {
-                "success": True,
-                "status": "no_tasks",
-                "message": "未发现可执行的Agent任务",
-                "task_id": request_id,
-                "accepted_at": _now_iso(),
-                "session_id": session_id,
-                "analysis_session_id": analysis_session_id
-            }
 
-        logger.info(f"[统一调度] 会话 {session_id} 发现 {len(agent_calls)} 个Agent任务")
-
-        # 创建任务调度器任务
-        task_id = await Modules.task_scheduler.create_task(
-            task_id=request_id,
-            purpose=f"执行Agent任务: {query}",
-            session_id=session_id,
-            analysis_session_id=analysis_session_id
-        )
-
-        # 异步执行任务（不阻塞响应）
-        asyncio.create_task(_execute_agent_tasks_async(
-            agent_calls, session_id, analysis_session_id, request_id, callback_url
-        ))
-
-        return {
-            "success": True,
-            "status": "scheduled",
-            "task_id": request_id,
-            "message": f"已调度 {len(agent_calls)} 个Agent任务",
-            "accepted_at": _now_iso(),
-            "session_id": session_id,
-            "analysis_session_id": analysis_session_id
-        }
-        
-    except Exception as e:
-        logger.error(f"[统一调度] Agent任务调度失败: {e}")
-        raise HTTPException(500, f"调度失败: {e}")
-
-@app.post("/analyze_and_execute")
-async def analyze_and_execute(payload: Dict[str, Any]):
-    """意图分析和电脑控制任务执行 - 保持向后兼容"""
-    if not Modules.analyzer or not Modules.computer_control:
-        raise HTTPException(503, "分析器或电脑控制智能体未就绪")
-    
-    messages = (payload or {}).get("messages", [])
-    if not isinstance(messages, list):
-        raise HTTPException(400, "messages必须是{role, content}格式的列表")
-    
-    session_id = (payload or {}).get("session_id")
-    
-    try:
-        # 直接执行电脑控制任务，不进行意图分析
-        # 意图分析已在API服务器中完成，这里只负责执行具体的Agent任务
-
-        # 从消息中提取任务指令
-        tasks = []
-        for msg in messages:
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
-                if "执行Agent任务:" in content:
-                    # 提取任务指令
-                    instruction = content.replace("执行Agent任务:", "").strip()
-                    tasks.append({
-                        "instruction": instruction
-                    })
-
-        if not tasks:
-            return {
-                "success": True,
-                "status": "no_tasks",
-                "message": "未发现可执行的电脑控制任务",
-                "accepted_at": _now_iso(),
-                "session_id": session_id
-            }
-
-        logger.info(f"会话 {session_id} 发现 {len(tasks)} 个电脑控制任务")
-
-        # 处理每个任务
-        results = []
-        for task_instruction in tasks:
-            result = await _process_computer_control_task(task_instruction, session_id)
-            results.append(result)
-
-        return {
-            "success": True,
-            "status": "completed",
-            "tasks_processed": len(tasks),
-            "results": results,
-            "accepted_at": _now_iso(),
-            "session_id": session_id
-        }
-        
-    except Exception as e:
-        logger.error(f"意图分析和任务执行失败: {e}")
-        raise HTTPException(500, f"处理失败: {e}")
-
-@app.get("/computer_control/availability")
-async def get_computer_control_availability():
-    """获取电脑控制可用性"""
-    try:
-        if not Modules.computer_control:
-            return {"ready": False, "reasons": ["电脑控制智能体未初始化"]}
-        
-        # 检查电脑控制能力
-        capabilities = Modules.computer_control.get_capabilities()
-        return {
-            "ready": capabilities.get("enabled", False),
-            "capabilities": capabilities,
-            "timestamp": _now_iso()
-        }
-    except Exception as e:
-        logger.error(f"检查电脑控制可用性失败: {e}")
-        return {"ready": False, "reasons": [f"检查失败: {e}"]}
-
-@app.post("/computer_control/execute")
-async def execute_computer_control_task(payload: Dict[str, Any]):
-    """直接执行电脑控制任务"""
-    if not Modules.computer_control:
-        raise HTTPException(503, "电脑控制智能体未就绪")
-    
-    instruction = payload.get("instruction", "")
-    if not instruction:
-        raise HTTPException(400, "instruction不能为空")
-    
-    try:
-        result = await _process_computer_control_task(instruction)
-        return {
-            "success": result.get("success", False),
-            "result": result.get("result"),
-            "error": result.get("error"),
-            "instruction": instruction
-        }
-    except Exception as e:
-        logger.error(f"执行电脑控制任务失败: {e}")
-        raise HTTPException(500, f"执行失败: {e}")
+@app.get("/agents")
+async def list_agents():
+    """列出所有已发现的 agent"""
+    agents_info = []
+    for a in Modules.available_agents:
+        schema = a.get("schema", {}).get("function", {})
+        agents_info.append({
+            "name": a["name"],
+            "description": schema.get("description", ""),
+            "parameters": schema.get("parameters", {}),
+        })
+    return {
+        "success": True,
+        "agents": agents_info,
+        "count": len(agents_info),
+    }
 
 # ============ 任务记忆管理API ============
 

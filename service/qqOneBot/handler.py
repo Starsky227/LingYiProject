@@ -5,7 +5,7 @@ from typing import Any
 
 from brain.lingyi_core.lingyi_core import LingYiCore
 from system.config import config
-from onebot import OneBotClient, get_message_content, get_message_sender_id
+from onebot import OneBotClient, get_message_sender_id
 from utils.conversation_session import ConversationSession
 from utils.ai_coordinator import AICoordinator
 from utils.logging import log_debug_json
@@ -53,6 +53,8 @@ class MessageHandler:
         'group_id': 485228134, 
         'group_name': '麻辣子（重启中）'}
         """
+        print(event)
+        #return
 
         # 记录logger
         if logger.isEnabledFor(logging.DEBUG):

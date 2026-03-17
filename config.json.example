@@ -1,30 +1,36 @@
 {
     "system":{
-        "version": "0.3.3",
-        "ai_name": "铃依",
-        "stream_response": true,
-        "debug": true,
-        "log_level": "INFO"
+        "version": "0.5.3", // 版本号
+        "ai_name": "铃依", // AI名称
+        "user_name": "星空", // 用户名
+        "stream_response": true, // 是否启用流式响应
+        "debug": false, // 是否启用调试模式
+        "log_level": "INFO" // 日志级别
     },
     "api":{
-        "api_key": "ollama", // 你的sdk，必填！
-        "base_url": "http://localhost:11434/v1", // 模型的url，必填！
-        "model": "gemma3:4b", // 你用的模型型号，必填！
-        "temperature": 0.7,
-        "max_tokens": 2048,
-        "max_history_rounds": 10,
-        "max_history_days": 3
-        "memory_record_api_key": "sk-AAAA", // 不填默认为主模型
-        "memory_record_base_url": "https://api.openai.com/v1", // 不填默认为主模型
-        "memory_record_model": "gpt-5-nano-2025-08-07" // 不填默认为主模型
+        "api_key": "sk-your-sdk", // 你的sdk，必填！
+        "base_url": "api-url", // API基础URL
+        "model": "your-model-name", // 使用的模型名称
+        "temperature": 0.7, // 温度参数
+        "max_tokens": 2048, // 最大token数
+        "max_history_rounds": 10, // 最大历史轮数
+        "max_history_days": 3, // 加载历史上下文的天数
+        "applied_proxy": false // 是否应用代理
     },
-    "sub_system_api" :{
-        "memory_record_api_key": "sk-AAAA", // 不填默认为主模型
-        "memory_record_base_url": "https://api.openai.com/v1", // 不填默认为主模型
-        "memory_record_model": "gpt-5-nano-2025-08-07" // 不填默认为主模型
-        "embedding_api_key": "sk-AAAA", // 不填默认为主模型
-        "embedding_base_url": "https://api.openai.com/v1", // 不填默认为主模型
-        "embedding_model": "text-embedding-3-small" // 必须为embedding模型
+    "memory_api" :{ // 记忆系统配置
+        "memory_record_api_key": "sk-your-sdk",
+        "memory_record_base_url": "https://api.openai.com/v1",
+        "memory_record_model": "gpt-5-nano-2025-08-07", // 图谱构建模型
+        "embedding_api_key": "Ollama",
+        "embedding_base_url": "http://localhost:11434/v1",
+        "embedding_model": "nomic-embed-text", // 向量分析模型
+        "memory_decay_factor": 0.8 // 记忆衰减因子，范围0-1，值越小衰减越快,1不衰减
+    },
+    "vision_api": { // 图像分析API配置
+        "enabled": true,
+        "vision_api_key": "sk-your-sdk",
+        "vision_base_url": "https://api.openai.com/v1",
+        "vision_model": "gpt-image-1.5-2025-12-16",
     },
     "api_server": {
         "enabled": true,

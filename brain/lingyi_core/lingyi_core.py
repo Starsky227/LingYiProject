@@ -118,6 +118,9 @@ class LingYiCore:
                 if tools_param:
                     create_kwargs["tools"] = tools_param
 
+                # 记录输入
+                print(f"模型输入：\n{input_items}\n")
+
                 response = client.responses.create(**create_kwargs)
                 output_messages, tool_calls = self._parse_response(response)
             except Exception as e:
