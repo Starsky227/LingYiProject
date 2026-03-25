@@ -212,12 +212,24 @@ class BaseRegistry:
             logger.error(f"从 {item_dir} 加载失败: {e}")
 
     def _load_config(self, config_path: Path) -> Optional[Dict[str, Any]]:
-        """加载并验证配置文件"""
+        """加载并验证配置文件（支持扁平格式和嵌套格式）"""
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
-            if not isinstance(config, dict) or "name" not in config.get("function", {}):
-                logger.error(f"配置无效 {config_path.parent}: 缺少 function.name")
+            if not isinstance(config, dict):
+                logger.error(f"配置无效 {config_path.parent}: 不是有效的 JSON 对象")
+                return None
+            # 支持嵌套格式 {"type":"function","function":{"name":...}} → 展开为扁平格式
+            if "function" in config and isinstance(config["function"], dict):
+                func = config["function"]
+                config = {
+                    "type": config.get("type", "function"),
+                    "name": func.get("name", ""),
+                    "description": func.get("description", ""),
+                    "parameters": func.get("parameters", {}),
+                }
+            if "name" not in config:
+                logger.error(f"配置无效 {config_path.parent}: 缺少 name")
                 return None
             return dict(config)
         except Exception as e:
@@ -228,14 +240,14 @@ class BaseRegistry:
         self, item_dir: Path, config: Dict[str, Any], handler_path: Path, prefix: str
     ) -> SkillItem:
         """构建 SkillItem 对象"""
-        original_name = config["function"]["name"]
+        original_name = config["name"]
         full_name = f"{prefix}{original_name}"
 
         if prefix:
             import copy
 
             config = copy.deepcopy(config)
-            config["function"]["name"] = full_name
+            config["name"] = full_name
 
         module_name = self._build_module_name(item_dir)
         return SkillItem(

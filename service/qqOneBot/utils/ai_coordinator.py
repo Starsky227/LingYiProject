@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 from typing import Any, Optional
@@ -16,6 +17,7 @@ from utils.common import extract_text
 from onebot import get_message_content, parse_message_time
 
 logger = logging.getLogger(__name__)
+
 
 def load_prompt_file(filename: str, description: str = "") -> str:
     """
@@ -50,37 +52,19 @@ EVENT_EXTRACT_PROMPT = load_prompt_file("qqEventExtract.txt", "事件提取")
 
 
 class AICoordinator:
-    """AI 协调器，处理 AI 回复逻辑、Prompt 构建和队列管理"""
+    """“AI 协调器 — 将 QQ 消息推送到 lingyi_core 的 InputBuffer，由 lingyi_core 统一处理定时收集与模型/工具调用"""
 
     def __init__(
         self,
         ai: LingYiCore,
         onebot: Any,  # OneBotClient
-        tool_registry: Any = None,
     ) -> None:
         self.config = config
         self.ai = ai
         self.onebot = onebot
-        self.tool_registry = tool_registry
+        self._session_contexts: dict[str, dict[str, Any]] = {}  # session_key -> {event, session}
+        self._processing_tasks: dict[str, asyncio.Task] = {}  # session_key -> 运行中的 process_message task
 
-    def _make_tool_executor(self, session_key: str, event: dict[str, Any], session: Any = None):
-        """创建一个携带上下文的工具执行器闭包"""
-        if not self.tool_registry:
-            return None
-        registry = self.tool_registry
-        onebot = self.onebot
-
-        async def tool_executor(name: str, args: dict[str, Any]) -> str:
-            context = {
-                "onebot": onebot,
-                "session": session,
-                "session_key": session_key,
-                "event": event,
-            }
-            return await registry.execute(name, args, context)
-
-        return tool_executor
-    
     def extract_event_metadata(self, event: dict[str, Any]) -> dict[str, Any]:
         """从事件中提取发送者和群组元数据
         
@@ -116,6 +100,7 @@ class AICoordinator:
             'user_id': user_id,
             'display_name': display_name,
             'role': role,
+            'group_id': group_id,
             'group_display_name': group_display_name,
             'message': message,
         }
@@ -123,50 +108,84 @@ class AICoordinator:
     async def handle_poke(self, session_key: str, event: dict[str, Any], sender_name: str, session: ConversationSession = None) -> None:
         """处理拍一拍事件"""
         meta = self.extract_event_metadata(event)
-        history_context = session.get_formatted_context() if session else ""
-        tool_executor = self._make_tool_executor(session_key, event, session)
-        # 组装关键词列表：包含发送者和群组信息
         if meta['message_type'] == "group":
-            key_word_list = [
-                str(meta['user_id']),
-                meta['display_name'],
-                meta['group_display_name'],
-            ]
-            message_content = f"{meta['group_display_name']} {meta['time_str']} {sender_name} 拍了拍你"
-        elif meta['message_type'] == "private":
-            key_word_list = [
-                str(meta['user_id']),
-                meta['display_name'],
-            ]
-            message_content = f"{meta['time_str']} {sender_name} 拍了拍你"
-        await self.ai.process_qq_message(message_content, session_key, key_word_list, history_context=history_context, tool_executor=tool_executor)
+            key_word_list = [str(meta['user_id']), meta['display_name'], meta['group_display_name']]
+            message_content = f"{meta['time_str']} {sender_name}({meta['user_id']}) 拍了拍你，建议查看上下文分析对方的需求。"
+            caller_message = f"来自QQ群{meta['group_display_name']}的消息。"
+        else:
+            key_word_list = [str(meta['user_id']), meta['display_name']]
+            message_content = f"{meta['time_str']} {sender_name}({meta['user_id']}) 拍了拍你，建议查看上下文分析对方的需求。"
+            caller_message = f"来自QQ用户{sender_name}({meta['user_id']})的私聊消息。"
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
 
     async def handle_group_message(self, session_key: str, event: dict[str, Any], at_bot: bool, session: ConversationSession = None) -> None:
         """处理群消息"""
         meta = self.extract_event_metadata(event)
-        history_context = session.get_formatted_context() if session else ""
-        tool_executor = self._make_tool_executor(session_key, event, session)
-        # 组装关键词列表：包含发送者和群组信息
-        key_word_list = [
-            str(meta['user_id']),
-            meta['display_name'],
-            meta['group_display_name'],
-        ]
-        message_content = f"{meta['group_display_name']} {meta['time_str']} <{meta['display_name']}({meta['user_id']}){meta['role']}> {meta['message']}\n"
+        key_word_list = [str(meta['user_id']), meta['display_name'], meta['group_display_name']]
         if at_bot:
-            await self.ai.process_qq_message(message_content, session_key, key_word_list, "[群聊消息] 有人 @ 你，建议进行回复", history_context=history_context, tool_executor=tool_executor)
+            message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']}){meta['role']}> !!有人@你，建议对其进行回复!! {meta['message']}\n"
+            caller_message = f"来自QQ群{meta['group_display_name']}的消息。"
         else:
-            await self.ai.process_qq_message(message_content, session_key, key_word_list, "[群聊消息] 如非直接指向你的消息，建议保持静默", history_context=history_context, tool_executor=tool_executor)
-    
+            message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']}){meta['role']}> {meta['message']}\n"
+            caller_message = f"来自QQ群{meta['group_display_name']}的消息。"
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
+
     async def handle_private_message(self, session_key: str, event: dict[str, Any], session: ConversationSession = None) -> None:
         """处理私聊消息"""
         meta = self.extract_event_metadata(event)
-        history_context = session.get_formatted_context() if session else ""
-        tool_executor = self._make_tool_executor(session_key, event, session)
-        # 组装关键词列表：包含发送者信息
-        key_word_list = [
-            str(meta['user_id']),
-            meta['display_name'],
-        ]
+        key_word_list = [str(meta['user_id']), meta['display_name']]
         message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']})> {meta['message']}\n"
-        await self.ai.process_qq_message(message_content, session_key, key_word_list, "[私聊消息] 用户专门向你发送的消息，建议进行回复", history_context=history_context, tool_executor=tool_executor)
+        caller_message = f"来自QQ用户{meta['display_name']}({meta['user_id']})的私聊消息，建议对其进行回复"
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
+
+    # ---- 消息推送与处理触发 ----
+
+    async def _push_and_trigger(
+        self,
+        session_key: str,
+        event: dict[str, Any],
+        session: Any,
+        message_content: str,
+        caller_message: str,
+        key_word_list: list[str],
+    ) -> None:
+        """将消息推送到 input_buffer 并确保处理流程已启动"""
+        session_state = self.ai.get_session_state(session_key)
+        # 添加到会话上下文（历史记录）
+        session_state.conversation_context.add_message(message_content)
+        # 推入 input_buffer，由 lingyi_core 统一收集和处理
+        await session_state.input_buffer.put(message_content, caller_message, key_word_list)
+        # 更新 tool_context，供工具执行时动态引用最新的 QQ 上下文
+        session_state.tool_context.update({
+            "onebot": self.onebot,
+            "session": session,
+            "event": event,
+            "conversation_context": session_state.conversation_context,
+        })
+        # 维护内部 event/session 引用
+        self._session_contexts[session_key] = {"event": event, "session": session}
+        # 触发处理（如果当前没有运行中的处理任务）
+        self._ensure_processing(session_key)
+
+    def _ensure_processing(self, session_key: str) -> None:
+        """确保该 session 有运行中的 process_message，否则启动一个"""
+        task = self._processing_tasks.get(session_key)
+        if task and not task.done():
+            return  # 已在处理中，新消息会通过 buffer 被 drain
+        task = asyncio.ensure_future(self._run_processing(session_key))
+        self._processing_tasks[session_key] = task
+
+    async def _run_processing(self, session_key: str) -> None:
+        """运行 process_message 并在结束后检查是否有缓冲消息遗留"""
+        try:
+            await self.ai.process_message(
+                session_key=session_key,
+            )
+        except Exception as e:
+            logger.error(f"[AICoordinator] session={session_key} 处理消息异常: {e}")
+        finally:
+            self._processing_tasks.pop(session_key, None)
+            # 检查是否有在结束瞬间到达的新消息
+            session_state = self.ai.get_session_state(session_key)
+            if session_state.input_buffer.has_pending():
+                self._ensure_processing(session_key)

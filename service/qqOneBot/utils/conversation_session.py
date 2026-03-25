@@ -19,39 +19,6 @@ class ConversationSession:
         self.session_type = session_type
         self.session_id = session_id
         self.session_key = f"{session_type}_{session_id}"
-        self.context: list[dict[str, Any]] = []
-
-    def add_message(self, event: dict[str, Any]) -> None:
-        """
-        event格式: {
-        'self_id': 3750603665, 
-        'user_id': 2319546113, 
-        'time': 1772664937, 
-        'message_id': 319397807, 
-        'message_seq': 319397807, 
-        'real_id': 319397807, 
-        'real_seq': '374286', 
-        'message_type': 'group', 
-        'sender': {
-            'user_id': 2319546113, 
-            'nickname': '星空逐夜', 
-            'card': '奥莉维娅（星空', 'role': 'admin'}, 
-        'raw_message': '看看我能不能收到什么了', 
-        'font': 14, 'sub_type': 'normal', 
-        'message': [{'type': 'text', 'data': {'text': '看看我能不能收到什么了'}}], 
-        'message_format': 'array', 
-        'post_type': 'message', 
-        'group_id': 485228134, 
-        'group_name': '麻辣子（重启中）'}
-        
-        添加消息到上下文，最多保留15条
-        """
-        self.context.append(event)
-        if len(self.context) > 15:
-            self.context = self.context[-15:]
-        
-        # 写入历史记录
-        self.write_message_history(event)
 
     def extract_event_metadata(self, event: dict[str, Any]) -> dict[str, Any]:
         """从事件中提取发送者和群组元数据
@@ -97,11 +64,29 @@ class ConversationSession:
         role_suffix = f"{meta['role']}" if meta["role"] else ""
         return f"{meta['group_display_name']} {time_str} <{meta['display_name']}({meta['user_id']}){role_suffix}> {text}\n"
 
-    def get_formatted_context(self) -> str:
-        """将 context 中的所有事件格式化为历史消息文本"""
-        if not self.context:
-            return ""
-        return "".join(self.parse_message_content(event) for event in self.context)
+    def read_recent_history(self, n: int = 15) -> list[str]:
+        """从本地日志文件读取最近 n 条格式化消息行（用于私聊等无法通过 API 获取历史的场景）"""
+        log_dir = Path(f"logs/qqOnebot/chat_history/{self.session_id}")
+        if not log_dir.exists():
+            return []
+
+        log_files = sorted(log_dir.glob("*.txt"), reverse=True)
+        if not log_files:
+            return []
+
+        lines: list[str] = []
+        for log_file in log_files:
+            try:
+                with open(log_file, "r", encoding="utf-8") as f:
+                    file_lines = [l if l.endswith('\n') else l + '\n'
+                                  for l in f.readlines() if l.strip()]
+                lines = file_lines + lines
+                if len(lines) >= n:
+                    break
+            except Exception:
+                continue
+
+        return lines[-n:]
 
     def write_message_history(self, event: dict[str, Any]) -> None:
         """将消息写入历史记录文件"""

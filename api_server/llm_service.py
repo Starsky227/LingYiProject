@@ -24,7 +24,6 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from brain.memory.knowledge_graph_manager import relevant_memories_by_keywords
-from brain.memory.quintuples_extractor import record_messages_to_memories
 from mcpserver.mcp_manager import get_mcp_manager
 from mcpserver.mcp_registry import get_all_services_info, get_service_statistics
 from system.config import config, is_neo4j_available
@@ -36,7 +35,7 @@ API_KEY = config.api.api_key
 API_URL = config.api.base_url
 MODEL = config.api.model
 AI_NAME = config.system.ai_name
-USERNAME = config.ui.username
+USERNAME = config.system.user_name
 DEBUG_MODE = config.system.debug
 
 # 初始化 OpenAI 客户端

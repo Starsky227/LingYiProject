@@ -40,10 +40,9 @@ async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
         return "错误：文件源不能为空"
 
     task_uuid: str = uuid.uuid4().hex[:16]
-    _project_root = Path(__file__).resolve().parents[4]
-    cache_dir = _project_root / "cache" / "downloads"
-    temp_dir = cache_dir / task_uuid
-    temp_dir.mkdir(parents=True, exist_ok=True)
+    from Undefined.utils.paths import DOWNLOAD_CACHE_DIR, ensure_dir
+
+    temp_dir: Path = ensure_dir(DOWNLOAD_CACHE_DIR / task_uuid)
 
     is_url: bool = file_source.startswith("http://") or file_source.startswith(
         "https://"

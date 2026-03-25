@@ -1,0 +1,21 @@
+{
+    "type": "function",
+    "function": {
+        "name": "record_memory",
+        "description": "保存记忆",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "event": {
+                    "type": "string",
+                    "description": "需要被记忆的具体内容。"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "辅助记录的具体信息，可以包含以下几项：\n- text：[事务]强相关的聊天内容原文，可有多条。\n- context：该[事务]的背景。是reality现实，还是某个小说/电影/游戏？可以参考相关联的记忆节点的context来判断。\n- source：该[事务]的消息源头是谁？如果是A描述了[事务]，那么source就是A。如果[事务]是消息中几人的交互本身（如A和B在对某件事进行讨论），那么记录为self自己。\n- importance：该[事务]是否值得被你长期记忆？是否和相关记忆中的其他节点有强关联？\n- confidence：通过上下文判断，该[事务]是否可信，为什么可信？"
+                }
+            },
+            "required": ["event", "description"]
+        }
+    }
+}

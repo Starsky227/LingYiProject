@@ -70,21 +70,19 @@ async def main() -> None:
 
         # 初始化工具注册表，自动发现 qq_tools 下所有工具
         tools_dir = Path(__file__).parent / "qq_tools"
-        tool_registry = BaseRegistry(base_dir=tools_dir, kind="tool")
-        tool_registry.load_items()
-        logger.info(f"[初始化] 已注册 {len(tool_registry.get_schema())} 个QQ工具")
+        qq_registry = BaseRegistry(base_dir=tools_dir, kind="tool")
+        qq_registry.load_items()
 
-        # 注册 agentserver 下的 agent 作为额外工具（如 file_analysis_agent）
-        try:
-            from agentserver.agent_registry import register_agents_to_registry
-            agent_count = register_agents_to_registry(tool_registry)
-            logger.info(f"[初始化] 已注册 {agent_count} 个Agent工具")
-        except Exception as e:
-            logger.warning(f"[初始化] Agent工具注册失败（不影响基本功能）: {e}")
+        # 注册 QQ 专属工具 (prefix: qq-)
+        ai = LingYiCore(qq_prompt)
+        ai.tool_manager.register_sub_registry("qq-", qq_registry)
+        logger.info(
+            f"[初始化] 工具总计: {len(ai.tool_manager.get_tools_schema())} 个 "
+            f"({ai.tool_manager.get_tool_names()})"
+        )
 
-        ai = LingYiCore(qq_prompt, available_tools=tool_registry.get_schema())
-        # 创建handler
-        handler = MessageHandler(onebot, ai, tool_registry=tool_registry)
+        # 创建handler — 工具已统一注册到 tool_manager，由 lingyi_core 负责调用
+        handler = MessageHandler(onebot, ai)
 
         onebot.set_message_handler(handler.handle_message)
         logger.info("[初始化] 核心组件加载完成")

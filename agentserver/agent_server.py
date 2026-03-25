@@ -90,7 +90,7 @@ async def list_agents():
     """列出所有已发现的 agent"""
     agents_info = []
     for a in Modules.available_agents:
-        schema = a.get("schema", {}).get("function", {})
+        schema = a.get("schema", {})
         agents_info.append({
             "name": a["name"],
             "description": schema.get("description", ""),

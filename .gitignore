@@ -43,5 +43,5 @@ dist/
 build/
 *.egg-info/
 
-# config 文件
-config.json
+# config 文件（仅根目录，子目录的 config.json 需要提交）
+/config.json

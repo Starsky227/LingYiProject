@@ -24,6 +24,21 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# config.json 格式辅助
+# ---------------------------------------------------------------------------
+
+def _extract_tool_name(config: Dict[str, Any]) -> str:
+    """从 OpenAI Tools API 嵌套格式 config.json 中提取工具/agent 名称。
+
+    格式: {"type": "function", "function": {"name": "xxx", ...}}
+    """
+    fn = config.get("function")
+    if isinstance(fn, dict):
+        return fn.get("name", "")
+    return ""
+
+
+# ---------------------------------------------------------------------------
 # 工具参数解析
 # ---------------------------------------------------------------------------
 
@@ -153,7 +168,7 @@ class AgentToolRegistry:
             try:
                 with open(config_path, "r", encoding="utf-8") as f:
                     tool_config = json.load(f)
-                name = tool_config.get("function", {}).get("name", "")
+                name = _extract_tool_name(tool_config)
                 if not name:
                     continue
                 self._items[name] = {
@@ -277,9 +292,9 @@ def discover_agents(base_dir: Path = None) -> List[Dict[str, Any]]:
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 agent_config = json.load(f)
-            name = agent_config.get("function", {}).get("name", "")
+            name = _extract_tool_name(agent_config)
             if not name:
-                logger.warning(f"agent 配置缺少 function.name: {config_path}")
+                logger.warning(f"agent 配置缺少 name: {config_path}")
                 continue
             agents.append({
                 "name": name,

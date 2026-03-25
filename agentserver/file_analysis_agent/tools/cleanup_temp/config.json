@@ -1,0 +1,16 @@
+{
+    "type": "function",
+    "function": {
+        "name": "cleanup_temp",
+        "description": "清理指定的下载缓存目录。用于在文件分析完成后删除缓存下载的文件。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "task_uuid": {
+                    "type": "string",
+                    "description": "任务 UUID（缓存目录名），留空则清理所有下载缓存目录"
+                }
+            }
+        }
+    }
+}

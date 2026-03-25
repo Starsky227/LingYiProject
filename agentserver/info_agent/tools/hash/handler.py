@@ -1,0 +1,46 @@
+from typing import Any, Dict
+import logging
+import httpx
+
+from Undefined.skills.http_client import get_json_with_retry
+from Undefined.skills.http_config import get_xxapi_url
+
+logger = logging.getLogger(__name__)
+
+
+async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """计算给定字符串或文件的哈希值（如 MD5, SHA256 等）"""
+    text = args.get("text")
+    algorithm = args.get("algorithm")
+
+    if not text:
+        return "❌ 文本不能为空"
+    if not algorithm:
+        return "❌ 算法不能为空"
+    if algorithm not in ["md4", "md5", "sha1", "sha256", "sha512"]:
+        return "❌ 算法必须是 md4、md5、sha1、sha256 或 sha512"
+
+    try:
+        params = {"type": algorithm, "text": text}
+        logger.info(f"Hash {algorithm}: {text[:50]}...")
+        data = await get_json_with_retry(
+            get_xxapi_url("/api/hash"),
+            params=params,
+            default_timeout=10.0,
+            context=context,
+        )
+
+        if data.get("code") != 200:
+            return f"Hash加密失败: {data.get('msg')}"
+
+        result = data.get("data")
+        return f"{algorithm.upper()}加密结果：\n{result}"
+
+    except httpx.TimeoutException:
+        return "请求超时，请稍后重试"
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP 错误: {e}")
+        return "请求失败：网络请求错误"
+    except Exception as e:
+        logger.exception(f"Hash加密失败: {e}")
+        return "加密失败，请稍后重试"

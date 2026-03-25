@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Any, Dict
 import logging
 import shutil
@@ -10,8 +9,9 @@ async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
     """清理系统生成的临时文件和缓存"""
     task_uuid: str = args.get("task_uuid", "")
 
-    _project_root = Path(__file__).resolve().parents[4]
-    cache_dir = _project_root / "cache" / "downloads"
+    from Undefined.utils.paths import DOWNLOAD_CACHE_DIR
+
+    cache_dir = DOWNLOAD_CACHE_DIR
 
     if not cache_dir.exists():
         return "下载缓存目录不存在"

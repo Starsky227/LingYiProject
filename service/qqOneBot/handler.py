@@ -19,14 +19,12 @@ class MessageHandler:
         self,
         onebot: OneBotClient,
         ai: LingYiCore,
-        tool_registry=None,
     ) -> None:
         self.onebot = onebot
         self.sessions: dict[str, ConversationSession] = {}  # 会话存储 {session_key: ConversationSession}
         self.ai_coordinator = AICoordinator(
             ai,
             onebot,
-            tool_registry=tool_registry,
         )
     
 
@@ -104,6 +102,22 @@ class MessageHandler:
             logger.debug(f"创建新的会话: {session_key}")
             # 群聊会话首次创建时，从 OneBot 拉取历史消息补全日志
             await session.backfill_history(self.onebot)
+            # 从 OneBot 拉取历史消息，初始化 lingyi_core 的会话上下文
+            session_state = self.ai_coordinator.ai.get_session_state(session_key)
+            if message_type == "group":
+                try:
+                    history_msgs = await self.onebot.get_group_msg_history(group_id, count=15)
+                    if history_msgs:
+                        history_msgs.sort(key=lambda m: m.get("time", 0))
+                        formatted = [session.parse_message_content(msg) for msg in history_msgs[-15:]]
+                        session_state.conversation_context.initialize(formatted)
+                except Exception as e:
+                    logger.warning(f"从 OneBot 读取群 {group_id} 历史消息初始化上下文失败: {e}")
+            else:
+                # 私聊无 OneBot 历史 API，从本地日志读取
+                recent = session.read_recent_history(15)
+                if recent:
+                    session_state.conversation_context.initialize(recent)
         session = self.sessions[session_key]
 
         # 3. 处理消息
@@ -128,8 +142,8 @@ class MessageHandler:
 
         # 3.2 处理群聊消息
         elif post_type == "message" and message_type == "group":
-            # 记录消息到会话上下文和历史文件
-            session.add_message(event)
+            # 记录消息到历史文件
+            session.write_message_history(event)
             # 检查是否@了机器人
             message_list = event.get("message", [])
             at_bot = False
@@ -141,7 +155,7 @@ class MessageHandler:
         
         # 3.3 处理私聊消息
         elif post_type == "message" and message_type == "private":
-            # 记录消息到会话上下文和历史文件
-            session.add_message(event)
+            # 记录消息到历史文件
+            session.write_message_history(event)
             await self.ai_coordinator.handle_private_message(session_key, event, session)
 

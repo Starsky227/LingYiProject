@@ -66,11 +66,15 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
         # 发送失败时，尝试获取可用的目标列表
         return await _get_fallback_list(onebot, target_type, error_msg)
 
-    # 记录发送的消息到会话
+    # 记录发送的消息到历史文件和会话上下文
     session = context.get("session")
     if session:
         bot_event = _build_bot_event(context, message, target_type, numeric_id)
-        session.add_message(bot_event)
+        session.write_message_history(bot_event)
+        conversation_context = context.get("conversation_context")
+        if conversation_context:
+            formatted = session.parse_message_content(bot_event)
+            conversation_context.add_message(formatted)
 
     message_id = response.get("data", {}).get("message_id", "")
     logger.info(f"消息发送成功: target_type={target_type}, target_id={numeric_id}, message_id={message_id}")

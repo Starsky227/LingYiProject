@@ -1,0 +1,31 @@
+{
+    "type": "function",
+    "function": {
+        "name": "send_message",
+        "description": "发送qq消息",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "要发送的消息内容"
+                },
+                "target_type": {
+                    "type": "string",
+                    "enum": [
+                        "private",
+                        "group"
+                    ],
+                    "description": "如果要向指定群聊/私聊发送消息，private表示私聊消息，group表示群消息。不指定则回复到当前对话窗口。"
+                },
+                "target_id": {
+                    "type": "string",
+                    "description": "目标聊天窗口的群聊群号/私聊QQ号。不指定则回复到当前对话窗口。"
+                }
+            },
+            "required": [
+                "message"
+            ]
+        }
+    }
+}
