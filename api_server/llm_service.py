@@ -31,9 +31,9 @@ from brain.background_analyzer import analyze_intent, extract_keywords, generate
 
 
 # API 配置
-API_KEY = config.api.api_key
-API_URL = config.api.base_url
-MODEL = config.api.model
+API_KEY = config.main_api.api_key
+API_URL = config.main_api.base_url
+MODEL = config.main_api.model
 AI_NAME = config.system.ai_name
 USERNAME = config.system.user_name
 DEBUG_MODE = config.system.debug

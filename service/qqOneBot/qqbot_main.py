@@ -64,9 +64,7 @@ async def main() -> None:
     logger.info("[初始化] 正在加载核心组件...")
     try:
         onebot = OneBotClient(config.qq_config.onebot_ws_url, config.qq_config.onebot_token)
-        qq_prompt_path = os.path.join(os.path.dirname(__file__), "Prompt", "qq_prompt.txt")
-        with open(qq_prompt_path, "r", encoding="utf-8") as f:
-            qq_prompt = f.read().strip()
+        qq_prompt = load_prompt_file("LY_qq_prompt.xml", "AI主提示词")
 
         # 初始化工具注册表，自动发现 qq_tools 下所有工具
         tools_dir = Path(__file__).parent / "qq_tools"

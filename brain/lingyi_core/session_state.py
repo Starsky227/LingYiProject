@@ -72,7 +72,7 @@ class ActiveToolTracker:
     def __init__(self):
         self._in_flight: dict[str, dict] = {}
 
-    def start(self, call_id: str, name: str, args: dict = None, task: asyncio.Task = None):
+    def start(self, call_id: str, name: str, args: dict = None, task: asyncio.Task = None, tool_call=None):
         """记录一个工具调用开始
 
         Args:
@@ -80,12 +80,14 @@ class ActiveToolTracker:
             name: 工具名称
             args: 调用参数
             task: asyncio.Task 引用，用于支持 cancel
+            tool_call: 原始 tool_call 对象，用于在进度上下文中保留调用意图
         """
         self._in_flight[call_id] = {
             "name": name,
             "args_summary": str(args)[:100] if args else "",
             "start_time": time.monotonic(),
             "task": task,
+            "tool_call": tool_call,
         }
 
     def complete(self, call_id: str):
@@ -113,14 +115,17 @@ class ActiveToolTracker:
         return f"任务已完成或无法取消: {call_id}"
 
     def get_status_text(self) -> str:
-        """返回可读的工具进度文本（包含 call_id 供 cancel_task 使用）"""
+        """返回可读的工具进度文本（包含 call_id 供 cancel_task 使用，以及调用参数摘要）"""
         if not self._in_flight:
             return ""
         now = time.monotonic()
         lines = []
         for call_id, info in self._in_flight.items():
             elapsed = round(now - info["start_time"], 1)
-            lines.append(f"- {info['name']} [call_id: {call_id}] (已运行 {elapsed}s)")
+            line = f"- {info['name']} [call_id: {call_id}] (已运行 {elapsed}s)"
+            if info.get("args_summary"):
+                line += f" 参数: {info['args_summary']}"
+            lines.append(line)
         return "[正在执行的工具]\n" + "\n".join(lines)
 
     def has_pending(self) -> bool:

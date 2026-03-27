@@ -9,14 +9,12 @@ AgentServer — Agent 管理与执行服务
 
 from .agent_registry import (
     discover_agents,
-    register_agents_to_registry,
     AgentToolRegistry,
     AgentAIClient,
 )
 
 __all__ = [
     "discover_agents",
-    "register_agents_to_registry",
     "AgentToolRegistry",
     "AgentAIClient",
 ]

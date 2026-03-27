@@ -42,38 +42,6 @@ def parse_tool_arguments(
 
 
 @dataclass
-class SkillStats:
-    """技能执行统计数据类
-
-    记录单个技能（工具或智能体）的执行次数、成功率、耗时及最后一次错误信息。
-    """
-
-    count: int = 0
-    success: int = 0
-    failure: int = 0
-    total_duration: float = 0.0
-    last_duration: float = 0.0
-    last_error: Optional[str] = None
-    last_called_at: Optional[float] = None
-
-    def record_success(self, duration: float) -> None:
-        self.count += 1
-        self.success += 1
-        self.total_duration += duration
-        self.last_duration = duration
-        self.last_error = None
-        self.last_called_at = time.time()
-
-    def record_failure(self, duration: float, error: str) -> None:
-        self.count += 1
-        self.failure += 1
-        self.total_duration += duration
-        self.last_duration = duration
-        self.last_error = error
-        self.last_called_at = time.time()
-
-
-@dataclass
 class SkillItem:
     """技能项元数据
 
@@ -110,16 +78,8 @@ class BaseRegistry:
         self.timeout_seconds = timeout_seconds
         self._items: Dict[str, SkillItem] = {}
         self._items_schema: List[Dict[str, Any]] = []
-        self._stats: Dict[str, SkillStats] = {}
 
         self._items_lock = asyncio.Lock()
-        self._reload_lock = asyncio.Lock()
-
-        self._watch_paths: List[Path] = [self.base_dir]
-        self._watch_task: Optional[asyncio.Task[None]] = None
-        self._watch_stop: Optional[asyncio.Event] = None
-        self._last_snapshot: Dict[str, tuple[int, int]] = {}
-        self._watch_filenames: set[str] = {"config.json", "handler.py"}
 
         self.skills_root = self._resolve_skills_root(self.base_dir)
 
@@ -128,12 +88,6 @@ class BaseRegistry:
         if base_dir.name in {"tools", "agents", "toolsets"} and base_dir.parent.name:
             return base_dir.parent
         return base_dir
-
-    def set_watch_paths(self, paths: List[Path]) -> None:
-        self._watch_paths = paths
-
-    def set_watch_filenames(self, filenames: set[str]) -> None:
-        self._watch_filenames = filenames
 
     def _log_event(self, event: str, name: str = "", **fields: Any) -> None:
         parts = [f"event={event}", f"kind={self.kind}"]
@@ -156,11 +110,6 @@ class BaseRegistry:
             return
 
         self._discover_items_in_dir(self.base_dir, prefix="")
-
-        active_names = set(self._items.keys())
-        self._stats = {
-            name: self._stats.get(name, SkillStats()) for name in active_names
-        }
 
         item_names = list(self._items.keys())
         logger.info(
@@ -196,7 +145,6 @@ class BaseRegistry:
             item = self._build_skill_item(item_dir, config, handler_path, prefix)
             self._items[item.name] = item
             self._items_schema.append(item.config)
-            self._stats.setdefault(item.name, SkillStats())
 
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(
@@ -294,38 +242,8 @@ class BaseRegistry:
         item.handler = module.execute
         item.loaded = True
 
-    def register_external_item(
-        self,
-        name: str,
-        schema: Dict[str, Any],
-        handler: Callable[[Dict[str, Any], Dict[str, Any]], Awaitable[Any]],
-    ) -> None:
-        """从外部（非文件系统发现）注册一个技能项
-
-        常用于注册动态生成的工具或 MCP 注入的工具。
-
-        参数:
-            name: 技能名称
-            schema: 符合相关协议的配置定义
-            handler: 执行的具体回调函数
-        """
-        item = SkillItem(
-            name=name,
-            config=schema,
-            handler_path=None,
-            module_name=None,
-            handler=handler,
-            loaded=True,
-        )
-        self._items[name] = item
-        self._items_schema.append(schema)
-        self._stats.setdefault(name, SkillStats())
-
     def get_schema(self) -> List[Dict[str, Any]]:
         return self._items_schema
-
-    def get_stats(self) -> Dict[str, SkillStats]:
-        return self._stats
 
     async def execute(
         self, name: str, args: Dict[str, Any], context: Dict[str, Any]
@@ -396,7 +314,6 @@ class BaseRegistry:
                 result = await self._execute_with_timeout(handler, args, context)
                 duration = time.monotonic() - start_time
 
-                self._stats[name].record_success(duration)
                 self._log_event(
                     "execute", name, status="success", duration_ms=int(duration * 1000)
                 )
@@ -407,7 +324,6 @@ class BaseRegistry:
 
         except asyncio.TimeoutError:
             duration = time.monotonic() - start_time
-            self._stats[name].record_failure(duration, "timeout")
             self._log_event(
                 "execute", name, status="timeout", duration_ms=int(duration * 1000)
             )
@@ -416,7 +332,6 @@ class BaseRegistry:
 
         except asyncio.CancelledError:
             duration = time.monotonic() - start_time
-            self._stats[name].record_failure(duration, "cancelled")
             self._log_event(
                 "execute", name, status="cancelled", duration_ms=int(duration * 1000)
             )
@@ -425,7 +340,6 @@ class BaseRegistry:
 
         except Exception as e:
             duration = time.monotonic() - start_time
-            self._stats[name].record_failure(duration, str(e))
             logger.exception(f"[执行异常] {name}")
             self._log_event(
                 "execute", name, status="error", duration_ms=int(duration * 1000)
@@ -460,66 +374,4 @@ class BaseRegistry:
             asyncio.to_thread(handler, args, context), timeout=self.timeout_seconds
         )
 
-    def _compute_snapshot(self) -> Dict[str, tuple[int, int]]:
-        snapshot: Dict[str, tuple[int, int]] = {}
-        target_names = self._watch_filenames
-        for root in self._watch_paths:
-            if not root.exists():
-                continue
-            for path in root.rglob("*"):
-                if path.is_file() and path.name in target_names:
-                    try:
-                        stat = path.stat()
-                        snapshot[str(path)] = (int(stat.st_mtime_ns), int(stat.st_size))
-                    except OSError:
-                        continue
-        return snapshot
 
-    async def _reload_items(self) -> None:
-        async with self._items_lock:
-            self.load_items()
-            try:
-                from Undefined.context_resource_registry import (
-                    refresh_context_resource_keys,
-                )
-
-                refresh_context_resource_keys()
-            except Exception:
-                logger.debug("刷新上下文资源键缓存失败", exc_info=True)
-
-    async def _watch_loop(self, interval: float, debounce: float) -> None:
-        self._last_snapshot = self._compute_snapshot()
-        last_change = 0.0
-        pending = False
-
-        while self._watch_stop and not self._watch_stop.is_set():
-            await asyncio.sleep(interval)
-            snapshot = self._compute_snapshot()
-            if snapshot != self._last_snapshot:
-                self._last_snapshot = snapshot
-                last_change = time.monotonic()
-                pending = True
-
-            if pending and (time.monotonic() - last_change) >= debounce:
-                pending = False
-                async with self._reload_lock:
-                    await self._reload_items()
-                self._log_event("reload", count=len(self._items))
-
-    def start_hot_reload(self, interval: float = 2.0, debounce: float = 0.5) -> None:
-        if self._watch_task:
-            return
-        self._watch_stop = asyncio.Event()
-        self._watch_task = asyncio.create_task(self._watch_loop(interval, debounce))
-        self._log_event("watch_start", interval_s=interval, debounce_s=debounce)
-
-    async def stop_hot_reload(self) -> None:
-        if not self._watch_task or not self._watch_stop:
-            return
-        self._watch_stop.set()
-        try:
-            await self._watch_task
-        finally:
-            self._watch_task = None
-            self._watch_stop = None
-            self._log_event("watch_stop")

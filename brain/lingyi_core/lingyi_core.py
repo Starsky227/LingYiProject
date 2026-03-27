@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
@@ -18,19 +19,22 @@ logger = logging.getLogger(__name__)
 
 # 初始化 OpenAI 客户端
 client = OpenAI(
-    api_key=config.api.api_key,
-    base_url=config.api.base_url,
+    api_key=config.main_api.api_key,
+    base_url=config.main_api.base_url,
 )
 
 
 # 最大工具调用轮次，防止无限循环
 MAX_TOOL_ROUNDS = 10
 
+# 工具返回值中的 valuable 标记前缀
+VALUABLE_TAG = "{valuable}"
+
 # 无工具调用时等待 buffer 新消息的超时（秒）
 BUFFER_WAIT_TIMEOUT = 1.0
 
 # 工具调用记录在 input_items 中的存活轮次（超过后清理已完成的 tool_call + result）
-TOOL_CALL_TTL = 5
+TOOL_CALL_TTL = 3
 
 # 消息批量收集窗口
 BATCH_MIN_WAIT = 2.0  # 首条消息后至少等待秒数
@@ -81,7 +85,7 @@ class LingYiCore:
         for item in resp.output:
             if item.type == "message":
                 messages.append(item)
-            elif item.type == "tool_call":
+            elif item.type == "function_call":
                 toolcalls.append(item)
 
         return messages, toolcalls
@@ -142,7 +146,8 @@ class LingYiCore:
         session_key: str,
         session_state: "SessionState",
     ) -> list:
-        """核心处理逻辑 — 非阻塞后台工具执行
+        """
+        核心处理逻辑 — 非阻塞后台工具执行
 
         工作流程：
         0. 等待 2-5s 收集初始消息批次
@@ -162,54 +167,34 @@ class LingYiCore:
             logger.info(f"[process_message] session={session_key} 无消息可处理")
             return []
 
-        # 合并初始消息
-        input_message = "\n".join(msg["message"] for msg in initial_messages)
-        merged_keywords: list[str] = []
-        for msg in initial_messages:
-            for kw in msg.get("key_words", []):
-                if kw and kw not in merged_keywords:
-                    merged_keywords.append(kw)
+        # 1. 初始化消息状态
         caller_message = initial_messages[-1].get("caller_message", "")
+        pending_messages = initial_messages  # 首轮循环消费
+        input_message = ""
+        new_related_memory = None
+        message_chunk = ""
 
-        if len(initial_messages) > 1:
-            logger.info(f"[消息收集] session={session_key} 收集了 {len(initial_messages)} 条消息")
-        logger.info(f"[收到输入信息] \n{input_message}")
+        # 2. 准备prompt
+        prompt_items: list[Any] = [{"role": "system", "content": self.main_prompt}]
 
-        # 1. 搜索相关记忆并缓存
-        related_memory = None
-        if is_neo4j_available():
-            related_memory = full_memory_search(input_message, save_temp_memory=False, add_keywords=merged_keywords)
-            session_state.memory_cache.add(related_memory)
-            logger.debug(f"[检索到相关记忆] {len(related_memory.get('nodes', []))} 个相关记忆节点")
-        else:
-            logger.info("Neo4j未连接，跳过记忆搜索")
-
-        # 2. 准备主模型输入 — 使用去重后的缓存记忆（最近 N 轮合并）
-        input_items: list[Any] = [{"role": "system", "content": self.main_prompt}]
-
-        cached_memory = session_state.memory_cache.get_deduplicated()
-        if cached_memory.get("nodes"):
-            input_items.append({"role": "system", "content": f"[相关记忆] 请参考以下记忆信息进行回复\n{cached_memory}"})
-
-        history_context = session_state.conversation_context.get_formatted_context()
-        if history_context:
-            input_items.append({"role": "user", "content": f"[历史消息] 请注意鉴别可能包含你自己(qq{config.qq_config.bot_qq})的信息\n{history_context}"})
-
-        input_items.append({"role": "user", "content": f"{caller_message}\n{input_message}"})
-
-        # 3. 工具调用循环（非阻塞后台工具执行）
+        # 3. 工具调用（非阻塞后台工具执行）
         all_output_messages = []
         tools_param = self.tool_manager.get_tools_schema() or None
 
-        call_round_map: dict[str, int] = {}   # call_id → 结果写入 input_items 时的 absolute_round
+        tool_items: list[Any] = []  # 工具调用记录（reasoning + function_call + function_call_output）
+        call_round_map: dict[str, int] = {}   # call_id → 结果写入 tool_items 时的 absolute_round
+        reasoning_for_calls: dict[str, str] = {}  # call_id → reasoning item id
         absolute_round = 0
         rounds_since_input = 0
         background_tasks: dict[str, tuple[Any, asyncio.Task]] = {}  # call_id → (tc_obj, task)
-        PROGRESS_MARKER = "[正在执行的工具]"
+        valuable_results: list[tuple[str, str]] = []  # (tool_name, result) — 本轮待写入 conversation_context
 
+        # 4. 进入循环
         try:
             while True:
-                # Step 1: 收割已完成的后台工具任务
+                memory_parts: list[str] = []  # 本轮待记忆的内容片段
+
+                # Step 1: 收割已完成的后台工具任务 → 追加到 tool_items
                 newly_completed: list[str] = []
                 for call_id in list(background_tasks.keys()):
                     _, task = background_tasks[call_id]
@@ -228,79 +213,128 @@ class LingYiCore:
                         session_state.activity_tracker.complete(call_id)
 
                     logger.info(f"[工具结果] {tc_obj.name} -> {str(result)[:200]}")
-                    input_items.append(tc_obj)
-                    input_items.append({
+
+                    # 检查 {valuable} 标记
+                    result_str = str(result)
+                    if result_str.startswith(VALUABLE_TAG):
+                        result_str = result_str[len(VALUABLE_TAG):]
+                        valuable_results.append((tc_obj.name, result_str))
+
+                    # tc_obj (function_call) 已在模型响应时加入 tool_items，此处只追加结果
+                    tool_items.append({
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": str(result),
+                        "output": result_str,
                     })
                     call_round_map[call_id] = absolute_round
 
-                # Step 2: 释放缓冲消息
+                # Step 2: 收集新消息（首轮消费 pending_messages，后续消费 buffer）
                 buffered = session_state.input_buffer.drain_all()
-                if buffered:
-                    rounds_since_input = 0  # 外部输入刷新计数器
-                    for msg in buffered:
-                        input_items.append({
-                            "role": "user",
-                            "content": f"[新消息] {msg.get('caller_message', '')}\n{msg['message']}",
-                        })
-                    logger.info(f"[InputBuffer] 释放了 {len(buffered)} 条缓冲消息")
+                incoming = pending_messages + buffered
+                pending_messages = []
 
-                # 清理过期的 tool_call 及其 function_call_output（已完成且超过 TTL 轮次）
+                history_context = session_state.conversation_context.get_formatted_context()
+
+                if incoming:
+                    rounds_since_input = 0
+                    new_messages = [msg["message"] for msg in incoming]
+                    input_message = "\n".join(new_messages)
+                    merged_keywords: list[str] = []
+                    for msg in incoming:
+                        for kw in msg.get("key_words", []):
+                            if kw and kw not in merged_keywords:
+                                merged_keywords.append(kw)
+
+                    if is_neo4j_available():
+                        new_related_memory = full_memory_search(input_message, save_temp_memory=False, add_keywords=merged_keywords)
+                        session_state.memory_cache.add(new_related_memory)
+                        logger.debug(f"[检索到相关记忆] {len(new_related_memory.get('nodes', []))} 个相关记忆节点")
+
+                    # 将本轮新消息追加到 conversation_context
+                    for msg_text in new_messages:
+                        session_state.conversation_context.add_message(msg_text)
+                    caller_message = incoming[-1].get("caller_message", caller_message)
+                    logger.info(f"[收到消息] {len(incoming)} 条: {input_message[:100]}")
+
+                    message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]\n" + "\n".join(new_messages)
+                    memory_parts.append(input_message)
+                else:
+                    message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]没有新消息，请检查工具返回结果，"
+
+                # Step 3: 清理 tool_items 中过期的 reasoning + function_call + function_call_output
                 if call_round_map:
-                    completed_call_ids_in_items = {
-                        item.get("call_id")
-                        for item in input_items
-                        if isinstance(item, dict) and item.get("type") == "function_call_output"
-                    }
                     stale_ids = {
                         cid for cid, r in call_round_map.items()
-                        if absolute_round - r >= TOOL_CALL_TTL and cid in completed_call_ids_in_items
+                        if absolute_round - r >= TOOL_CALL_TTL
                     }
                     if stale_ids:
-                        input_items = [
-                            item for item in input_items
+                        # 找出要清理的 reasoning id，但保留仍被非过期 call 引用的
+                        stale_reasoning_ids = {reasoning_for_calls.get(cid) for cid in stale_ids} - {None}
+                        for cid, rid in reasoning_for_calls.items():
+                            if cid not in stale_ids and rid in stale_reasoning_ids:
+                                stale_reasoning_ids.discard(rid)
+                        tool_items = [
+                            item for item in tool_items
                             if not (
-                                (hasattr(item, "call_id") and getattr(item, "type", None) == "tool_call"
+                                (hasattr(item, "call_id") and getattr(item, "type", None) == "function_call"
                                  and item.call_id in stale_ids)
                                 or (isinstance(item, dict) and item.get("type") == "function_call_output"
                                     and item.get("call_id") in stale_ids)
+                                or (getattr(item, "type", None) == "reasoning"
+                                    and getattr(item, "id", None) in stale_reasoning_ids)
                             )
                         ]
                         for cid in stale_ids:
                             del call_round_map[cid]
+                            reasoning_for_calls.pop(cid, None)
                         logger.info(f"[ToolCall清理] 移除了 {len(stale_ids)} 组过期工具调用记录")
 
-                # Step 3: 更新工具进度状态（替换旧的，注入最新的）
-                input_items = [
-                    item for item in input_items
-                    if not (isinstance(item, dict) and item.get("role") == "system"
-                            and PROGRESS_MARKER in item.get("content", ""))
-                ]
-                progress_text = session_state.activity_tracker.get_status_text()
-                if progress_text:
-                    input_items.append({"role": "system", "content": progress_text})
-
-                # Step 4: 有新上下文时调用模型（首轮 / 工具返回结果 / buffer 新消息）
-                has_new_context = (absolute_round == 0 or bool(newly_completed) or bool(buffered))
+                # Step 4: 有新上下文时组装 input_items 并调用模型
+                has_new_context = bool(incoming) or bool(newly_completed)
 
                 if has_new_context:
                     if rounds_since_input >= MAX_TOOL_ROUNDS:
                         logger.warning(f"已达最大模型调用轮次 {MAX_TOOL_ROUNDS}，停止处理")
                         break
 
+                    # 组装模型输入：prompt + 记忆 + 消息上下文 + 工具进度
+                    input_items = list(prompt_items) #prompt
+                    cached_memory = session_state.memory_cache.get_deduplicated() #记忆
+                    if cached_memory.get("nodes"):
+                        input_items.append({"role": "system", "content": f"[相关记忆] 请参考以下记忆信息进行回复\n{cached_memory}"})
+                    input_items.append({"role": "user", "content": message_chunk}) #消息上下文
+                    input_items.extend(tool_items) #工具信息
+                    progress_text = session_state.activity_tracker.get_status_text()
+                    if progress_text:
+                        input_items.append({"role": "system", "content": progress_text})
+
+                    # 打印当前轮次上下文
+                    print(f"\n{'='*60}")
+                    print(f"  第 {absolute_round + 1} 轮模型调用")
+                    print(f"{'='*60}")
+                    print(prompt_items[0]["content"][:50] + "\n...")
+                    print(f"📨 消息上下文:\n{message_chunk}")
+                    if tool_items:
+                        print(f"\n🔧 工具信息 ({len(tool_items) // 2} 组):")
+                        for item in tool_items:
+                            if isinstance(item, dict) and item.get("type") == "function_call_output":
+                                output_preview = item["output"][:200] + ("..." if len(item["output"]) > 200 else "")
+                                print(f"  [{item['call_id']}] → {output_preview}")
+                            elif hasattr(item, "name"):
+                                print(f"  📞 {item.name}({getattr(item, 'arguments', '')[:100]})")
+                    if progress_text:
+                        print(f"\n⏳ {progress_text}")
+                    print(f"{'='*60}\n")
+
                     try:
                         create_kwargs: dict[str, Any] = {
-                            "model": config.api.model,
+                            "model": config.main_api.model,
                             "input": input_items,
-                            "temperature": config.api.temperature,
-                            "max_output_tokens": config.api.max_tokens,
+                            "reasoning": {"effort": "medium"},
+                            "max_output_tokens": config.main_api.max_tokens,
                         }
                         if tools_param:
                             create_kwargs["tools"] = tools_param
-
-                        print(f"模型输入：\n{input_items}\n")
 
                         response = client.responses.create(**create_kwargs)
                         output_messages, tool_calls = self._parse_response(response)
@@ -308,12 +342,53 @@ class LingYiCore:
                         logger.error(f"主模型调用失败 (第{absolute_round + 1}轮): {e}")
                         break
 
+                    # 打印模型输出
+                    print(f"\n📨 模型返回:")
+                    for item in response.output:
+                        if item.type == "reasoning":
+                            summaries = getattr(item, 'summary', None)
+                            if summaries:
+                                for s in summaries:
+                                    print(f"  💭 {getattr(s, 'text', '')[:300]}")
+                        elif item.type == "message":
+                            for c in getattr(item, 'content', []):
+                                if getattr(c, 'type', '') == 'output_text':
+                                    print(f"  💬 {c.text[:500]}")
+                        elif item.type == "function_call":
+                            print(f"  🔧 调用: {item.name}({item.arguments[:200]})")
+
+                    # 将 reasoning + function_call 立即加入 tool_items（API 要求 function_call 必须携带其 reasoning）
+                    last_reasoning_id = None
+                    for item in response.output:
+                        if item.type == "reasoning":
+                            last_reasoning_id = item.id
+                            tool_items.append(item)
+                        elif item.type == "function_call":
+                            tool_items.append(item)
+                            if last_reasoning_id:
+                                reasoning_for_calls[item.call_id] = last_reasoning_id
+
                     all_output_messages.extend(output_messages)
                     rounds_since_input += 1
 
-                    # 模型的文本消息加入 input_items 保持上下文连续性
+                    # 将本轮 valuable 工具结果写入 conversation_context（模型已在 tool_items 中看过）
+                    if valuable_results:
+                        for tool_name, v_result in valuable_results:
+                            time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                            formatted = f"{time_str} [工具结果-{tool_name}] {v_result}\n"
+                            session_state.conversation_context.add_message(formatted)
+                            memory_parts.append(f"{time_str} <工具调用-{tool_name}> {v_result}")
+                        valuable_results.clear()
+
+                    # 模型的文本消息记录到会话历史（history_context 每轮刷新，无需再加入 tool_items）
                     if output_messages:
-                        input_items.extend(output_messages)
+                        for om in output_messages:
+                            text_parts = [c.text for c in getattr(om, 'content', []) if getattr(c, 'type', '') == 'output_text' and getattr(c, 'text', '')]
+                            if text_parts:
+                                time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                formatted = f"{time_str} <{config.system.ai_name}> {''.join(text_parts)}\n"
+                                session_state.conversation_context.add_message(formatted)
+                                memory_parts.append(formatted.rstrip())
 
                     # 启动新的工具调用为后台异步任务（不阻塞循环）
                     if tool_calls:
@@ -324,8 +399,16 @@ class LingYiCore:
                                 tc_args = {}
                             coro = self._execute_tool_call(tc, tc_args, session_state)
                             task = asyncio.create_task(coro)
-                            session_state.activity_tracker.start(tc.call_id, tc.name, tc_args, task=task)
+                            session_state.activity_tracker.start(tc.call_id, tc.name, tc_args, task=task, tool_call=tc)
                             background_tasks[tc.call_id] = (tc, task)
+
+                # 记忆：将本轮 input_message + valuable 工具结果 + 模型文本消息写入记忆（不阻塞循环）
+                if memory_parts and is_neo4j_available():
+                    memory_text = "\n".join(memory_parts)
+                    _related = cached_memory  # 捕获当前值，避免后续轮次覆盖
+                    asyncio.create_task(
+                        asyncio.to_thread(memory_writer.full_memory_record, memory_text, _related)
+                    )
 
                 # Step 5: 等待任务完成或 buffer 新消息（至多 BUFFER_WAIT_TIMEOUT 秒）
                 if background_tasks:
@@ -338,6 +421,7 @@ class LingYiCore:
 
                 # Step 6: 终止判断 — 后台任务 & buffer 都空 → 无需继续
                 if not background_tasks and not session_state.input_buffer.has_pending():
+                    print("\n暂无任务，轮次终止\n")
                     break
         finally:
             # 清理残留的后台任务
@@ -346,10 +430,6 @@ class LingYiCore:
                     task.cancel()
                 session_state.activity_tracker.complete(call_id)
             background_tasks.clear()
-
-        # 4. 记录记忆
-        if is_neo4j_available():
-            memory_writer.full_memory_record(input_message, related_memory)
 
         return all_output_messages
 

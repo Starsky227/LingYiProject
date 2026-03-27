@@ -216,7 +216,7 @@ class ServiceManager:
     def _init_proxy_settings(self):
         """初始化代理设置：若不启用代理，则清空系统代理环境变量"""
         # 检测 applied_proxy 状态
-        if not config.api.applied_proxy:  # 当 applied_proxy 为 False 时
+        if not config.main_api.applied_proxy:  # 当 applied_proxy 为 False 时
             print("检测到不启用代理，正在清空系统代理环境变量...")
 
             # 清空 HTTP/HTTPS 代理环境变量（跨平台兼容）

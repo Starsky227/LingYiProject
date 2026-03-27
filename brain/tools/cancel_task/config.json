@@ -1,17 +1,15 @@
 {
     "type": "function",
-    "function": {
-        "name": "cancel_task",
-        "description": "取消/终止一个正在运行的工具任务。call_id 可从[正在执行的工具]状态信息中获取。",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "call_id": {
-                    "type": "string",
-                    "description": "需要被取消的任务的唯一标识（即工具调用的 call_id）。"
-                }
-            },
-            "required": ["call_id"]
-        }
+    "name": "cancel_task",
+    "description": "取消/终止一个正在运行的工具任务。call_id 可从[正在执行的工具]状态信息中获取。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "call_id": {
+                "type": "string",
+                "description": "需要被取消的任务的唯一标识（即工具调用的 call_id）。"
+            }
+        },
+        "required": ["call_id"]
     }
 }

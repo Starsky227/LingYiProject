@@ -1,24 +1,22 @@
 {
     "type": "function",
-    "function": {
-        "name": "search_memory",
-        "description": "搜索记忆",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "key_words": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "description": "用于搜索记忆的关键词列表。"
+    "name": "search_memory",
+    "description": "搜索记忆",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "key_words": {
+                "type": "array",
+                "items": {
+                    "type": "string"
                 },
-                "max_results": {
-                    "type": "integer",
-                    "description": "返回的最大记忆节点数量，最小50，最大150.重复尝试时建议单次增加最多50。"
-                }
+                "description": "用于搜索记忆的关键词列表。"
             },
-            "required": ["key_words"]
-        }
+            "max_results": {
+                "type": "integer",
+                "description": "返回的最大记忆节点数量，最小50，最大150.重复尝试时建议单次增加最多50。"
+            }
+        },
+        "required": ["key_words"]
     }
 }

@@ -52,11 +52,6 @@ class MessageHandler:
         'group_name': '麻辣子（重启中）'}
         """
         print(event)
-        #return
-
-        # 记录logger
-        if logger.isEnabledFor(logging.DEBUG):
-            log_debug_json(logger, "[事件数据]", event)
         
         # 1. 检查群聊/私聊，黑白名单，记录session_key
         group_id = event.get("group_id", 0)

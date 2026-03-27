@@ -114,8 +114,8 @@ class SystemConfig(BaseModel):
 class APIConfig(BaseModel):
     """API服务配置"""
     api_key: str = Field(default="sk-placeholder-key-not-set", description="API密钥")
-    base_url: str = Field(default="https://api.deepseek.com/v1", description="API基础URL")
-    model: str = Field(default="deepseek-chat", description="使用的模型名称")
+    base_url: str = Field(default="https://api.openai.com/v1", description="API基础URL")
+    model: str = Field(default="gpt-5.4-mini-2026-03-17", description="使用的模型名称")
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="温度参数")
     max_tokens: int = Field(default=10000, ge=1, le=32768, description="最大token数")
     max_history_rounds: int = Field(default=100, ge=1, le=200, description="最大历史轮数")
@@ -141,6 +141,16 @@ class VisionAPIConfig(BaseModel):
     vision_base_url: str = Field(default="https://api.openai.com/v1", description="图像分析API基础URL")
     vision_model: str = Field(default="gpt-image-1.5-2025-12-16", description="图像分析使用的模型")
 
+class AgentServerConfig(BaseModel):
+    """智能体服务器配置"""
+    enabled: bool = Field(default=True, description="是否启用智能体服务器")
+    agent_api_key: str = Field(default="sk-placeholder-key-not-set", description="智能体服务器API密钥")
+    agent_base_url: str = Field(default="https://api.openai.com/v1", description="智能体服务器基础URL")
+    agent_model: str = Field(default="gpt-5.4-mini-2026-03-17", description="智能体服务器使用的模型")
+    agent_max_tokens: int = Field(default=4096, ge=1, description="智能体最大输出token数")
+    agent_temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="智能体温度参数")
+
+
 class APIServerConfig(BaseModel):
     """API服务器配置"""
     enabled: bool = Field(default=True, description="是否启用API服务器")
@@ -163,27 +173,12 @@ class GRAGConfig(BaseModel):
     extraction_retries: int = Field(default=2, ge=0, le=5, description="知识提取重试次数")
     base_timeout: int = Field(default=15, ge=5, le=120, description="基础操作超时时间（秒）")
 
-class HandoffConfig(BaseModel):
-    """工具调用循环配置"""
-    max_loop_stream: int = Field(default=5, ge=1, le=20, description="流式模式最大工具调用循环次数")
-    max_loop_non_stream: int = Field(default=5, ge=1, le=20, description="非流式模式最大工具调用循环次数")
-    show_output: bool = Field(default=False, description="是否显示工具调用输出")
+class WebAgentConfig(BaseModel):
+    """Web代理配置"""
+    use_proxy: bool = Field(default=False, description="是否使用代理")
+    http_proxy: Optional[str] = Field(default=None, description="HTTP代理地址（如 http://127.0.0.1:8080）")
+    https_proxy: Optional[str] = Field(default=None, description="HTTPS代理地址（如 https://127.0.0.1:8080）")
 
-class BrowserConfig(BaseModel):
-    """浏览器配置"""
-    playwright_headless: bool = Field(default=False, description="Playwright浏览器是否无头模式")
-    edge_lnk_path: str = Field(
-        default=r'C:\Users\DREEM\Desktop\Microsoft Edge.lnk',
-        description="Edge浏览器快捷方式路径"
-    )
-    edge_common_paths: List[str] = Field(
-        default=[
-            r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-            r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-            os.path.expanduser(r'~\AppData\Local\Microsoft\Edge\Application\msedge.exe')
-        ],
-        description="Edge浏览器常见安装路径"
-    )
 
 # class TTSConfig(BaseModel):
 #     """TTS服务配置"""
@@ -285,13 +280,14 @@ class QQConfig(BaseModel):
 class LingYiConfig(BaseModel):
     """LingYi主配置类"""
     system: SystemConfig = Field(default_factory=SystemConfig)
-    api: APIConfig = Field(default_factory=APIConfig)
+    main_api: APIConfig = Field(default_factory=APIConfig)
     memory_api: MemorySystemConfig = Field(default_factory=MemorySystemConfig)
     vision_api: VisionAPIConfig = Field(default_factory=VisionAPIConfig)
+    agent_api: AgentServerConfig = Field(default_factory=AgentServerConfig)
     api_server: APIServerConfig = Field(default_factory=APIServerConfig)
     grag: GRAGConfig = Field(default_factory=GRAGConfig)
-    handoff: HandoffConfig = Field(default_factory=HandoffConfig)
-    browser: BrowserConfig = Field(default_factory=BrowserConfig)
+    web_agent: WebAgentConfig = Field(default_factory=WebAgentConfig)
+
     # tts: TTSConfig = Field(default_factory=TTSConfig)
     # asr: ASRConfig = Field(default_factory=ASRConfig)  # ASR输入服务配置 #
     ui: UIConfig = Field(default_factory=UIConfig)

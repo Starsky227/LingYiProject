@@ -40,7 +40,7 @@ async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
         return "错误：文件源不能为空"
 
     task_uuid: str = uuid.uuid4().hex[:16]
-    from Undefined.utils.paths import DOWNLOAD_CACHE_DIR, ensure_dir
+    from system.paths import DOWNLOAD_CACHE_DIR, ensure_dir
 
     temp_dir: Path = ensure_dir(DOWNLOAD_CACHE_DIR / task_uuid)
 

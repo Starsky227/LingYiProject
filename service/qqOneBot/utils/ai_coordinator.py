@@ -46,11 +46,6 @@ def load_prompt_file(filename: str, description: str = "") -> str:
             logger.error(f"{description}提示词文件为空: {prompt_path}")
         return content
 
-AI_MAIN_PROMPT = load_prompt_file("qq_prompt.txt", "AI主提示词")
-MEMORY_RECORD_PROMPT = load_prompt_file("qqMemoryRecord.txt", "记忆存储")
-EVENT_EXTRACT_PROMPT = load_prompt_file("qqEventExtract.txt", "事件提取")
-
-
 class AICoordinator:
     """“AI 协调器 — 将 QQ 消息推送到 lingyi_core 的 InputBuffer，由 lingyi_core 统一处理定时收集与模型/工具调用"""
 
@@ -151,16 +146,18 @@ class AICoordinator:
     ) -> None:
         """将消息推送到 input_buffer 并确保处理流程已启动"""
         session_state = self.ai.get_session_state(session_key)
-        # 添加到会话上下文（历史记录）
-        session_state.conversation_context.add_message(message_content)
         # 推入 input_buffer，由 lingyi_core 统一收集和处理
         await session_state.input_buffer.put(message_content, caller_message, key_word_list)
         # 更新 tool_context，供工具执行时动态引用最新的 QQ 上下文
+        group_id = event.get("group_id", 0)
+        user_id = event.get("sender", {}).get("user_id", 0)
         session_state.tool_context.update({
             "onebot": self.onebot,
             "session": session,
             "event": event,
-            "conversation_context": session_state.conversation_context,
+            "get_image_url_callback": self.onebot.get_image,
+            "group_id": group_id if group_id else None,
+            "user_id": user_id if user_id else None,
         })
         # 维护内部 event/session 引用
         self._session_contexts[session_key] = {"event": event, "session": session}

@@ -1,7 +1,7 @@
 from typing import Any, Dict
 import logging
 
-from Undefined.config import get_config
+from system.config import config
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ async def execute(args: Dict[str, Any], context: Dict[str, Any]) -> str:
     max_chars = args.get("max_chars", 4096)
 
     try:
-        runtime_config = get_config(strict=False)
+        runtime_config = config.web_agent
         use_proxy = runtime_config.use_proxy
         proxy = runtime_config.http_proxy or runtime_config.https_proxy
 

@@ -18,9 +18,9 @@ config_path = os.path.normpath(config_path)
 
 # 读取 JSON 配置
 # API 配置
-API_KEY = config.api.api_key
-API_URL = config.api.base_url
-MODEL = config.api.model
+API_KEY = config.main_api.api_key
+API_URL = config.main_api.base_url
+MODEL = config.main_api.model
 AI_NAME = config.system.ai_name
 USERNAME = config.ui.user_name
 TEXT_SIZE = config.ui.text_size

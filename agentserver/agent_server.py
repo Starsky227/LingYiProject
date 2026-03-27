@@ -21,7 +21,6 @@ from contextlib import asynccontextmanager
 from system.config import config
 from agentserver.agent_registry import discover_agents
 from agentserver.task_scheduler import get_task_scheduler, TaskStep
-from agentserver.toolkit_manager import toolkit_manager
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -35,11 +34,11 @@ async def lifespan(app: FastAPI):
         Modules.task_scheduler = get_task_scheduler()
 
         # 设置 LLM 配置用于智能压缩
-        if hasattr(config, "api") and config.api:
+        if hasattr(config, "api") and config.main_api:
             llm_config = {
-                "model": config.api.model,
-                "api_key": config.api.api_key,
-                "api_base": config.api.base_url,
+                "model": config.main_api.model,
+                "api_key": config.main_api.api_key,
+                "api_base": config.main_api.base_url,
             }
             Modules.task_scheduler.set_llm_config(llm_config)
 
@@ -377,153 +376,6 @@ async def clear_session_memory(session_id: str):
     except Exception as e:
         logger.error(f"清除会话记忆失败: {e}")
         raise HTTPException(500, f"清除失败: {e}")
-
-# ============ 文件编辑工具包API ============
-
-@app.get("/tools")
-async def list_tools():
-    """列出所有可用的工具"""
-    try:
-        tools = toolkit_manager.get_all_tools()
-        return {
-            "success": True,
-            "tools": tools,
-            "count": len(tools)
-        }
-    except Exception as e:
-        logger.error(f"获取工具列表失败: {e}")
-        raise HTTPException(500, f"获取失败: {e}")
-
-@app.get("/toolkits")
-async def list_toolkits():
-    """列出所有可用的工具包"""
-    try:
-        toolkits = toolkit_manager.list_toolkits()
-        return {
-            "success": True,
-            "toolkits": toolkits,
-            "count": len(toolkits)
-        }
-    except Exception as e:
-        logger.error(f"获取工具包列表失败: {e}")
-        raise HTTPException(500, f"获取失败: {e}")
-
-@app.get("/toolkits/{toolkit_name}")
-async def get_toolkit_info(toolkit_name: str):
-    """获取工具包详细信息"""
-    try:
-        info = toolkit_manager.get_toolkit_info(toolkit_name)
-        if not info:
-            raise HTTPException(404, f"工具包不存在: {toolkit_name}")
-        
-        return {
-            "success": True,
-            "toolkit": info
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"获取工具包信息失败: {e}")
-        raise HTTPException(500, f"获取失败: {e}")
-
-@app.post("/tools/{toolkit_name}/{tool_name}")
-async def call_tool(toolkit_name: str, tool_name: str, arguments: Dict[str, Any]):
-    """调用工具"""
-    try:
-        result = await toolkit_manager.call_tool(toolkit_name, tool_name, arguments)
-        return {
-            "success": True,
-            "toolkit": toolkit_name,
-            "tool": tool_name,
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"调用工具失败 {toolkit_name}.{tool_name}: {e}")
-        raise HTTPException(500, f"调用失败: {e}")
-
-# ============ 文件编辑专用API ============
-
-@app.post("/file/edit")
-async def edit_file(request: Dict[str, str]):
-    """编辑文件 - 使用SEARCH/REPLACE格式"""
-    try:
-        path = request.get("path")
-        diff = request.get("diff")
-        
-        if not path or not diff:
-            raise HTTPException(400, "缺少必要参数: path 和 diff")
-        
-        result = await toolkit_manager.call_tool("file_edit", "edit_file", {
-            "path": path,
-            "diff": diff
-        })
-        
-        return {
-            "success": True,
-            "result": result
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"编辑文件失败: {e}")
-        raise HTTPException(500, f"编辑失败: {e}")
-
-@app.post("/file/write")
-async def write_file(request: Dict[str, str]):
-    """写入文件"""
-    try:
-        path = request.get("path")
-        content = request.get("content")
-        
-        if not path or content is None:
-            raise HTTPException(400, "缺少必要参数: path 和 content")
-        
-        result = await toolkit_manager.call_tool("file_edit", "write_file", {
-            "path": path,
-            "file_text": content
-        })
-        
-        return {
-            "success": True,
-            "result": result
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"写入文件失败: {e}")
-        raise HTTPException(500, f"写入失败: {e}")
-
-@app.get("/file/read")
-async def read_file(path: str):
-    """读取文件"""
-    try:
-        result = await toolkit_manager.call_tool("file_edit", "read_file", {
-            "path": path
-        })
-        
-        return {
-            "success": True,
-            "content": result
-        }
-    except Exception as e:
-        logger.error(f"读取文件失败: {e}")
-        raise HTTPException(500, f"读取失败: {e}")
-
-@app.get("/file/list")
-async def list_files(directory: str = "."):
-    """列出目录文件"""
-    try:
-        result = await toolkit_manager.call_tool("file_edit", "list_files", {
-            "directory": directory
-        })
-        
-        return {
-            "success": True,
-            "result": result
-        }
-    except Exception as e:
-        logger.error(f"列出文件失败: {e}")
-        raise HTTPException(500, f"列出失败: {e}")
 
 if __name__ == "__main__":
     import uvicorn

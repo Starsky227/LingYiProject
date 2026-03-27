@@ -122,6 +122,8 @@ class KnowledgeGraphManager:
                     logger.info("Successfully connected to Neo4j")
                     # 确保向量索引已创建
                     self._ensure_vector_indexes()
+                    # 每日检查点：快照 + 记忆衰退
+                    self.daily_checkpoint()
                     return True
 
         except AuthError as e:
@@ -2711,6 +2713,139 @@ class KnowledgeGraphManager:
         except Exception as e:
             logger.error(f"记忆调用标记失败: {e}")
             return False
+
+    def _get_checkpoint_date(self) -> Optional[str]:
+        """
+        从Neo4j中读取全局checkpoint日期字符串（格式 YYYYMMDD）。
+        checkpoint 存储在一个 (:SystemMeta {key: 'daily_checkpoint'}) 节点上。
+
+        Returns:
+            Optional[str]: checkpoint日期字符串，不存在或失败返回None
+        """
+        if not self._ensure_connection():
+            return None
+        try:
+            with self.driver.session() as session:
+                result = session.run(
+                    "MATCH (m:SystemMeta {key: 'daily_checkpoint'}) RETURN m.value AS value"
+                ).single()
+                return result["value"] if result else None
+        except Exception as e:
+            logger.error(f"Failed to get checkpoint date: {e}")
+            return None
+
+    def _set_checkpoint_date(self, date_str: str) -> bool:
+        """
+        在Neo4j中写入/更新全局checkpoint日期。
+
+        Args:
+            date_str: 日期字符串（格式 YYYYMMDD）
+        Returns:
+            bool: 是否成功
+        """
+        if not self._ensure_connection():
+            return False
+        try:
+            with self.driver.session() as session:
+                session.run(
+                    """
+                    MERGE (m:SystemMeta {key: 'daily_checkpoint'})
+                    SET m.value = $date_str, m.updated_at = $now
+                    """,
+                    date_str=date_str,
+                    now=datetime.now().isoformat(),
+                )
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set checkpoint date: {e}")
+            return False
+
+    def daily_checkpoint(self) -> bool:
+        """
+        每日检查点：
+        1. 读取Neo4j中保存的checkpoint日期
+        2. 若与当前日期不一致，先将全部节点和关系导出到
+           logs/memory_graph/<checkpoint日期>.jsonl
+        3. 执行一次 memory_decay
+        4. 更新checkpoint为当前日期
+
+        Returns:
+            bool: 是否执行了衰退流程（日期一致时返回False表示无需操作）
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot run daily checkpoint: No Neo4j connection")
+            return False
+
+        today_str = datetime.now().strftime("%Y%m%d")
+        checkpoint_date = self._get_checkpoint_date()
+
+        if checkpoint_date == today_str:
+            logger.debug("Daily checkpoint already done for today, skipping")
+            return False
+
+        logger.info(f"Daily checkpoint triggered (last={checkpoint_date}, today={today_str})")
+
+        # ---- 1. 导出当前全部节点和关系到本地 ----
+        try:
+            with self.driver.session() as session:
+                nodes_result = session.run(
+                    "MATCH (n) RETURN elementId(n) AS id, labels(n) AS labels, properties(n) AS properties"
+                )
+                nodes = []
+                for record in nodes_result:
+                    props = dict(record["properties"])
+                    props.pop("embedding", None)  # 去掉embedding大字段
+                    nodes.append({
+                        "id": str(record["id"]),
+                        "labels": record["labels"],
+                        "properties": props,
+                    })
+
+                rels_result = session.run(
+                    """
+                    MATCH (a)-[r]->(b)
+                    RETURN elementId(r) AS id, type(r) AS type,
+                           elementId(a) AS start_node, elementId(b) AS end_node,
+                           properties(r) AS properties
+                    """
+                )
+                relationships = []
+                for record in rels_result:
+                    relationships.append({
+                        "id": str(record["id"]),
+                        "type": record["type"],
+                        "start_node": str(record["start_node"]),
+                        "end_node": str(record["end_node"]),
+                        "properties": dict(record["properties"]),
+                    })
+
+            # 写入文件
+            save_date = checkpoint_date if checkpoint_date else today_str
+            log_dir = os.path.join(project_root, "logs", "memory_graph")
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, f"{save_date}.jsonl")
+
+            log_entry = {
+                "nodes": nodes,
+                "relationships": relationships,
+                "timestamp": datetime.now().isoformat(),
+            }
+            with open(log_file, "w", encoding="utf-8") as f:
+                f.write(json.dumps(log_entry, ensure_ascii=False, indent=2) + "\n")
+
+            logger.info(f"Checkpoint snapshot saved: {log_file} ({len(nodes)} nodes, {len(relationships)} relationships)")
+
+        except Exception as e:
+            logger.error(f"Failed to export snapshot during daily checkpoint: {e}")
+            # 导出失败仍继续衰退，避免记忆无限膨胀
+
+        # ---- 2. 执行记忆衰退 ----
+        self.memory_decay()
+
+        # ---- 3. 更新checkpoint日期 ----
+        self._set_checkpoint_date(today_str)
+        logger.info(f"Daily checkpoint completed, checkpoint updated to {today_str}")
+        return True
 
 
 # 全局实例

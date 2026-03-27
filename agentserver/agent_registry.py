@@ -4,7 +4,6 @@ Agent 注册与发现模块
 
 提供:
 - AgentToolRegistry: 扫描 agent 私有 tools/ 目录，供 runner.py 使用
-- AnthropicSkillRegistry: Anthropic Skills 桩实现
 - parse_tool_arguments: 工具参数解析
 - discover_agents: 发现 agentserver 下所有可用 agent
 - register_agents_to_registry: 将 agent 注册为工具到已有 registry
@@ -36,6 +35,24 @@ def _extract_tool_name(config: Dict[str, Any]) -> str:
     if isinstance(fn, dict):
         return fn.get("name", "")
     return ""
+
+
+def _normalize_tool_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """统一为 Responses API 格式
+
+    支持输入:
+    - Responses API 扁平格式: {"type":"function", "name":..., ...}（直通）
+    - Chat Completions 嵌套格式: {"type":"function", "function":{"name":...}}（展开）
+    """
+    if "function" in schema and isinstance(schema["function"], dict):
+        func = schema["function"]
+        return {
+            "type": "function",
+            "name": func.get("name", ""),
+            "description": func.get("description", ""),
+            "parameters": func.get("parameters", {}),
+        }
+    return dict(schema)
 
 
 # ---------------------------------------------------------------------------
@@ -71,20 +88,14 @@ class AgentModelConfig:
     model: str = ""
     max_tokens: int = 4096
     temperature: float = 0.7
-    thinking_tool_call_compat: bool = False
 
     def __post_init__(self):
         if not self.model:
             from system.config import config
-            self.model = config.api.model
-            self.max_tokens = config.api.max_tokens
-            self.temperature = config.api.temperature
-
-
-class _SimpleModelSelector:
-    """简化的模型选择器"""
-    def select_agent_config(self, agent_config, group_id=0, user_id=0, global_enabled=False):
-        return agent_config
+            agent_cfg = config.agent_api
+            self.model = agent_cfg.agent_model
+            self.max_tokens = agent_cfg.agent_max_tokens
+            self.temperature = agent_cfg.agent_temperature
 
 
 class AgentAIClient:
@@ -92,48 +103,44 @@ class AgentAIClient:
 
     runner.py 期望 ai_client 提供:
       - agent_config (AgentModelConfig)
-      - model_selector.select_agent_config(...)
-      - await request_model(...) -> dict (Chat Completions 格式)
+      - await request_model(...) -> Responses API response 对象
     """
 
     def __init__(self):
         self.agent_config = AgentModelConfig()
-        self.model_selector = _SimpleModelSelector()
         self._client = None
 
     def _get_client(self):
         if self._client is None:
             from openai import AsyncOpenAI
             from system.config import config
+            agent_cfg = config.agent_api
             self._client = AsyncOpenAI(
-                api_key=config.api.api_key,
-                base_url=config.api.base_url,
+                api_key=agent_cfg.agent_api_key,
+                base_url=agent_cfg.agent_base_url,
             )
         return self._client
 
     async def request_model(
         self,
         model_config=None,
-        messages=None,
-        max_tokens=None,
+        input_items=None,
+        max_output_tokens=None,
         call_type="",
         tools=None,
-        tool_choice=None,
-    ) -> dict:
+    ):
         client = self._get_client()
         cfg = model_config or self.agent_config
         kwargs = {
             "model": cfg.model,
-            "messages": messages or [],
-            "max_tokens": max_tokens or cfg.max_tokens,
+            "input": input_items or [],
+            "max_output_tokens": max_output_tokens or cfg.max_tokens,
             "temperature": cfg.temperature,
         }
         if tools:
             kwargs["tools"] = tools
-            kwargs["tool_choice"] = tool_choice or "auto"
 
-        response = await client.chat.completions.create(**kwargs)
-        return response.model_dump()
+        return await client.responses.create(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +183,7 @@ class AgentToolRegistry:
                     "handler_path": handler_path,
                     "handler": None,
                 }
-                self._schemas.append(tool_config)
+                self._schemas.append(_normalize_tool_schema(tool_config))
                 logger.debug(f"  载入工具定义: {name}")
             except Exception as e:
                 logger.error(f"加载工具失败 {item_dir}: {e}")
@@ -225,36 +232,6 @@ class AgentToolRegistry:
         if not hasattr(module, "execute"):
             raise RuntimeError(f"{handler_path} 缺少 execute 函数")
         item["handler"] = module.execute
-
-
-# ---------------------------------------------------------------------------
-# AnthropicSkillRegistry — 桩实现
-# ---------------------------------------------------------------------------
-
-class AnthropicSkillRegistry:
-    """Anthropic Skills 注册表（桩实现，当前无 agent 使用）。"""
-
-    dot_delimiter = "-_-"
-
-    def __init__(self, skills_dir: Path):
-        self.skills_dir = skills_dir
-
-    def has_skills(self) -> bool:
-        return False
-
-    def get_tools_schema(self) -> List[Dict[str, Any]]:
-        return []
-
-    def get_all_skills(self) -> list:
-        return []
-
-    def build_metadata_xml(self) -> str:
-        return ""
-
-    async def execute_skill_tool(
-        self, name: str, args: dict, context: dict
-    ) -> str:
-        return f"Anthropic skill {name} 不可用"
 
 
 # ---------------------------------------------------------------------------
@@ -342,27 +319,3 @@ def _make_lazy_agent_handler(agent_info: Dict[str, Any]) -> Callable:
         return str(result)
 
     return wrapper
-
-
-def register_agents_to_registry(tool_registry, base_dir: Path = None) -> int:
-    """将 agentserver 下发现到的 agent 注册到工具注册表中。
-
-    Args:
-        tool_registry: 拥有 register_external_item(name, schema, handler) 方法的注册表
-        base_dir: agentserver 根目录，默认为本文件所在目录
-
-    Returns:
-        注册成功的 agent 数量
-    """
-    agents = discover_agents(base_dir)
-    count = 0
-    for agent_info in agents:
-        handler_fn = _make_lazy_agent_handler(agent_info)
-        tool_registry.register_external_item(
-            agent_info["name"],
-            agent_info["schema"],
-            handler_fn,
-        )
-        logger.info(f"[AgentRegistry] 注册 agent 工具: {agent_info['name']}")
-        count += 1
-    return count

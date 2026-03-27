@@ -266,17 +266,18 @@ class _TaskScheduler:
     async def _call_llm_compression(self, prompt: str) -> Dict[str, Any]:
         """调用LLM进行记忆压缩"""
         try:
-            import litellm
-            litellm.enable_json_schema_validation = True
-            
-            response = litellm.completion(
-                model=self.llm_config["model"],
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(
                 api_key=self.llm_config["api_key"],
-                api_base=self.llm_config["api_base"],
+                base_url=self.llm_config["api_base"],
+            )
+            response = await client.chat.completions.create(
+                model=self.llm_config["model"],
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=1024,
             )
-            
+
             json_str = response.choices[0].message.content.strip()
             return json.loads(json_str)
             

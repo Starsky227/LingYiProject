@@ -18,9 +18,9 @@ from mcpserver.mcp_manager import get_mcp_manager
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # API 配置
-API_KEY = config.api.api_key
-API_URL = config.api.base_url
-MODEL = config.api.model
+API_KEY = config.main_api.api_key
+API_URL = config.main_api.base_url
+MODEL = config.main_api.model
 AI_NAME = config.system.ai_name
 USERNAME = config.system.user_name
 DEBUG_MODE = config.system.debug
