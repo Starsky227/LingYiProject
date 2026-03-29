@@ -57,10 +57,6 @@ response = chat_with_model(messages, on_response_callback)
 
 ## 日志系统
 
-### 聊天日志
-- **位置**: `brain/memory/logs/chat_logs/`
-- **格式**: `HH:MM:SS <发送者> 消息内容`
-- **文件名**: `chat_logs_YYYY_MM_DD.txt`
 
 ### 调试日志
 - DEBUG模式下输出详细的处理信息

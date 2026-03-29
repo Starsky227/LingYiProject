@@ -248,9 +248,9 @@ class KnowledgeGraphManager:
         if node_type == "Time":
             return self.create_time_node(session, time_str, time_type, context)
         elif node_type == "Character":
-            return self.create_character_node(session, name, trust, context)
+            return self.create_character_node(session, name, trust, context, note)
         elif node_type == "Location":
-            return self.create_location_node(session, name, context)
+            return self.create_location_node(session, name, context, note)
         elif node_type == "Entity":
             return self.create_entity_node(session, name, context, note)
         else:
@@ -262,11 +262,11 @@ class KnowledgeGraphManager:
         """
         根据时间组件列表创建对应的时间节点和层次关系。
         列表中第一个元素为最上层（最粗粒度），最后一个为最具体。
-        例如: ["2001年", "2月", "3日", "4点", "56分", "7秒"]
+        例如: ["2001年", "02月", "03日", "04点", "56分", "07秒"]
 
         Args:
             session: Neo4j session
-            time_str: 时间组件列表，如 ["2001年", "2月", "3日"]
+            time_str: 时间组件列表，如 ["2001年", "02月", "03日"]
             time_type: 时间类型，"static" 或 "recurring"
             context: 上下文环境
 
@@ -275,7 +275,7 @@ class KnowledgeGraphManager:
         """
         if not time_str:
             return None
-        logger.debug(f"Creating time node for: {time_str}")
+        logger.info(f"Creating time node for: {time_str}")
 
         try:
             most_specific_node_id = None
@@ -292,29 +292,45 @@ class KnowledgeGraphManager:
                 # cumulative_name: 从上层到当前层的累积文本，用于embedding
                 cumulative_name = "".join(c.strip() for c in time_str[:i + 1])
 
-                embedding = self._generate_embedding(cumulative_name)
-
-                result = session.run(
+                # 先查询是否已存在相同 time_str+context 的节点且已有 embedding
+                existing = session.run(
                     """
-                    MERGE (t:Time {time_str: $time_str, context: $context})
-                    SET t.name = $name,
-                        t.node_type = 'Time',
-                        t.time_type = $time_type,
-                        t.embedding = $embedding
-                    RETURN elementId(t) as node_id
+                    MATCH (t:Time {time_str: $time_str, context: $context})
+                    RETURN elementId(t) as node_id, t.embedding IS NOT NULL as has_embedding
                     """,
-                    name=name,
                     time_str=cumulative_name,
                     context=context,
-                    time_type=time_type,
-                    embedding=embedding,
-                )
-                record = result.single()
-                if not record:
-                    continue
+                ).single()
 
-                current_node_id = record["node_id"]
-                most_specific_node_id = current_node_id
+                if existing and existing["has_embedding"]:
+                    # 节点已存在且有 embedding，直接复用
+                    current_node_id = existing["node_id"]
+                    most_specific_node_id = current_node_id
+                else:
+                    # 节点不存在或缺少 embedding，生成后写入
+                    embedding = self._generate_embedding(cumulative_name)
+
+                    result = session.run(
+                        """
+                        MERGE (t:Time {time_str: $time_str, context: $context})
+                        SET t.name = $name,
+                            t.node_type = 'Time',
+                            t.time_type = $time_type,
+                            t.embedding = $embedding
+                        RETURN elementId(t) as node_id
+                        """,
+                        name=name,
+                        time_str=cumulative_name,
+                        context=context,
+                        time_type=time_type,
+                        embedding=embedding,
+                    )
+                    record = result.single()
+                    if not record:
+                        continue
+
+                    current_node_id = record["node_id"]
+                    most_specific_node_id = current_node_id
 
                 # 创建当前节点到上层节点的 BELONGS_TO 关系
                 if prev_cumulative is not None:
@@ -341,33 +357,7 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to create time node '{time_str}': {e}")
-            # 回退到创建单一时间节点
-            try:
-                fallback_name = "".join(time_str)
-                fallback_embedding = self._generate_embedding(fallback_name)
-
-                result = session.run(
-                    """
-                    MERGE (t:Time {time_str: $time_str, context: $context})
-                    SET t.name = $name,
-                        t.node_type = 'Time',
-                        t.time_type = $time_type,
-                        t.embedding = $embedding
-                    RETURN elementId(t) as node_id
-                    """,
-                    name=fallback_name,
-                    time_str=fallback_name,
-                    context=context,
-                    time_type=time_type,
-                    embedding=fallback_embedding,
-                )
-                record = result.single()
-                if record:
-                    return record["node_id"]
-                return None
-            except Exception as fallback_e:
-                logger.error(f"Failed to create fallback time node: {fallback_e}")
-                return None
+            return None
 
     
     def create_character_node(
@@ -376,6 +366,7 @@ class KnowledgeGraphManager:
         name: str,
         trust: float = 0.5,
         context: str = "reality",
+        note: str = "",
     ) -> Optional[str]:
         """
         创建角色节点
@@ -385,7 +376,7 @@ class KnowledgeGraphManager:
             name: 角色名称
             trust: 信任度 (默认0.5)
             context: 上下文环境 (默认"reality")
-
+            note: 备注信息 (默认空字符串)
         Returns:
             Optional[str]: 创建的角色节点ID，失败返回None
         """
@@ -399,7 +390,6 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
-            # 生成embedding（使用name字段）
             character_embedding = self._generate_embedding(name)
 
             result = session.run(
@@ -410,7 +400,8 @@ class KnowledgeGraphManager:
                     c.trust = $trust,
                     c.context = $context,
                     c.last_updated = $last_updated,
-                    c.embedding = $embedding
+                    c.embedding = $embedding,
+                    c.note = $note
                 RETURN elementId(c) as node_id
             """,
                 name=name,
@@ -419,6 +410,7 @@ class KnowledgeGraphManager:
                 created_at=current_time,
                 last_updated=current_time,
                 embedding=character_embedding,
+                note=note,
             )
 
             record = result.single()
@@ -437,7 +429,7 @@ class KnowledgeGraphManager:
             return None
 
     def create_location_node(
-        self, session, name: str, context: str = "reality"
+        self, session, name: str, context: str = "reality", note: str = ""
     ) -> Optional[str]:
         """
         创建地点节点
@@ -446,7 +438,7 @@ class KnowledgeGraphManager:
             session: Neo4j session
             name: 地点名称
             context: 上下文环境 (默认"reality")
-
+            note: 备注信息 (默认空字符串)
         Returns:
             Optional[str]: 创建的地点节点ID，失败返回None
         """
@@ -460,7 +452,6 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
-            # 生成embedding（使用name字段）
             location_embedding = self._generate_embedding(name)
 
             result = session.run(
@@ -470,7 +461,8 @@ class KnowledgeGraphManager:
                     l.context = $context,
                     l.created_at = $created_at,
                     l.last_updated = $last_updated,
-                    l.embedding = $embedding
+                    l.embedding = $embedding,
+                    l.note = $note
                 RETURN elementId(l) as node_id
             """,
                 name=name,
@@ -478,6 +470,7 @@ class KnowledgeGraphManager:
                 created_at=current_time,
                 last_updated=current_time,
                 embedding=location_embedding,
+                note=note,
             )
 
             record = result.single()
@@ -522,7 +515,6 @@ class KnowledgeGraphManager:
         try:
             current_time = datetime.now().isoformat()
 
-            # 生成embedding（使用name字段）
             entity_embedding = self._generate_embedding(name)
 
             result = session.run(
@@ -742,7 +734,7 @@ class KnowledgeGraphManager:
             )
             return None
 
-    def modify_node(self, node_id: str, updates: dict, call: str = "passive") -> Optional[str]:
+    def modify_node(self, node_id: str, updates: dict) -> Optional[str]:
         """
         用于从客户端直接修改节点的属性。
 
@@ -781,41 +773,12 @@ class KnowledgeGraphManager:
                     return None
 
                 current_node_type = check_result["node_type"]
-                current_node_name = check_result["node_name"]
-                current_node_context = check_result["node_context"]
-
                 # 如果nodeType = Time，则拒绝修改
                 if current_node_type == "Time":
                     logger.warning(
                         f"Cannot modify Time node '{node_id}' - Time nodes are read-only"
                     )
                     return "InvalidModification"
-
-                if call == "passive":
-                    # 被动更改的情况下，如果检测到name，context，nodeType和数据库中不一致，则拒绝并return
-                    if "name" in updates and updates["name"] != current_node_name:
-                        logger.warning(
-                            f"Passive modification rejected: name mismatch for node '{node_id}'"
-                        )
-                        return "InvalidModification"
-
-                    if (
-                        "context" in updates
-                        and updates["context"] != current_node_context
-                    ):
-                        logger.warning(
-                            f"Passive modification rejected: context mismatch for node '{node_id}'"
-                        )
-                        return "InvalidModification"
-
-                    if (
-                        "node_type" in updates
-                        and updates["node_type"] != current_node_type
-                    ):
-                        logger.warning(
-                            f"Passive modification rejected: nodeType mismatch for node '{node_id}'"
-                        )
-                        return "InvalidModification"
 
         except Exception as e:
             logger.error(f"Failed to validate node '{node_id}': {e}")
@@ -1068,7 +1031,6 @@ class KnowledgeGraphManager:
         confidence: float = 0.5,
         directivity: str = "to_endNode",
         evidence: str = "",
-        call: str = "passive",
         importance: float = None,
     ) -> Optional[str]:
         """
@@ -1082,7 +1044,6 @@ class KnowledgeGraphManager:
             directivity: 关系方向 (输入'to_endNode', 'to_startNode', 'bidirectional'表示双向, 
                             输出时会自动调整为'single'或'bidirectional')
             evidence: 关系证据（为什么设置这个置信度，选填）
-            call: 调用模式 ('passive' 或 'active')
             importance: 重要程度 (0-1)，如果提供则更新
         Returns:
             Optional[str]: 修改成功返回关系ID，失败返回None
@@ -1125,24 +1086,12 @@ class KnowledgeGraphManager:
                 target_name = check_result["target_name"]
                 rel_type_name = check_result["rel_type_name"]
                 current_properties = check_result["current_properties"]
-                current_predicate = (
-                    current_properties.get("predicate") if current_properties else None
-                )
-
                 # 如果关系类型是BELONGS_TO，拒绝修改
                 if rel_type_name == "BELONGS_TO":
                     logger.warning(
                         f"Cannot modify BELONGS_TO relation with ID '{relation_id}' - BELONGS_TO relations are protected"
                     )
                     return None
-
-                if call == "passive":
-                    # 被动更改的情况下，如果检测到predicate和数据库中不一致，则拒绝并return
-                    if predicate != current_predicate:
-                        logger.warning(
-                            f"Cannot modify predicate in passive call mode: current='{current_predicate}', requested='{predicate}'"
-                        )
-                        return None
 
                 # 更新现有关系的属性
                 current_time = datetime.now().isoformat()
@@ -1325,6 +1274,140 @@ class KnowledgeGraphManager:
 
         except Exception as e:
             logger.error(f"Failed to collide nodes '{node_id_1}' and '{node_id_2}': {e}")
+            return None
+
+    def ensure_node_exists(
+        self,
+        session=None,
+        *,
+        node_type: str,
+        name: str = "",
+        time_str: Optional[list[str]] = None,
+        time_type: str = "static",
+        trust: float = 0.5,
+        context: str = "reality现实",
+        note: str = "无",
+    ) -> Optional[str]:
+        """如果节点已存在则返回其 ID，否则创建节点并返回新 ID。
+
+        查重规则:
+        - Character / Location / Entity: 使用 `name` + `node_type` + `context` 查重
+
+        注意:
+        - Time 节点具有层级与聚合语义，`ensure_node_exists` 不应也不会用于 Time 节点
+
+        Args:
+            session: 可选 Neo4j session/transaction；不传则函数内部自行创建 session
+            node_type: 节点类型（Time/Character/Location/Entity）
+            name: 非 Time 节点名称
+            time_str: Time 节点时间组件列表
+            time_type: Time 节点类型（static/recurring）
+            trust: Character 信任度
+            context: 节点语境
+            note: 节点备注
+
+        Returns:
+            Optional[str]: 已存在或新建节点的 elementId，失败返回 None
+        """
+        if not self._ensure_connection():
+            logger.error("Cannot ensure node exists: No Neo4j connection")
+            return None
+
+        node_type = (node_type or "").strip()
+        if not node_type:
+            logger.error("Cannot ensure node exists: node_type is required")
+            return None
+
+        if node_type == "Time":
+            logger.warning("ensure_node_exists is not applicable to Time nodes")
+            return None
+
+        time_str = time_str or []
+
+        def _find_existing_node(tx) -> Optional[str]:
+            normalized_name = (name or "").strip()
+            if not normalized_name:
+                logger.warning(f"Cannot ensure {node_type} node: name is empty")
+                return None
+
+            record = tx.run(
+                """
+                MATCH (n {name: $name, node_type: $node_type, context: $context})
+                RETURN elementId(n) as node_id
+                ORDER BY n.last_updated DESC
+                LIMIT 1
+                """,
+                name=normalized_name,
+                node_type=node_type,
+                context=context,
+            ).single()
+            return record["node_id"] if record else None
+
+        def _create_node(tx) -> Optional[str]:
+            create_name = (name or "").strip()
+            return self.create_node(
+                session=tx,
+                name=create_name,
+                node_type=node_type,
+                time_str=None,
+                time_type=time_type,
+                trust=trust,
+                context=context,
+                note=note,
+            )
+
+        try:
+            if session is not None:
+                existing_node_id = _find_existing_node(session)
+                if existing_node_id:
+                    return existing_node_id
+                return _create_node(session)
+
+            with self.driver.session() as local_session:
+                existing_node_id = _find_existing_node(local_session)
+                if existing_node_id:
+                    return existing_node_id
+                return _create_node(local_session)
+        except Exception as e:
+            logger.error(f"Failed to ensure node exists ({node_type}): {e}")
+            return None
+
+    def ensure_relation_exists(
+        self,
+        *,
+        start_node_id: str,
+        end_node_id: str,
+        predicate: str,
+        source: str,
+        confidence: float = 0.5,
+        importance: float = 0.5,
+        directivity: str = "single",
+        evidence: str = "",
+    ) -> Optional[str]:
+        """如果关系已存在则复用并更新，否则创建关系并返回关系 ID。
+
+        该方法复用 `create_relation` 的幂等逻辑：
+        当起止节点间存在同 predicate 关系时，`create_relation` 会转为 `modify_relation`。
+        """
+        if not all([start_node_id, end_node_id, predicate, source]):
+            logger.error("Cannot ensure relation exists: missing required parameters")
+            return None
+
+        try:
+            return self.create_relation(
+                startNode_id=start_node_id,
+                endNode_id=end_node_id,
+                predicate=predicate,
+                source=source,
+                confidence=confidence,
+                importance=importance,
+                directivity=directivity,
+                evidence=evidence,
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to ensure relation exists ({start_node_id}-{predicate}->{end_node_id}): {e}"
+            )
             return None
 
     def memory_decay(self, decay_factor: float = 0.8) -> None:
@@ -1999,7 +2082,7 @@ class KnowledgeGraphManager:
                 
                 # 将过滤后的结果保存到日志文件
                 try:
-                    log_dir = os.path.join(project_root, "logs", "memory_graph")
+                    log_dir = os.path.join(project_root, "data", "memory_graph")
                     os.makedirs(log_dir, exist_ok=True)
                     
                     log_filename = f"{datetime.now().strftime('%Y%m%d')}.jsonl"
@@ -2765,7 +2848,7 @@ class KnowledgeGraphManager:
         每日检查点：
         1. 读取Neo4j中保存的checkpoint日期
         2. 若与当前日期不一致，先将全部节点和关系导出到
-           logs/memory_graph/<checkpoint日期>.jsonl
+           data/memory_graph/<checkpoint日期>.jsonl
         3. 执行一次 memory_decay
         4. 更新checkpoint为当前日期
 
@@ -2821,7 +2904,7 @@ class KnowledgeGraphManager:
 
             # 写入文件
             save_date = checkpoint_date if checkpoint_date else today_str
-            log_dir = os.path.join(project_root, "logs", "memory_graph")
+            log_dir = os.path.join(project_root, "data", "memory_graph")
             os.makedirs(log_dir, exist_ok=True)
             log_file = os.path.join(log_dir, f"{save_date}.jsonl")
 

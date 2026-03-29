@@ -49,7 +49,7 @@
 
 ### 目录结构
 
-- **logs/**: 日志文件存储
+- **data/**: 日志文件存储
 - **logs_to_load/**: 待加载的日志文件
 - **memory_graph/**: 本地记忆图谱JSON文件
 - **prompt/**: AI提示词模板

@@ -96,7 +96,7 @@ class SystemConfig(BaseModel):
     ai_name: str = Field(default="AI助手", description="AI助手名称")
     user_name: str = Field(default="用户", description="默认用户名")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
-    log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "logs", description="日志目录")
+    log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "data", description="日志目录")
     # voice_enabled: bool = Field(default=False, description="是否启用语音功能")
     stream_mode: bool = Field(default=False, description="是否启用流式响应")
     debug: bool = Field(default=False, description="是否启用调试模式")

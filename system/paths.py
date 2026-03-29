@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-DATA_DIR = Path("logs")
+DATA_DIR = Path("data")
 CACHE_DIR = DATA_DIR / "cache"
 RENDER_CACHE_DIR = CACHE_DIR / "render"
 IMAGE_CACHE_DIR = CACHE_DIR / "images"

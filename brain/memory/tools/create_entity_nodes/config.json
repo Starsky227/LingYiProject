@@ -1,0 +1,25 @@
+{
+    "type": "function",
+    "function": {
+        "name": "create_entity_nodes",
+        "description": "创建实体节点（事件/物品/概念）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "实体名称。"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "语境，默认 reality现实。"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "备注信息。"
+                }
+            },
+            "required": ["name", "context"]
+        }
+    }
+}

@@ -407,7 +407,7 @@ class LingYiCore:
                     memory_text = "\n".join(memory_parts)
                     _related = cached_memory  # 捕获当前值，避免后续轮次覆盖
                     asyncio.create_task(
-                        asyncio.to_thread(memory_writer.full_memory_record, memory_text, _related)
+                        memory_writer.full_memory_record(memory_text, _related)
                     )
 
                 # Step 5: 等待任务完成或 buffer 新消息（至多 BUFFER_WAIT_TIMEOUT 秒）

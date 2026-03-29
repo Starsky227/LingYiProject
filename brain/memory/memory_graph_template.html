@@ -2785,6 +2785,7 @@
                 const characterName = (item.properties.name || item.label || '').replace(/"/g, '&quot;');
                 const characterTrust = (item.properties.trust || item.properties['角色置信度'] || '').toString().replace(/"/g, '&quot;');
                 const characterContext = (item.properties.context || 'reality现实').replace(/"/g, '&quot;');
+                const characterNote = (item.properties.note || '').toString().replace(/"/g, '&quot;');
                 
                 propertiesHtml = `
                     <label style="font-weight: 600; color: #495057; margin-bottom: 8px; display: block;">角色属性:</label>
@@ -2795,11 +2796,15 @@
                         </div>
                         <div class="form-group" style="margin-bottom: 12px;">
                             <label for="edit-character-trust" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">角色置信度：</label>
-                            <input type="text" id="edit-character-trust" value="${characterTrust}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.75）">
+                            <input type="text" id="edit-character-trust" value="${characterTrust}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="取值范围0-1（默认0.5）">
                         </div>
                         <div class="form-group" style="margin-bottom: 0;">
                             <label for="edit-character-context" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">上下文：</label>
                             <input type="text" id="edit-character-context" value="${characterContext}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="角色所属上下文（默认reality现实）">
+                        </div>
+                        <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+                            <label for="edit-character-note" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">备注信息：</label>
+                            <textarea id="edit-character-note" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; resize: vertical;" rows="3" placeholder="备注信息（选填）">${characterNote}</textarea>
                         </div>
                     </div>
                 `;
@@ -2807,6 +2812,7 @@
                 // 获取地点的当前值，确保安全转义
                 const locationName = (item.properties.name || item.label || '').replace(/"/g, '&quot;');
                 const locationContext = (item.properties.context || 'reality现实').replace(/"/g, '&quot;');
+                const locationNote = (item.properties.note || '').toString().replace(/"/g, '&quot;');
                 
                 propertiesHtml = `
                     <label style="font-weight: 600; color: #495057; margin-bottom: 8px; display: block;">地点属性:</label>
@@ -2818,6 +2824,10 @@
                         <div class="form-group" style="margin-bottom: 0;">
                             <label for="edit-location-context" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">上下文：</label>
                             <input type="text" id="edit-location-context" value="${locationContext}" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" placeholder="地点所属上下文（默认reality现实）">
+                        </div>
+                        <div class="form-group" style="margin-top: 12px; margin-bottom: 0;">
+                            <label for="edit-location-note" style="font-weight: 600; color: #0c5460; margin-bottom: 4px; display: block;">备注信息：</label>
+                            <textarea id="edit-location-note" style="width: 100%; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; resize: vertical;" rows="3" placeholder="备注信息（选填）">${locationNote}</textarea>
                         </div>
                     </div>
                 `;
@@ -3044,6 +3054,7 @@
                 const characterNameInput = document.getElementById('edit-character-name');
                 const characterTrustInput = document.getElementById('edit-character-trust');
                 const characterContextInput = document.getElementById('edit-character-context');
+                const characterNoteInput = document.getElementById('edit-character-note');
                 
                 if (characterNameInput && characterNameInput.value.trim()) {
                     modifiedProperties['name'] = characterNameInput.value.trim();
@@ -3060,16 +3071,23 @@
                 if (characterContextInput && characterContextInput.value.trim()) {
                     modifiedProperties['context'] = characterContextInput.value.trim();
                 }
+                if (characterNoteInput) {
+                    modifiedProperties['note'] = characterNoteInput.value.trim();
+                }
             } else if (newNodeType === 'Location') {
                 // 收集地点属性
                 const locationNameInput = document.getElementById('edit-location-name');
                 const locationContextInput = document.getElementById('edit-location-context');
+                const locationNoteInput = document.getElementById('edit-location-note');
                 
                 if (locationNameInput && locationNameInput.value.trim()) {
                     modifiedProperties['name'] = locationNameInput.value.trim();
                 }
                 if (locationContextInput && locationContextInput.value.trim()) {
                     modifiedProperties['context'] = locationContextInput.value.trim();
+                }
+                if (locationNoteInput) {
+                    modifiedProperties['note'] = locationNoteInput.value.trim();
                 }
             }
             
@@ -3480,11 +3498,15 @@
                     </div>
                     <div class="form-group">
                         <label for="character-trust-input">角色置信度：</label>
-                        <input type="text" id="character-trust-input" placeholder="取值范围0-1（默认0.75）" class="time-input" />
+                        <input type="text" id="character-trust-input" placeholder="取值范围0-1（默认0.5）" class="time-input" />
                     </div>
                     <div class="form-group">
                         <label for="character-context-input">上下文环境：</label>
                         <input type="text" id="character-context-input" value="reality现实" placeholder="输入上下文环境" class="time-input" />
+                    </div>
+                    <div class="form-group">
+                        <label for="character-note-input">备注信息：</label>
+                        <textarea id="character-note-input" placeholder="备注信息（选填）" class="time-input" rows="3"></textarea>
                     </div>
                     <div class="form-buttons">
                         <button class="create-btn" onclick="createCharacterNode()">创建角色节点</button>
@@ -3513,6 +3535,10 @@
                     <div class="form-group">
                         <label for="location-context-input">上下文环境：</label>
                         <input type="text" id="location-context-input" value="reality现实" placeholder="输入上下文环境" class="time-input" />
+                    </div>
+                    <div class="form-group">
+                        <label for="location-note-input">备注信息：</label>
+                        <textarea id="location-note-input" placeholder="备注信息（选填）" class="time-input" rows="3"></textarea>
                     </div>
                     <div class="form-buttons">
                         <button class="create-btn" onclick="createLocationNode()">创建地点节点</button>
@@ -3662,9 +3688,11 @@
             const nameInput = document.getElementById('character-name-input');
             const trustInput = document.getElementById('character-trust-input');
             const contextInput = document.getElementById('character-context-input');
+            const noteInput = document.getElementById('character-note-input');
             const characterName = nameInput.value.trim();
             const trust = parseFloat(trustInput.value.trim()) || 0.5;
             const context = contextInput.value.trim() || 'reality现实';
+            const note = noteInput ? noteInput.value.trim() : '';
             
             if (!characterName) {
                 alert('请输入角色名称');
@@ -3694,7 +3722,8 @@
                 body: JSON.stringify({
                     character_name: characterName,
                     trust: trust,
-                    context: context
+                    context: context,
+                    note: note
                 })
             })
             .then(response => response.json())
@@ -3726,8 +3755,10 @@
         function createLocationNode() {
             const nameInput = document.getElementById('location-name-input');
             const contextInput = document.getElementById('location-context-input');
+            const noteInput = document.getElementById('location-note-input');
             const locationName = nameInput.value.trim();
             const context = contextInput.value.trim() || 'reality现实';
+            const note = noteInput ? noteInput.value.trim() : '';
             
             if (!locationName) {
                 alert('请输入地点名称');
@@ -3749,7 +3780,8 @@
                 },
                 body: JSON.stringify({
                     location_name: locationName,
-                    context: context
+                    context: context,
+                    note: note
                 })
             })
             .then(response => response.json())

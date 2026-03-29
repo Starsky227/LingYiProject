@@ -1,0 +1,29 @@
+{
+    "type": "function",
+    "function": {
+        "name": "modify_location_nodes",
+        "description": "修改地点节点属性。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "地点节点 elementId。"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "地点名称。留空则保持原值。"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "地点所属语境。留空则保持原值。"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "备注信息。留空则保持原值。"
+                }
+            },
+            "required": ["node_id"]
+        }
+    }
+}

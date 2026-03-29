@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
 import logging
 
@@ -11,12 +12,22 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from brain.lingyi_core.lingyi_core import LingYiCore
+from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
 from system.config import config
 from utils.conversation_session import ConversationSession
 from utils.common import extract_text
 from onebot import get_message_content, parse_message_time
 
 logger = logging.getLogger(__name__)
+
+
+MEDIA_LABELS = {
+    "image": "图片",
+    "file": "文件",
+    "video": "视频",
+    "record": "语音",
+    "audio": "音频",
+}
 
 
 def load_prompt_file(filename: str, description: str = "") -> str:
@@ -99,10 +110,169 @@ class AICoordinator:
             'group_display_name': group_display_name,
             'message': message,
         }
+
+    def _build_address_info(self, session_key: str, event: dict[str, Any], meta: dict[str, Any]) -> dict[str, Any]:
+        """构造传递给 lingyi_core / agentserver 的通用地址讯息。"""
+        attachments: list[dict[str, Any]] = []
+        for segment in get_message_content(event):
+            seg_type = str(segment.get("type", "")).strip()
+            seg_data = segment.get("data", {}) or {}
+            file_token = str(seg_data.get("file", "") or seg_data.get("url", "")).strip()
+            if seg_type not in MEDIA_LABELS or not file_token:
+                continue
+
+            display = f"[{MEDIA_LABELS[seg_type]}: {file_token}]"
+            attachments.append({
+                "channel": "qq",
+                "resolver": "qq_image_token" if seg_type == "image" else "qq_media_token",
+                "media_type": seg_type,
+                "token": file_token,
+                "display": display,
+                "name": Path(file_token).name or file_token,
+                "downloadable": seg_type == "image",
+            })
+
+        return {
+            "channel": "qq",
+            "session_key": session_key,
+            "message_type": meta.get("message_type", ""),
+            "user_id": meta.get("user_id"),
+            "group_id": meta.get("group_id"),
+            "group_display_name": meta.get("group_display_name", ""),
+            "attachments": attachments,
+            "capabilities": [
+                {
+                    "resolver": "qq_image_token",
+                    "description": "可将 QQ 图片 token 解析为下载地址",
+                }
+            ],
+        }
+
+    def _format_address_message(self, address_info: dict[str, Any]) -> str:
+        """将结构化地址讯息格式化为给模型看的文本。"""
+        attachments = address_info.get("attachments", []) or []
+        if not attachments:
+            return "[地址讯息]\n当前消息未携带可追踪附件。"
+
+        lines = ["[地址讯息]", "当前窗口来源: QQ", "可追踪附件:"]
+        for item in attachments:
+            resolver = item.get("resolver", "unknown")
+            display = item.get("display", item.get("token", ""))
+            downloadable = "可下载" if item.get("downloadable") else "暂不可下载"
+            lines.append(f"- {display} | resolver={resolver} | {downloadable}")
+        lines.append("若工具找不到文件路径，可优先使用以上原始附件标记或 token 进行回溯下载。")
+        return "\n".join(lines)
+
+    async def _resolve_file_source_from_address(
+        self,
+        file_source: str,
+        address_info: Optional[dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """根据地址讯息回溯文件源，目前实现 QQ 图片 token -> URL。"""
+        source = (file_source or "").strip()
+        if not source:
+            return None
+
+        attachments = (address_info or {}).get("attachments", []) or []
+        normalized = source.strip().strip('"').strip("'")
+        normalized_name = Path(normalized).name or normalized
+
+        for item in attachments:
+            token = str(item.get("token", "")).strip()
+            display = str(item.get("display", "")).strip()
+            name = str(item.get("name", "")).strip()
+            resolver = str(item.get("resolver", "")).strip()
+
+            matched = normalized in {token, display, name} or normalized_name in {token, display, name}
+            if not matched:
+                continue
+
+            if resolver == "qq_image_token":
+                try:
+                    resolved = await self.onebot.get_image(token)
+                    if resolved:
+                        logger.info(f"[AICoordinator] resolved QQ image token via address info: {token}")
+                        return resolved
+                except Exception as e:
+                    logger.warning(f"[AICoordinator] resolve QQ image token failed: {e}")
+
+        return None
+
+    async def _ensure_qq_graph_bindings(self, sender_name: str, meta: dict[str, Any]) -> None:
+        """确保 QQ 用户与群信息在记忆图谱中存在基础绑定关系。"""
+        try:
+            await asyncio.to_thread(self._ensure_qq_graph_bindings_sync, sender_name, meta)
+        except Exception as e:
+            logger.warning(f"[AICoordinator] ensure qq graph bindings failed: {e}")
+
+    def _ensure_qq_graph_bindings_sync(self, sender_name: str, meta: dict[str, Any]) -> None:
+        """同步执行图谱创建/复用逻辑（在线程中调用）。"""
+        kg_manager = get_knowledge_graph_manager()
+        if not kg_manager.connected and not kg_manager._ensure_connection():
+            logger.debug("[AICoordinator] skip qq graph binding: neo4j unavailable")
+            return
+
+        character_name = (sender_name or meta.get("display_name") or "").strip()
+        if not character_name:
+            character_name = str(meta.get("user_id", "")).strip()
+
+        user_id_str = str(meta.get("user_id", "")).strip()
+        if not character_name or not user_id_str:
+            logger.debug("[AICoordinator] skip qq graph binding: empty sender name or user id")
+            return
+
+        character_node_id = kg_manager.ensure_node_exists(
+            node_type="Character",
+            name=character_name,
+            trust=0.4,
+            context="qq",
+            note="",
+        )
+        user_entity_node_id = kg_manager.ensure_node_exists(
+            node_type="Entity",
+            name=user_id_str,
+            context="qq",
+            note="",
+        )
+
+        if character_node_id and user_entity_node_id:
+            kg_manager.ensure_relation_exists(
+                start_node_id=character_node_id,
+                end_node_id=user_entity_node_id,
+                predicate="QQ号是",
+                source="qq_auto_binding",
+                confidence=0.95,
+                importance=0.4,
+                directivity="single",
+                evidence="由QQ事件自动建立",
+            )
+
+        if meta.get("message_type") == "group":
+            group_display_name = str(meta.get("group_display_name", "")).strip()
+            if group_display_name and character_node_id:
+                group_entity_node_id = kg_manager.ensure_node_exists(
+                    node_type="Entity",
+                    name=group_display_name,
+                    context="qq",
+                    note="qq群",
+                )
+                if group_entity_node_id:
+                    kg_manager.ensure_relation_exists(
+                        start_node_id=character_node_id,
+                        end_node_id=group_entity_node_id,
+                        predicate="在QQ群",
+                        source="qq_auto_binding",
+                        confidence=0.95,
+                        importance=0.4,
+                        directivity="single",
+                        evidence="由QQ群消息自动建立",
+                    )
     
     async def handle_poke(self, session_key: str, event: dict[str, Any], sender_name: str, session: ConversationSession = None) -> None:
         """处理拍一拍事件"""
         meta = self.extract_event_metadata(event)
+        address_info = self._build_address_info(session_key, event, meta)
+        await self._ensure_qq_graph_bindings(sender_name, meta)
         if meta['message_type'] == "group":
             key_word_list = [str(meta['user_id']), meta['display_name'], meta['group_display_name']]
             message_content = f"{meta['time_str']} {sender_name}({meta['user_id']}) 拍了拍你，建议查看上下文分析对方的需求。"
@@ -111,11 +281,13 @@ class AICoordinator:
             key_word_list = [str(meta['user_id']), meta['display_name']]
             message_content = f"{meta['time_str']} {sender_name}({meta['user_id']}) 拍了拍你，建议查看上下文分析对方的需求。"
             caller_message = f"来自QQ用户{sender_name}({meta['user_id']})的私聊消息。"
-        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list, address_info)
 
     async def handle_group_message(self, session_key: str, event: dict[str, Any], at_bot: bool, session: ConversationSession = None) -> None:
         """处理群消息"""
         meta = self.extract_event_metadata(event)
+        address_info = self._build_address_info(session_key, event, meta)
+        await self._ensure_qq_graph_bindings(meta['display_name'], meta)
         key_word_list = [str(meta['user_id']), meta['display_name'], meta['group_display_name']]
         if at_bot:
             message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']}){meta['role']}> !!有人@你，建议对其进行回复!! {meta['message']}\n"
@@ -123,15 +295,17 @@ class AICoordinator:
         else:
             message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']}){meta['role']}> {meta['message']}\n"
             caller_message = f"来自QQ群{meta['group_display_name']}的消息。"
-        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list, address_info)
 
     async def handle_private_message(self, session_key: str, event: dict[str, Any], session: ConversationSession = None) -> None:
         """处理私聊消息"""
         meta = self.extract_event_metadata(event)
+        address_info = self._build_address_info(session_key, event, meta)
+        await self._ensure_qq_graph_bindings(meta['display_name'], meta)
         key_word_list = [str(meta['user_id']), meta['display_name']]
         message_content = f"{meta['time_str']} <{meta['display_name']}({meta['user_id']})> {meta['message']}\n"
         caller_message = f"来自QQ用户{meta['display_name']}({meta['user_id']})的私聊消息，建议对其进行回复"
-        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list)
+        await self._push_and_trigger(session_key, event, session, message_content, caller_message, key_word_list, address_info)
 
     # ---- 消息推送与处理触发 ----
 
@@ -143,6 +317,7 @@ class AICoordinator:
         message_content: str,
         caller_message: str,
         key_word_list: list[str],
+        address_info: Optional[dict[str, Any]] = None,
     ) -> None:
         """将消息推送到 input_buffer 并确保处理流程已启动"""
         session_state = self.ai.get_session_state(session_key)
@@ -155,6 +330,8 @@ class AICoordinator:
             "onebot": self.onebot,
             "session": session,
             "event": event,
+            "address_info": address_info or {},
+            "resolve_file_source_callback": self._resolve_file_source_from_address,
             "get_image_url_callback": self.onebot.get_image,
             "group_id": group_id if group_id else None,
             "user_id": user_id if user_id else None,

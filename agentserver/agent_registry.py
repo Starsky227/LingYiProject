@@ -109,6 +109,9 @@ class AgentAIClient:
     def __init__(self):
         self.agent_config = AgentModelConfig()
         self._client = None
+        self._vision_client = None
+        # 媒体分析缓存：filename -> [{"q": ..., "a": ...}, ...]
+        self._media_history: Dict[str, List[Dict[str, str]]] = {}
 
     def _get_client(self):
         if self._client is None:
@@ -120,6 +123,17 @@ class AgentAIClient:
                 base_url=agent_cfg.agent_base_url,
             )
         return self._client
+
+    def _get_vision_client(self):
+        if self._vision_client is None:
+            from openai import AsyncOpenAI
+            from system.config import config
+            vision_cfg = config.vision_api
+            self._vision_client = AsyncOpenAI(
+                api_key=vision_cfg.vision_api_key,
+                base_url=vision_cfg.vision_base_url,
+            )
+        return self._vision_client
 
     async def request_model(
         self,
@@ -141,6 +155,76 @@ class AgentAIClient:
             kwargs["tools"] = tools
 
         return await client.responses.create(**kwargs)
+
+    # -- 媒体分析历史缓存（基于文件名） --
+
+    def get_media_history(self, cache_key: str) -> List[Dict[str, str]]:
+        """获取指定文件名的历史分析记录。"""
+        return list(self._media_history.get(cache_key, []))
+
+    def save_media_history(self, cache_key: str, question: str, answer: str) -> None:
+        """保存一条分析记录到缓存。"""
+        if cache_key not in self._media_history:
+            self._media_history[cache_key] = []
+        self._media_history[cache_key].append({"q": question, "a": answer})
+
+    # -- 多模态分析 --
+
+    async def analyze_multimodal(
+        self, file_path: str, *, media_type: str = "auto", prompt_extra: str = ""
+    ) -> Dict[str, Any]:
+        """调用 vision 模型对图片/媒体文件进行分析。"""
+        import base64
+        import mimetypes
+        from system.config import config
+
+        vision_cfg = config.vision_api
+        if not vision_cfg.enabled:
+            return {"description": "图像分析功能未启用"}
+
+        path = Path(file_path)
+        if not path.exists():
+            return {"description": f"文件不存在: {file_path}"}
+
+        # 检测 MIME 类型
+        mime_type, _ = mimetypes.guess_type(str(path))
+        if not mime_type:
+            mime_type = "application/octet-stream"
+
+        # 构建 prompt
+        system_prompt = "你是一个专业的多模态分析助手。请仔细观察并描述内容，提取所有可见的文字信息。"
+        user_prompt = prompt_extra or "请描述这个文件的内容，提取所有可见的文字。"
+
+        # 以 base64 编码图片发送给 vision 模型
+        with open(path, "rb") as f:
+            file_data = base64.b64encode(f.read()).decode("utf-8")
+
+        data_url = f"data:{mime_type};base64,{file_data}"
+
+        client = self._get_vision_client()
+        try:
+            response = await client.responses.create(
+                model=vision_cfg.vision_model,
+                input=[
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": user_prompt},
+                            {
+                                "type": "input_image",
+                                "image_url": data_url,
+                            },
+                        ],
+                    },
+                ],
+                max_output_tokens=2048,
+            )
+            content = response.output_text or ""
+            return {"description": content}
+        except Exception as e:
+            logger.error(f"Vision API 调用失败: {e}")
+            return {"description": f"分析失败: {e}"}
 
 
 # ---------------------------------------------------------------------------

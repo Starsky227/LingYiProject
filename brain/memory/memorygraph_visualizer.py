@@ -329,7 +329,12 @@ def create_time_node_api(time_str: list) -> Dict[str, Any]:
             "created_node": None
         }
 
-def create_character_node_api(character_name: str, trust: float = 0.5, context: str = "reality现实") -> Dict[str, Any]:
+def create_character_node_api(
+    character_name: str,
+    trust: float = 0.5,
+    context: str = "reality现实",
+    note: str = "",
+) -> Dict[str, Any]:
     """
     API函数：创建角色节点
     
@@ -337,6 +342,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, context: 
         character_name: 角色名称
         trust: 信任度 (0-1)
         context: 上下文环境 (默认"reality现实")
+        note: 备注信息 (默认空)
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -355,7 +361,7 @@ def create_character_node_api(character_name: str, trust: float = 0.5, context: 
         
         # 创建角色节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_character_node(session, character_name, trust, context)
+            result_node = kg_manager.create_character_node(session, character_name, trust, context, note)
             
             if result_node:
                 logger.info(f"成功创建角色节点: {result_node}")
@@ -431,13 +437,18 @@ def create_entity_node_api(entity_name: str, note: str = "无", context: str = "
             "created_node": None
         }
 
-def create_location_node_api(location_name: str, context: str = "reality现实") -> Dict[str, Any]:
+def create_location_node_api(
+    location_name: str,
+    context: str = "reality现实",
+    note: str = "",
+) -> Dict[str, Any]:
     """
     API函数：创建地点节点
     
     Args:
         location_name: 地点名称
         context: 上下文环境 (默认"reality现实")
+        note: 备注信息 (默认空)
         
     Returns:
         Dict: 包含成功状态和结果信息的字典
@@ -456,7 +467,7 @@ def create_location_node_api(location_name: str, context: str = "reality现实")
         
         # 创建地点节点
         with kg_manager.driver.session() as session:
-            result_node = kg_manager.create_location_node(session, location_name, context)
+            result_node = kg_manager.create_location_node(session, location_name, context, note)
             
             if result_node:
                 logger.info(f"成功创建地点节点: {result_node}")
@@ -620,6 +631,7 @@ def start_api_server():
                 character_name = data.get('character_name', '')
                 trust = data.get('trust', 0.5)
                 context = data.get('context', 'reality现实')
+                note = data.get('note', '')
                 
                 if not character_name.strip():
                     return jsonify({
@@ -627,7 +639,7 @@ def start_api_server():
                         "error": "角色名称不能为空"
                     }), 400
                 
-                result = create_character_node_api(character_name.strip(), trust, context)
+                result = create_character_node_api(character_name.strip(), trust, context, note)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -675,6 +687,7 @@ def start_api_server():
                 data = request.get_json()
                 location_name = data.get('location_name', '')
                 context = data.get('context', 'reality现实')
+                note = data.get('note', '')
                 
                 if not location_name.strip():
                     return jsonify({
@@ -682,7 +695,7 @@ def start_api_server():
                         "error": "地点名称不能为空"
                     }), 400
                 
-                result = create_location_node_api(location_name.strip(), context)
+                result = create_location_node_api(location_name.strip(), context, note)
                 
                 if result["success"]:
                     return jsonify(result), 200
@@ -820,7 +833,7 @@ def start_api_server():
                 
                 # 获取知识图谱管理器实例
                 kg_manager = get_knowledge_graph_manager()
-                result = kg_manager.modify_node(element_id.strip(), updates, call="active")
+                result = kg_manager.modify_node(element_id.strip(), updates)
                 
                 if result:
                     return jsonify({
@@ -896,7 +909,6 @@ def start_api_server():
                     confidence, 
                     directivity,
                     evidence,
-                    call="active",
                     importance=importance,
                 )
                 
@@ -1048,9 +1060,9 @@ def start_api_server():
         
         @app.route('/api/list_memory_snapshots', methods=['GET'])
         def handle_list_memory_snapshots():
-            """列出logs/memory_graph目录下可用的记忆快照文件"""
+            """列出data/memory_graph目录下可用的记忆快照文件"""
             try:
-                log_dir = os.path.join(project_root, "logs", "memory_graph")
+                log_dir = os.path.join(project_root, "data", "memory_graph")
                 if not os.path.exists(log_dir):
                     return jsonify({"success": True, "files": []}), 200
                 

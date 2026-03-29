@@ -62,11 +62,11 @@ class ConversationSession:
         # 构建消息行
         time_str = msg_time.strftime("%Y-%m-%d %H:%M:%S")
         role_suffix = f"{meta['role']}" if meta["role"] else ""
-        return f"{meta['group_display_name']} {time_str} <{meta['display_name']}({meta['user_id']}){role_suffix}> {text}\n"
+        return f"{time_str} <{meta['display_name']}({meta['user_id']}){role_suffix}> {text}\n"
 
     def read_recent_history(self, n: int = 15) -> list[str]:
         """从本地日志文件读取最近 n 条格式化消息行（用于私聊等无法通过 API 获取历史的场景）"""
-        log_dir = Path(f"logs/qqOnebot/chat_history/{self.session_id}")
+        log_dir = Path(f"data/qqOnebot/chat_history/{self.session_id}")
         if not log_dir.exists():
             return []
 
@@ -97,7 +97,7 @@ class ConversationSession:
             timestamp = event.get("time", time.time())
             msg_time = datetime.fromtimestamp(timestamp)
             year_month = msg_time.strftime("%Y_%m")
-            log_dir = Path(f"logs/qqOnebot/chat_history/{self.session_id}")
+            log_dir = Path(f"data/qqOnebot/chat_history/{self.session_id}")
             log_dir.mkdir(parents=True, exist_ok=True)
             log_file = log_dir / f"{year_month}.txt"
             
@@ -110,7 +110,7 @@ class ConversationSession:
 
     def _get_last_recorded_timestamp(self) -> float | None:
         """从日志文件中读取最后一条记录的时间戳（秒级 UNIX 时间）"""
-        log_dir = Path(f"logs/qqOnebot/chat_history/{self.session_id}")
+        log_dir = Path(f"data/qqOnebot/chat_history/{self.session_id}")
         if not log_dir.exists():
             return None
 

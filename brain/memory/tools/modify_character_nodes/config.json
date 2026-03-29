@@ -1,0 +1,33 @@
+{
+    "type": "function",
+    "function": {
+        "name": "modify_character_nodes",
+        "description": "修改角色节点属性。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "node_id": {
+                    "type": "string",
+                    "description": "角色节点 elementId。"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "角色名称。留空则保持原值。"
+                },
+                "trust": {
+                    "type": "number",
+                    "description": "角色信任度。省略则保持原值。"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "角色所属语境。留空则保持原值。"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "备注信息。留空则保持原值。"
+                }
+            },
+            "required": ["node_id"]
+        }
+    }
+}

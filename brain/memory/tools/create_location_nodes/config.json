@@ -1,0 +1,25 @@
+{
+    "type": "function",
+    "function": {
+        "name": "create_location_nodes",
+        "description": "创建地点节点。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "地点名称。"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "如果为现实存在的地点，应为reality现实。如果是虚构地点，则为其所属的作品名称。"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "备注信息。"
+                }
+            },
+            "required": ["name", "context"]
+        }
+    }
+}

@@ -28,7 +28,7 @@ IMAGE_NAME = config.ui.image_name
 LOGS_DIR = config.system.log_dir
 
 def write_chat_log(sender: str, text: str, timestamp: str = None):
-    """将单条对话追加到 brain/memory/logs/chat_logs/chat_logs_YYYY_MM_DD.txt
+    """将单条对话追加到 data/chat_logs_YYYY_MM_DD.txt
     
     Args:
         sender: 发送者名称

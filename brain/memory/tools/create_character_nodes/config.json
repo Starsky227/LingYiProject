@@ -1,0 +1,29 @@
+{
+    "type": "function",
+    "function": {
+        "name": "create_character_nodes",
+        "description": "创建角色节点。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "角色名称。"
+                },
+                "trust": {
+                    "type": "number",
+                    "description": "对于网络上的绝大多数角色，trust默认为0.4"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "如果该角色为现实存在的角色，则为reality现实。如果是某个网络账号，则为其对应的平台。如果是虚构角色，则为其所属的作品名称。"
+                },
+                "note": {
+                    "type": "string",
+                    "description": "备注信息。"
+                }
+            },
+            "required": ["name"]
+        }
+    }
+}

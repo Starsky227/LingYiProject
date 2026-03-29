@@ -1,0 +1,27 @@
+{
+    "type": "function",
+    "function": {
+        "name": "create_time_nodes",
+        "description": "创建时间节点（支持层级时间组件）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "time_str": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "时间组件列表，例如 ['2026年', '03月', '28日', '12点']。"
+                },
+                "time_type": {
+                    "type": "string",
+                    "enum": ["static", "recurring"],
+                    "description": "时间类型，默认 static，代表该时间为固定时间。recurring 代表该时间为周期性时间，例如每年10月1日作为中国国庆节。"
+                },
+                "context": {
+                    "type": "string",
+                    "description": "如果是现实时间，不管故事是否为虚构，context总是应该为 reality现实 ，对于虚构的故事时间，context应该为其所属的作品名称。"
+                }
+            },
+            "required": ["time_str"]
+        }
+    }
+}

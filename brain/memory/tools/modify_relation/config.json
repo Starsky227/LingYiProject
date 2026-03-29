@@ -1,0 +1,42 @@
+{
+    "type": "function",
+    "function": {
+        "name": "modify_relation",
+        "description": "修改关系属性。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "relation_id": {
+                    "type": "string",
+                    "description": "关系 elementId。"
+                },
+                "predicate": {
+                    "type": "string",
+                    "description": "关系谓词。"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "消息来源：如果是你通过聊天记录分析得到的知识，记为self；如果是某人提供的，记为对方名字；如果是你从某个文档或网页中提取的，记为文档或网页名字。"
+                },
+                "directivity": {
+                    "type": "string",
+                    "enum": ["to_endNode", "to_startNode", "bidirectional"],
+                    "description": "关系方向。to_endNode代表单向指向目标节点，to_startNode代表单向指向起始节点，bidirectional代表双向。"
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": "置信度。根据消息的语气，语境，以及以尝试判断的合理性来推断。取值范围0-1，越接近1则代表该消息越可能为真实消息。"
+                },
+                "importance": {
+                    "type": "number",
+                    "description": "重要度。时效性很短/未来用处不大/已经过期的内容可取 0-0.3 ；为固定的，长期可用的知识可取0.25-0.65；对你非常重要，且可能对你未来的决策有重要影响的内容可取0.6-0.8；无论如何，重要性不可高于0.95。"
+                },
+                "evidence": {
+                    "type": "string",
+                    "description": "关系证据。"
+                }
+            },
+            "required": ["relation_id", "predicate", "source", "confidence", "directivity", "importance"]
+        }
+    }
+}

@@ -1,0 +1,17 @@
+{
+    "type": "function",
+    "function": {
+        "name": "end",
+        "description": "结束当前 memory_agent 会话。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "本次操作结果摘要。"
+                }
+            },
+            "required": []
+        }
+    }
+}

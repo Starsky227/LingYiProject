@@ -1,0 +1,46 @@
+{
+    "type": "function",
+    "function": {
+        "name": "create_relation",
+        "description": "在两个节点之间创建关系。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "startNode_id": {
+                    "type": "string",
+                    "description": "起始节点 elementId。"
+                },
+                "endNode_id": {
+                    "type": "string",
+                    "description": "目标节点 elementId。"
+                },
+                "predicate": {
+                    "type": "string",
+                    "description": "关系谓词。"
+                },
+                "source": {
+                    "type": "string",
+                    "description": "消息来源：如果是你通过聊天记录分析得到的知识，记为self；如果是某人提供的，记为对方名字；如果是你从某个文档或网页中提取的，记为文档或网页名字。"
+                },
+                "confidence": {
+                    "type": "number",
+                    "description": "置信度。根据消息的语气，语境，以及以尝试判断的合理性来推断。取值范围0-1，越接近1则代表该消息越可能为真实消息。"
+                },
+                "importance": {
+                    "type": "number",
+                    "description": "重要度。时效性很短/未来用处不大的内容可取 0-0.3 ；为固定的，长期可用的知识可取0.25-0.65；对你非常重要，且可能对你未来的决策有重要影响的内容可取0.6-0.8；无论如何，重要性不可高于0.95。"
+                },
+                "directivity": {
+                    "type": "string",
+                    "enum": ["single", "bidirectional"],
+                    "description": "关系方向。single代表单向，如小明参加了活动。bidirectional代表双向，如小明和小红互相认识。"
+                },
+                "evidence": {
+                    "type": "string",
+                    "description": "简要说明关系证据。"
+                }
+            },
+            "required": ["startNode_id", "endNode_id", "predicate", "source", "confidence", "importance", "directivity"]
+        }
+    }
+}

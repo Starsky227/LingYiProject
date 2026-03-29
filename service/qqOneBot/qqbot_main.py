@@ -27,8 +27,8 @@ def _get_log_level() -> tuple[int, str]:
 
 
 def _init_file_handler(root_logger: logging.Logger) -> None:
-    """初始化按日期轮转的文件日志处理器，保存到 logs/qqOnebot/logger/ 目录"""
-    log_dir = Path("logs/qqOnebot/logger")
+    """初始化按日期轮转的文件日志处理器，保存到 data/qqOnebot/logger/ 目录"""
+    log_dir = Path("data/qqOnebot/logger")
     log_dir.mkdir(parents=True, exist_ok=True)
 
     log_file_path = log_dir / "bot.log"
