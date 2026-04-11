@@ -1,6 +1,65 @@
-# NagaAgent Server
+# AgentServer 智能体服务框架
 
-基于博弈论架构的独立意图分析和任务调度服务。
+基于 FastAPI 的智能体发现、注册和执行框架。将文件分析、信息检索、网络搜索等能力封装为独立的 Agent，统一通过 LingYiCore 的 ToolManager 以工具形式调用。
+
+## 核心文件
+
+### agent_server.py - FastAPI 服务
+- Agent 发现与健康检查 HTTP 服务（端口 8001）
+- 启动时自动扫描并注册所有子Agent
+- 接口：`GET /health`、`GET /agents`
+
+### agent_registry.py - Agent 发现与注册
+- `discover_agents()` 扫描子目录中的 `callable.json` / `config.json`
+- `AgentToolRegistry` 解析 OpenAI Tools API 格式的工具Schema
+- `AgentAIClient` 适配器供 runner.py 调用
+
+### runner.py - 通用 Agent 执行器
+- `run_agent_with_tools()` 统一的异步Agent循环
+- 加载Agent目录下的 `prompt.md` 作为系统提示词
+- 支持工具发现、LLM迭代、工具结果注入、可配置最大迭代次数
+
+### http_client.py - HTTP请求工具
+- `request_with_retry()` 带指数退避的异步请求
+- 自动处理 429 限流和 5xx 错误
+
+### http_config.py - 外部API配置
+- 请求超时和重试次数配置
+
+### config.py - 服务配置
+- 从 `system.config` 获取 agent_server 端口（默认 8001）
+
+## 子Agent
+
+### file_analysis_agent/ - 文件分析Agent
+- 支持 PDF/Word/Excel/PPT/代码/图片/压缩包 等格式
+- 先下载文件 → 检测类型 → 调用对应解析工具
+- Tools: `analyze_code/`, `analyze_multimodal/`, `detect_file_type/`, `download_file/`, `extract_pdf/`, `extract_xlsx/`, `extract_pptx/`, `extract_docx/`, `read_text_file/`, `cleanup_temp/`
+
+### info_agent/ - 信息检索Agent
+- 通过外部API获取各类实时信息
+- 由 `callable.json` 定义对外暴露的调用接口
+
+### web_agent/ - 网络搜索Agent
+- 网页抓取与搜索能力，支持 MCP 浏览器集成
+- `mcp.json` 定义Agent私有的MCP工具配置
+- 调用时自动加载对应MCP工具
+
+## 启动方式
+
+Agent Server 已集成到主流程，通过 `main.py` 统一启动。
+
+独立调试：
+```bash
+uvicorn agentserver.agent_server:app --host 0.0.0.0 --port 8001
+```
+
+## 开发新Agent
+
+1. 在 `agentserver/` 下创建新目录
+2. 添加 `config.json`（工具Schema定义）和 `handler.py`（执行逻辑）
+3. 可选 `callable.json`（对外暴露接口）、`prompt.md`（系统提示词）、`mcp.json`（MCP集成）
+4. 框架会自动发现并注册
 
 ## 架构特点
 

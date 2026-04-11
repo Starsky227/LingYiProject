@@ -1,53 +1,14 @@
 # API Server 模块
 
-## 文件说明
+预留模块，用于未来扩展 LLM API 通信服务层。
 
-### llm_service.py
-- **功能**: LLM通信服务模块
-- **主要特性**: 
-  - 与模型通信（OpenAI API格式）
-  - 流式响应支持
-  - 智能意图分析与工具调用
-  - 记忆检索与上下文组织
-  - 聊天日志记录
+当前 LLM 通信功能已直接集成在 `brain/lingyi_core/lingyi_core.py` 中，通过 OpenAI 客户端完成模型调用。
 
-## 核心功能
+## 状态
 
-### 对话处理流程
-1. **消息预处理**: 验证输入并记录日志
-2. **意图分析**: 识别用户意图和任务类型
-3. **记忆检索**: 从Neo4j查询相关历史记忆
-4. **模型调用**: 流式调用本地LLM生成响应
-5. **后处理**: 记录回复并提交记忆提取任务
-
-### 主要接口
-- `chat_with_model()` - 主对话处理函数
-- `preload_model()` - 模型预加载
-- `call_model_sync()` - 同步模型调用
-- `write_chat_log()` - 聊天日志记录
-
-## 使用方式
-```python
-from api_server.llm_service import chat_with_model
-response = chat_with_model(messages, on_response_callback)
-```
-
-## 依赖关系
-
-### 内部依赖
-- `system.config`: 系统配置管理
-- `system.intent_analyzer`: 意图分析
-- `brain.memory.quintuples_extractor`: 记忆提取
-- `brain.memory.relevant_memory_search`: 记忆检索
-
-### 外部依赖
-- `openai`: OpenAI API客户端
-- `datetime`: 时间处理
-- `json`: JSON数据处理
-
-## 配置要求
-
-模块需要以下配置项（在 `config.json` 中）：
+- 当前目录仅包含本 README
+- LLM 调用逻辑由 LingYiCore 统一管理
+- 未来可能独立为 HTTP API 服务供外部调用
 - `api.api_key`: API密钥
 - `api.base_url`: Ollama服务地址
 - `api.model`: 使用的模型名称

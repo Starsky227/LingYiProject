@@ -1,4 +1,4 @@
-# LingYiProject 0.3.1
+# LingYiProject 0.5.5
 This is a project started by a total beginner, a 3A project: AI coding, AI drawing, AI service. Projectstart at 2025/10/1
 这是一个纯萌新打造的AI智能体计划，纯正的3A大作：AI编程，AI立绘，AI聊天。
 
@@ -21,54 +21,97 @@ NagaAgent：https://github.com/Xxiii8322766509/NagaAgent
 - **Python**: 3.10+ (推荐 3.13)
 - **内存**: 建议 4GB+ （需要跑neo4j）
 - **存储**: 建议 5GB+ （取决于你需要存多少数据，不过部署要求不高）
+- **Neo4j**: 需安装 Neo4j 数据库 + APOC 插件
 
 
 ### 项目框架
 
 ```
 LingYiProject/
-├── system/                    # 系统核心模块
-│   ├── config.py             # 配置管理
-│   ├── task_manager.py       # 任务调度器
-│   └── prompts/              # AI提示词模板
+├── system/                    # 系统基础设施（配置、路径、环境校验）
+│   ├── config.py             # Pydantic配置管理，热重载，端口分配
+│   ├── paths.py              # 运行时数据路径定义
+│   └── system_checker.py     # Neo4j连接校验，端口可用性检查
 │
-├── brain/                     # AI智能大脑模块
-│   ├── background_analyzer.py # 后台AI分析引擎
-│   └── memory/               # 记忆管理子系统（近期更新内容主要在这里）
-│       ├── knowledge_graph_manager.py  # 知识图谱管理
-│       ├── relevant_memory_search.py   # 记忆搜索
-│       ├── memorygraph_visualizer.py   # 图谱可视化
-│       └── logs/             # 记忆日志存储
+├── brain/                     # AI智能大脑
+│   ├── task_manager.py       # 异步任务调度器（优先级队列）
+│   ├── lingyi_core/          # LingYiCore 核心引擎
+│   │   ├── lingyi_core.py    # 主协调器（OpenAI客户端、多源工具、会话管理）
+│   │   ├── session_state.py  # 会话状态（记忆缓存、工具追踪、输入缓冲）
+│   │   ├── tool_manager.py   # 多源工具聚合器（前缀路由）
+│   │   └── LingYi_prompt.xml # 全局人格Prompt
+│   ├── memory/               # 记忆管理子系统
+│   │   ├── knowledge_graph_manager.py  # Neo4j知识图谱CRUD
+│   │   ├── record_memory.py  # AI Agent驱动的记忆录入
+│   │   ├── search_memory.py  # 关键词+向量语义搜索
+│   │   ├── memorygraph_visualizer.py   # 交互式HTML图谱可视化
+│   │   ├── _agent_runner.py  # 轻量Agent执行器
+│   │   ├── tools/            # 记忆操作工具集
+│   │   └── prompt/           # 记忆分析Prompt模板
+│   └── tools/                # 主工具集（cancel_task, speak_text等）
 │
-├── api_server/               # LLM通信服务
-│   └── llm_service.py       # 模型调用与对话处理
+├── agentserver/              # 智能体服务框架
+│   ├── agent_server.py       # FastAPI Agent发现服务（端口8001）
+│   ├── agent_registry.py     # Agent自动发现与注册
+│   ├── runner.py             # 通用Agent循环执行器
+│   ├── file_analysis_agent/  # 文件分析Agent（PDF/Word/Excel/PPT/代码/图片）
+│   ├── info_agent/           # 信息检索Agent
+│   └── web_agent/            # 网络搜索Agent（支持MCP集成）
 │
-├── mcpserver/               # MCP服务框架
-│   ├── mcp_manager.py      # MCP客户端管理
-│   ├── mcp_scheduler.py    # 任务调度器
-│   ├── mcp_server.py       # HTTP服务器
-│   └── agent_crawl4ai/     # 网页解析代理
+├── mcpserver/                # MCP (Model Context Protocol) 服务
+│   ├── mcp_server.py         # MCP HTTP服务（端口8003）
+│   ├── mcp_manager.py        # MCP客户端会话管理
+│   ├── mcp_scheduler.py      # 任务调度（10并发，重试机制）
+│   ├── mcp_registry.py       # 服务注册中心
+│   ├── mcp_support.py        # 动态服务发现与注册
+│   └── agent_crawl4ai/       # Crawl4AI网页解析代理
 │
-├── ui/                      # 用户界面模块
-│   ├── chat_ui.py          # PyQt5聊天界面
-│   └── img/                # 界面资源
+├── service/                   # 后台服务
+│   ├── pcAssistant/          # PC桌面服务（PyQt入口、子进程管理）
+│   │   ├── pc_main.py        # 主应用入口（PyQt↔asyncio桥接）
+│   │   ├── service_manager.py # 服务生命周期管理
+│   │   ├── voice_input_VDL/  # 语音输入（VDL语音识别）
+│   │   └── voice_output/     # 语音输出（Qwen3-TTS）
+│   └── qqOneBot/             # QQ机器人服务
+│       ├── qqbot_main.py     # QQ Bot入口（LingYiCore + QQ工具）
+│       ├── onebot.py         # OneBot v11 WebSocket客户端
+│       ├── handler.py        # QQ消息处理器
+│       ├── Prompt/           # QQ专用人格Prompt
+│       └── qq_tools/         # QQ专用工具集（qq- 前缀）
 │
-├── agentserver/            # 代理服务器（待开发）
-├── main.py                 # 主程序入口
-└── config.json             # 系统配置文件
+├── ui/                        # PyQt5 用户界面
+│   ├── pyqt_chat_ui.py       # ChatWindow主入口组件
+│   └── components/           # UI组件（标题栏/侧边栏/聊天页/设置页/立绘面板）
+│
+├── api_server/               # LLM API服务（预留）
+├── data/                     # 运行时数据（缓存、日志、记忆图谱）
+├── main.py                   # 主程序入口
+└── config.json               # 系统配置文件
 ```
 
 **核心架构说明:**
-- **system**: 提供配置管理和任务调度的基础服务
-- **brain**: AI智能核心，负责意图分析、记忆管理和决策
-- **api_server**: 与LLM模型通信的服务层
-- **mcpserver**: 基于MCP协议的工具调用框架
-- **ui**: PyQt5图形用户界面
+- **system**: 配置管理（Pydantic + json5热重载）、路径定义、Neo4j/端口环境校验
+- **brain**: AI核心引擎 LingYiCore，多源工具聚合（前缀路由），Per-Session状态管理，Neo4j知识图谱记忆
+- **agentserver**: 插件化Agent框架，自动发现注册，通用Agent执行循环
+- **mcpserver**: MCP协议工具调用，动态服务发现，并发任务调度
+- **service**: 后台服务管理（PC桌面/QQ Bot/语音输入输出）
+- **ui**: PyQt5组件化桌面界面
 
 
 
 ### 📋 版本信息
 **现版本内容总结：**
+
+**版本0.5.5**
+1. 全新 LingYiCore 核心引擎：多源工具聚合（前缀路由 main-/qq-），Per-Session状态管理（记忆缓存、工具追踪、输入缓冲）
+2. ToolManager 统一工具注册：brain/tools/、agentserver agents、QQ工具等通过前缀路由无缝集成
+3. AgentServer 完整实现：自动发现注册子Agent（file_analysis/info/web），通用Agent执行循环（runner.py）
+4. 记忆系统重构：MemoryWriter 通过独立Agent循环录入，search_memory 支持关键词+向量语义混合搜索
+5. QQ Bot 服务：OneBot v11 WebSocket集成，独立人格Prompt，专用工具集
+6. PC服务管理器：统一管理QQ Bot/语音/图谱可视化等子进程生命周期
+7. UI组件化重构：ChatWindow 拆分为 TitleBar/SideBar/MainWindow/ImageWindow，支持服务控制面板
+
+**版本0.4.0**
 1. 正常对话（这部分随着更新现在已经半死不活了，相信来的各位也不是奔着这部分来的）
 2. neo4j知识图谱（目前主要更新点在此，启动方式为运行memorygraph_visualizer.py）
 3. 关键词提取，记忆自管理，之后大概会是选择多个模型协同运作（主要是节省token）

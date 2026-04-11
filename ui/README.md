@@ -1,86 +1,54 @@
-# UI 模块
+# UI 用户界面模块
 
-本模块包含 LingYi AI Agent 项目的用户界面组件。
+基于 PyQt5 的桌面聊天界面，采用组件化设计，包含标题栏、侧边导航、聊天主窗口、AI立绘面板等。
 
 ## 文件结构
 
 ```
 ui/
-├── chat_ui.py      # 主聊天界面组件
-├── img/            # 界面图片资源
-│   └── LingYi_img.png  # AI头像图片
-├── __init__.py     # 包初始化文件
-└── README.md       # 本文档
+├── pyqt_chat_ui.py          # ChatWindow 主入口组件
+├── components/
+│   ├── main_window.py       # 中央内容区（QStackedWidget 页面切换）
+│   ├── side_bar.py          # 左侧导航栏（💬聊天 / ⚙设置）
+│   ├── title_bar.py         # 自定义标题栏（拖拽移动、最小化/关闭）
+│   ├── image_window.py      # 右侧AI立绘面板 + 服务控制按钮
+│   └── pages/
+│       ├── chat_window.py   # 聊天页面
+│       └── setting_window.py # 设置页面
+├── img/                     # 界面图片资源
+│   └── LingYi_img.png       # AI头像
+└── __init__.py
 ```
 
-## 主要功能
+## 核心组件
 
-### chat_ui.py
-- **ChatUI类**: 基于PyQt5的聊天界面组件
-- **功能特性**:
-  - 实时聊天对话界面
-  - 支持输入栏换行（自适应高度，最多4行）
-  - 聊天记录保存（自动记录到日志文件）
-  - 流式响应显示支持
-  - 支持thinking过程显示
-  - 可配置的文本大小和AI名称（需要手动前往config.json）
+### pyqt_chat_ui.py - ChatWindow 主入口
+- 组合所有UI组件：TitleBar（上）| SideBar（左）+ MainWindow（中）+ ImageWindow（右）
+- Qt 信号：`chunk_received`、`thinking_received`（线程安全的流式更新）
+- 对话日志自动写入 `data/chat_logs/` 目录
 
-- **主要方法**:
-  - `write_chat_log()`: 将对话记录保存到日志文件
-  - `send_message()`: 发送用户消息
-  - `update_chat_display()`: 更新聊天显示区域
-  - `handle_chunk()`: 处理AI响应的流式数据
+### components/image_window.py - 立绘与服务面板
+- 显示AI人格形象图片（占窗口 20% 宽度）
+- 服务控制按钮：QQ Bot、截图、语音输入、语音输出、桌宠模式
+- 发射 `service_toggled(service_name, is_running)` 信号控制后台服务
 
-### img文件夹
-存放界面所需的图片资源：
-- `LingYi_img.png`: AI助手的头像图片
+### components/side_bar.py - 侧边导航
+- 64px 宽度竖排按钮，切换聊天/设置页面
+- 发射 `page_switched` 信号
+
+### components/title_bar.py - 自定义标题栏
+- 50px 高度，渐变背景，支持拖拽移动窗口
+- 最小化、关闭按钮
 
 ## 配置说明
 
-UI模块从 `config.json` 读取以下配置：
-- `ui.username`: 用户显示名称
-- `ui.text_size`: 界面文本字体大小
-- `ui.image_name`: AI头像图片名称
-- `system.ai_name`: AI助手名称
-- `system.log_dir`: 聊天日志保存目录
-
-## 使用方法
-
-```python
-from ui.chat_ui import ChatUI
-from PyQt5.QtWidgets import QApplication
-import sys
-
-# 创建应用程序
-app = QApplication(sys.argv)
-
-# 创建聊天界面（需要传入chat_with_model函数）
-def your_chat_function(messages):
-    # 你的AI对话逻辑
-    pass
-
-chat_ui = ChatUI(your_chat_function, "LingYi")
-chat_ui.show()
-
-# 运行应用程序
-sys.exit(app.exec_())
-```
-
-## 依赖要求
-
-- PyQt5: GUI框架
-- 系统配置模块 (`system.config`)
+从 `config.json` 读取：
+- `ui.username` / `ui.text_size` / `ui.image_name`
+- `system.ai_name` / `system.log_dir`
 
 ## 日志功能
 
-聊天记录会自动保存到 `{log_dir}/chat_logs/chat_logs_YYYY_MM_DD.txt` 文件中，格式为：
+对话记录自动保存到 `data/chat_logs/chat_logs_YYYY_MM_DD.txt`：
 ```
 [HH:MM:SS] <发送者> 消息内容
 ```
-
-## 界面特色
-
-- 左侧为主聊天区域，支持滚动查看历史消息
-- 右侧显示AI头像
-- 底部为输入框，支持回车发送和Shift+回车换行
-- 响应式布局，适应不同窗口大小
