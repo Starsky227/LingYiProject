@@ -104,6 +104,7 @@ def _build_bot_event(context: dict[str, Any], message: str, target_type: str, ta
     from system.config import config
 
     bot_qq = getattr(config.qq_config, "bot_qq", 0)
+    bot_name = getattr(config.system, "ai_name", "铃依")
     event: dict[str, Any] = {
         "self_id": bot_qq,
         "user_id": bot_qq,
@@ -111,7 +112,7 @@ def _build_bot_event(context: dict[str, Any], message: str, target_type: str, ta
         "message_type": target_type,
         "sender": {
             "user_id": bot_qq,
-            "nickname": "Bot",
+            "nickname": bot_name,
             "card": "",
             "role": "",
         },

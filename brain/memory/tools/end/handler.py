@@ -10,7 +10,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
 
     summary = str(args.get("summary", "")).strip()
     if not summary:
-        summary = "memory_agent 会话已结�?
+        summary = "memory_agent 会话已结束"
 
     return format_json(
         {

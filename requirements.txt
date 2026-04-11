@@ -12,6 +12,13 @@ PyQt5>=5.15.9
 requests>=2.31.0
 uvicorn>=0.38.0
 websockets>=16.0
+numpy>=1.26.0
+sounddevice>=0.4.6
+qwen-tts
+# Voice input: Silero VAD + faster-whisper (local inference, no API required)
+# torch: install CUDA variant from https://pytorch.org if GPU is available
+torch>=2.0.0
+faster-whisper>=1.0.0
 # agentserver 依赖
 aiofiles>=24.1.0
 chardet>=5.0.0

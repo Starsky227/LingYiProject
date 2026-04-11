@@ -37,7 +37,6 @@ class SystemChecker:
             all_ports["api_server"],
             all_ports["agent_server"], 
             all_ports["mcp_server"],
-            # all_ports["tts_server"],
         ]
 
     def check_neo4j_connection(self) -> bool:

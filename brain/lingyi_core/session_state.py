@@ -207,6 +207,40 @@ class ConversationContext:
         return "".join(self._messages)
 
 
+class MemoryBatchBuffer:
+    """长期记忆批次缓冲
+
+    按固定条数累计“消息/工具调用结果”条目，到达阈值后一次性触发：
+    1) search_memory
+    2) memory_record
+    """
+
+    def __init__(self, trigger_count: int = 10):
+        self.trigger_count = max(1, trigger_count)
+        self._entries: list[dict[str, Any]] = []
+
+    def add_entry(self, text: str, fixed_keywords: list[str]):
+        if not text or not text.strip():
+            return
+        self._entries.append({
+            "text": text.strip(),
+            "fixed_keywords": [kw for kw in (fixed_keywords or []) if kw],
+        })
+
+    def has_ready_batch(self) -> bool:
+        return len(self._entries) >= self.trigger_count
+
+    def pop_ready_batch(self) -> list[dict[str, Any]]:
+        if not self.has_ready_batch():
+            return []
+        batch = self._entries[:self.trigger_count]
+        self._entries = self._entries[self.trigger_count:]
+        return batch
+
+    def pending_count(self) -> int:
+        return len(self._entries)
+
+
 class SessionState:
     """单个 session 的完整运行状态
 
@@ -216,6 +250,7 @@ class SessionState:
     def __init__(self, session_key: str):
         self.session_key = session_key
         self.memory_cache = MemoryCache()
+        self.memory_batch = MemoryBatchBuffer(trigger_count=10)
         self.activity_tracker = ActiveToolTracker()
         self.input_buffer = InputBuffer()
         self.conversation_context = ConversationContext()

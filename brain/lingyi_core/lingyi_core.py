@@ -17,12 +17,6 @@ from brain.lingyi_core.session_state import SessionState
 
 logger = logging.getLogger(__name__)
 
-# 初始化 OpenAI 客户端
-client = OpenAI(
-    api_key=config.main_api.api_key,
-    base_url=config.main_api.base_url,
-)
-
 
 # 最大工具调用轮次，防止无限循环
 MAX_TOOL_ROUNDS = 10
@@ -45,9 +39,15 @@ class LingYiCore:
     """AI 模型客户端 — 自主协调器"""
 
     def __init__(self, main_prompt: str) -> None:
-        self.main_prompt = main_prompt
+        self.main_prompt = self._compose_main_prompt(main_prompt)
         self._kg_manager = get_knowledge_graph_manager()
         self._memory_writers: dict[str, MemoryWriter] = {}
+
+        # OpenAI 客户端（延迟到实例化时创建，而非模块级别）
+        self.client = OpenAI(
+            api_key=config.main_api.api_key,
+            base_url=config.main_api.base_url,
+        )
 
         # 工具管理器 — 多来源聚合
         self.tool_manager = ToolManager()
@@ -66,6 +66,31 @@ class LingYiCore:
         # Per-session 状态（memory_cache / activity_tracker / input_buffer）
         self._session_states: dict[str, SessionState] = {}
 
+    def _load_core_prompt(self) -> str:
+        """加载 LingYiCore 的全局人格提示词。"""
+        prompt_path = Path(__file__).parent / "LingYi_prompt.xml"
+        if not prompt_path.exists():
+            logger.warning(f"[LingYiCore] 未找到核心提示词文件: {prompt_path}")
+            return ""
+        try:
+            return prompt_path.read_text(encoding="utf-8").strip()
+        except Exception as e:
+            logger.warning(f"[LingYiCore] 读取核心提示词失败: {e}")
+            return ""
+
+    def _compose_main_prompt(self, module_prompt: str) -> str:
+        """拼接核心人格提示词与调用方模块提示词。"""
+        core_prompt = self._load_core_prompt()
+        extra_prompt = (module_prompt or "").strip()
+
+        if core_prompt and extra_prompt:
+            return (
+                f"{core_prompt}\n\n"
+                "<!-- 子模块提示词 -->\n"
+                f"{extra_prompt}"
+            )
+        return core_prompt or extra_prompt
+
     def get_session_state(self, session_key: str) -> SessionState:
         """获取指定 session 的状态（外部可用于 input_buffer 等交互）"""
         if session_key not in self._session_states:
@@ -77,6 +102,55 @@ class LingYiCore:
         if session_key not in self._memory_writers:
             self._memory_writers[session_key] = MemoryWriter(kg_manager=self._kg_manager)
         return self._memory_writers[session_key]
+
+    @staticmethod
+    def _dedupe_keywords(keywords: list[str]) -> list[str]:
+        ordered: list[str] = []
+        for kw in keywords:
+            token = str(kw or "").strip()
+            if token and token not in ordered:
+                ordered.append(token)
+        return ordered
+
+    def _fixed_keywords_for_message(self, session_key: str, key_words: list[str]) -> list[str]:
+        base = [
+            "会话消息",
+            "对话",
+            config.system.ai_name,
+            session_key,
+        ]
+        return self._dedupe_keywords(base + list(key_words or []))
+
+    def _fixed_keywords_for_tool(self, session_key: str, tool_name: str) -> list[str]:
+        return self._dedupe_keywords([
+            "工具调用",
+            "工具结果",
+            config.system.ai_name,
+            session_key,
+            tool_name,
+        ])
+
+    def _fixed_keywords_for_assistant_message(self, session_key: str) -> list[str]:
+        return self._dedupe_keywords([
+            "AI回复",
+            "对话",
+            config.system.ai_name,
+            session_key,
+        ])
+
+    def _build_memory_batch_payload(self, batch: list[dict[str, Any]]) -> tuple[str, list[str]]:
+        lines: list[str] = []
+        merged_keywords: list[str] = []
+
+        for idx, item in enumerate(batch, start=1):
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            lines.append(f"{idx}. {text}")
+            merged_keywords.extend(item.get("fixed_keywords", []))
+
+        payload = "[批次消息]\n" + "\n".join(lines)
+        return payload, self._dedupe_keywords(merged_keywords)
 
     def _parse_response(self, resp):
         messages = []
@@ -170,8 +244,6 @@ class LingYiCore:
         # 1. 初始化消息状态
         caller_message = initial_messages[-1].get("caller_message", "")
         pending_messages = initial_messages  # 首轮循环消费
-        input_message = ""
-        new_related_memory = None
         message_chunk = ""
 
         # 2. 准备prompt
@@ -192,8 +264,6 @@ class LingYiCore:
         # 4. 进入循环
         try:
             while True:
-                memory_parts: list[str] = []  # 本轮待记忆的内容片段
-
                 # Step 1: 收割已完成的后台工具任务 → 追加到 tool_items
                 newly_completed: list[str] = []
                 for call_id in list(background_tasks.keys()):
@@ -219,6 +289,11 @@ class LingYiCore:
                     if result_str.startswith(VALUABLE_TAG):
                         result_str = result_str[len(VALUABLE_TAG):]
                         valuable_results.append((tc_obj.name, result_str))
+                        # 长期记忆批次：仅 valuable 工具结果计入触发计数
+                        session_state.memory_batch.add_entry(
+                            text=f"[工具调用-{tc_obj.name}] {result_str}",
+                            fixed_keywords=self._fixed_keywords_for_tool(session_key, tc_obj.name),
+                        )
 
                     # tc_obj (function_call) 已在模型响应时加入 tool_items，此处只追加结果
                     tool_items.append({
@@ -238,26 +313,26 @@ class LingYiCore:
                 if incoming:
                     rounds_since_input = 0
                     new_messages = [msg["message"] for msg in incoming]
-                    input_message = "\n".join(new_messages)
-                    merged_keywords: list[str] = []
-                    for msg in incoming:
-                        for kw in msg.get("key_words", []):
-                            if kw and kw not in merged_keywords:
-                                merged_keywords.append(kw)
 
-                    if is_neo4j_available():
-                        new_related_memory = full_memory_search(input_message, save_temp_memory=False, add_keywords=merged_keywords)
-                        session_state.memory_cache.add(new_related_memory)
-                        logger.debug(f"[检索到相关记忆] {len(new_related_memory.get('nodes', []))} 个相关记忆节点")
+                    # 长期记忆批次：消息计入触发计数
+                    for msg in incoming:
+                        msg_text = str(msg.get("message", "")).strip()
+                        msg_keywords = self._fixed_keywords_for_message(
+                            session_key,
+                            msg.get("key_words", []) or [],
+                        )
+                        session_state.memory_batch.add_entry(
+                            text=msg_text,
+                            fixed_keywords=msg_keywords,
+                        )
 
                     # 将本轮新消息追加到 conversation_context
                     for msg_text in new_messages:
                         session_state.conversation_context.add_message(msg_text)
                     caller_message = incoming[-1].get("caller_message", caller_message)
-                    logger.info(f"[收到消息] {len(incoming)} 条: {input_message[:100]}")
+                    logger.info(f"[收到消息] {len(incoming)} 条")
 
                     message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]\n" + "\n".join(new_messages)
-                    memory_parts.append(input_message)
                 else:
                     message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]没有新消息，请检查工具返回结果，"
 
@@ -336,7 +411,7 @@ class LingYiCore:
                         if tools_param:
                             create_kwargs["tools"] = tools_param
 
-                        response = client.responses.create(**create_kwargs)
+                        response = self.client.responses.create(**create_kwargs)
                         output_messages, tool_calls = self._parse_response(response)
                     except Exception as e:
                         logger.error(f"主模型调用失败 (第{absolute_round + 1}轮): {e}")
@@ -377,7 +452,6 @@ class LingYiCore:
                             time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                             formatted = f"{time_str} [工具结果-{tool_name}] {v_result}\n"
                             session_state.conversation_context.add_message(formatted)
-                            memory_parts.append(f"{time_str} <工具调用-{tool_name}> {v_result}")
                         valuable_results.clear()
 
                     # 模型的文本消息记录到会话历史（history_context 每轮刷新，无需再加入 tool_items）
@@ -388,7 +462,10 @@ class LingYiCore:
                                 time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                                 formatted = f"{time_str} <{config.system.ai_name}> {''.join(text_parts)}\n"
                                 session_state.conversation_context.add_message(formatted)
-                                memory_parts.append(formatted.rstrip())
+                                session_state.memory_batch.add_entry(
+                                    text=formatted.rstrip(),
+                                    fixed_keywords=self._fixed_keywords_for_assistant_message(session_key),
+                                )
 
                     # 启动新的工具调用为后台异步任务（不阻塞循环）
                     if tool_calls:
@@ -402,12 +479,30 @@ class LingYiCore:
                             session_state.activity_tracker.start(tc.call_id, tc.name, tc_args, task=task, tool_call=tc)
                             background_tasks[tc.call_id] = (tc, task)
 
-                # 记忆：将本轮 input_message + valuable 工具结果 + 模型文本消息写入记忆（不阻塞循环）
-                if memory_parts and is_neo4j_available():
-                    memory_text = "\n".join(memory_parts)
-                    _related = cached_memory  # 捕获当前值，避免后续轮次覆盖
+                # 记忆：每 10 条（消息/工具调用）触发一次 search + record
+                while is_neo4j_available() and session_state.memory_batch.has_ready_batch():
+                    ready_batch = session_state.memory_batch.pop_ready_batch()
+                    memory_text, fixed_keywords = self._build_memory_batch_payload(ready_batch)
+                    if not memory_text.strip():
+                        continue
+
+                    related_memory = full_memory_search(
+                        memory_text,
+                        save_temp_memory=False,
+                        add_keywords=fixed_keywords,
+                    )
+                    session_state.memory_cache.add(related_memory)
+                    logger.info(
+                        f"[记忆批处理] session={session_key} 触发一次，条数={len(ready_batch)}，"
+                        f"关键词数={len(fixed_keywords)}，关联节点={len(related_memory.get('nodes', []))}"
+                    )
+
+                    record_payload = (
+                        f"{memory_text}\n"
+                        f"\n[固定关键词]\n{fixed_keywords}"
+                    )
                     asyncio.create_task(
-                        memory_writer.full_memory_record(memory_text, _related)
+                        memory_writer.full_memory_record(record_payload, related_memory)
                     )
 
                 # Step 5: 等待任务完成或 buffer 新消息（至多 BUFFER_WAIT_TIMEOUT 秒）

@@ -1,6 +1,6 @@
 {
     "system":{
-        "version": "0.5.3", // 版本号
+        "version": "0.5.5", // 版本号
         "ai_name": "铃依", // AI名称
         "user_name": "星空", // 用户名
         "stream_response": true, // 是否启用流式响应
@@ -62,6 +62,20 @@
         "extraction_timeout": 12,
         "extraction_retries": 2,
         "base_timeout": 15
+    },
+    "tts": {
+        "enabled": true,
+        "model_path": "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        "model_local_dir": "data/cache/models/Qwen3-TTS-12Hz-0.6B-Base",
+        "device": "cpu",
+        "dtype": "float32",
+        "default_voice": "",
+        "default_format": "wav",
+        "default_speed": 1.0,
+        "default_language": "Auto",
+        "max_new_tokens": 2048,
+        "local_files_only": false,
+        "playback_chunk_ms": 120
     },
     "ui":{
         "username": "星空",

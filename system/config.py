@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 from datetime import datetime
 
-from PyQt5.QtWidgets import QWidget
 from pydantic import BaseModel, Field, field_validator
 from charset_normalizer import from_path
 import json5  # 支持带注释的JSON解析
@@ -26,12 +25,6 @@ class ServerPortsConfig(BaseModel):
     
     # MCP工具服务器
     mcp_server: int = Field(default=8003, ge=1, le=65535, description="MCP工具服务器端口")
-    
-    # TTS语音合成服务器
-    # tts_server: int = Field(default=5048, ge=1, le=65535, description="TTS语音合成服务器端口")
-    
-    # ASR语音识别服务器
-    # asr_server: int = Field(default=5060, ge=1, le=65535, description="ASR语音识别服务器端口")
 
 # 全局服务器端口配置实例
 server_ports = ServerPortsConfig()
@@ -46,8 +39,6 @@ def get_all_server_ports() -> Dict[str, int]:
         "api_server": server_ports.api_server,
         "agent_server": server_ports.agent_server,
         "mcp_server": server_ports.mcp_server,
-        #"tts_server": server_ports.tts_server,
-        #"asr_server": server_ports.asr_server,
     }
 
 # 配置变更监听器
@@ -97,11 +88,9 @@ class SystemConfig(BaseModel):
     user_name: str = Field(default="用户", description="默认用户名")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
     log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "data", description="日志目录")
-    # voice_enabled: bool = Field(default=False, description="是否启用语音功能")
     stream_mode: bool = Field(default=False, description="是否启用流式响应")
     debug: bool = Field(default=False, description="是否启用调试模式")
     log_level: str = Field(default="INFO", description="日志级别")
-    # save_prompts: bool = Field(default=False, description="是否保存提示词")
 
     @field_validator('log_level')
     @classmethod
@@ -119,9 +108,7 @@ class APIConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0, description="温度参数")
     max_tokens: int = Field(default=10000, ge=1, le=32768, description="最大token数")
     max_history_rounds: int = Field(default=100, ge=1, le=200, description="最大历史轮数")
-    # persistent_context: bool = Field(default=True, description="是否启用持久化上下文")
     max_history_days: int = Field(default=3, ge=1, le=30, description="加载历史上下文的天数")
-    # context_parse_logs: bool = Field(default=True, description="是否从日志文件解析上下文")
     applied_proxy: bool = Field(default=False, description="是否应用代理")
 
 class MemorySystemConfig(BaseModel):
@@ -157,7 +144,6 @@ class APIServerConfig(BaseModel):
     host: str = Field(default="127.0.0.1", description="API服务器主机")
     port: int = Field(default_factory=lambda: server_ports.api_server, description="API服务器端口")
     auto_start: bool = Field(default=True, description="启动时自动启动API服务器")
-    # docs_enabled: bool = Field(default=True, description="是否启用API文档")
 
 class GRAGConfig(BaseModel):
     """GRAG知识图谱记忆系统配置"""
@@ -180,45 +166,30 @@ class WebAgentConfig(BaseModel):
     https_proxy: Optional[str] = Field(default=None, description="HTTPS代理地址（如 https://127.0.0.1:8080）")
 
 
-# class TTSConfig(BaseModel):
-#     """TTS服务配置"""
-#     api_key: str = Field(default="", description="TTS服务API密钥")
-#     port: int = Field(default_factory=lambda: server_ports.tts_server, description="TTS服务端口")
-#     default_voice: str = Field(default="zh-CN-XiaoxiaoNeural", description="默认语音")
-#     default_format: str = Field(default="mp3", description="默认音频格式")
-#     default_speed: float = Field(default=1.0, ge=0.1, le=3.0, description="默认语速")
-#     default_language: str = Field(default="zh-CN", description="默认语言")
-#     remove_filter: bool = Field(default=False, description="是否移除过滤")
-#     expand_api: bool = Field(default=True, description="是否扩展API")
-#     require_api_key: bool = Field(default=False, description="是否需要API密钥")
-
-# class ASRConfig(BaseModel):
-#     """ASR输入服务配置"""
-#     port: int = Field(default_factory=lambda: server_ports.asr_server, description="ASR服务端口")
-#     device_index: int | None = Field(default=None, description="麦克风设备序号")
-#     sample_rate_in: int = Field(default=48000, description="输入采样率")
-#     frame_ms: int = Field(default=30, description="分帧时长ms")
-#     resample_to: int = Field(default=16000, description="重采样目标采样率")
-#     vad_threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="VAD阈值")
-#     silence_ms: int = Field(default=420, description="静音结束阈值ms")
-#     noise_reduce: bool = Field(default=True, description="是否降噪")
-#     engine: str = Field(default="local_funasr", description="ASR引擎，仅支持local_funasr")
-#     local_model_path: str = Field(default="./utilss/models/SenseVoiceSmall", description="本地FunASR模型路径")
-#     vad_model_path: str = Field(default="silero_vad.onnx", description="VAD模型路径")
-#     api_key_required: bool = Field(default=False, description="是否需要API密钥")
-#     callback_url: str | None = Field(default=None, description="识别结果回调地址")
-#     ws_broadcast: bool = Field(default=False, description="是否WS广播结果")
+class TTSConfig(BaseModel):
+    """本地 Qwen3-TTS 配置。"""
+    enabled: bool = Field(default=True, description="是否启用本地语音输出")
+    model_path: str = Field(
+        default="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
+        description="模型ID或本地模型目录"
+    )
+    model_local_dir: str = Field(
+        default="data/cache/models/Qwen3-TTS-12Hz-0.6B-Base",
+        description="setup.ps1 下载后的本地模型目录"
+    )
+    device: str = Field(default="cpu", description="推理设备，当前推荐 cpu")
+    dtype: str = Field(default="float32", description="torch dtype：float32 / bfloat16 / float16")
+    default_voice: str = Field(default="", description="声源名称（0.6B-Base 使用 LingYiVoice.wav 声源）")
+    default_speed: float = Field(default=1.0, ge=0.5, le=2.0, description="播放语速")
+    default_language: str = Field(default="Auto", description="默认语言：Auto / Chinese / English 等")
+    max_new_tokens: int = Field(default=2048, ge=256, le=8192, description="生成音频 token 上限")
+    local_files_only: bool = Field(default=False, description="是否仅使用本地模型文件")
+    playback_chunk_ms: int = Field(default=120, ge=20, le=1000, description="播放分块大小（毫秒）")
 
 class UIConfig(BaseModel):
     """用户界面配置"""
     text_size: str = Field(default="10", description="文本大小")
     image_name: str = Field(default="LingYi_img.png", description="AI头像文件名")
-    # bg_alpha: float = Field(default=0.5, ge=0.0, le=1.0, description="聊天背景透明度")
-    # window_bg_alpha: int = Field(default=110, ge=0, le=255, description="主窗口背景透明度")
-    # mac_btn_size: int = Field(default=36, ge=10, le=100, description="Mac按钮大小")
-    # mac_btn_margin: int = Field(default=16, ge=0, le=50, description="Mac按钮边距")
-    # mac_btn_gap: int = Field(default=12, ge=0, le=30, description="Mac按钮间距")
-    # animation_duration: int = Field(default=600, ge=100, le=2000, description="动画时长（毫秒）")
 
 class QQConfig(BaseModel):
     """QQ相关配置"""
@@ -232,51 +203,6 @@ class QQConfig(BaseModel):
     private_whitelist: List[int] = Field(default_factory=list, description="私聊白名单，填入允许机器人响应的QQ号")
     private_blacklist: List[int] = Field(default_factory=list, description="私聊黑名单，当白名单为空时，黑名单生效")
 
-# class Live2DConfig(BaseModel):
-#     """Live2D配置"""
-#     enabled: bool = Field(default=True, description="是否启用Live2D功能")
-#     model_path: str = Field(default="ui/live2d_local/live2d_models/kasane_teto/kasane_teto.model3.json", description="Live2D模型文件路径")
-#     fallback_image: str = Field(default="ui/img/standby.png", description="回退图片路径")
-#     auto_switch: bool = Field(default=True, description="是否自动切换模式")
-#     animation_enabled: bool = Field(default=True, description="是否启用动画")
-#     touch_interaction: bool = Field(default=True, description="是否启用触摸交互")
-#     scale_factor: float = Field(default=1.0, ge=0.5, le=3.0, description="Live2D缩放比例")
-    
-#     # 嘴部同步配置
-#     lip_sync_enabled: bool = Field(default=True, description="是否启用嘴部同步动画")
-#     lip_sync_smooth_factor: float = Field(default=0.3, ge=0.1, le=1.0, description="嘴部动画平滑系数（越小越平滑）")
-#     lip_sync_volume_scale: float = Field(default=1.5, ge=0.5, le=5.0, description="音量放大系数（调整嘴部张开幅度）")
-#     lip_sync_volume_threshold: float = Field(default=0.01, ge=0.0, le=0.1, description="音量检测阈值（低于此值视为静音）")
-
-# class VoiceRealtimeConfig(BaseModel):
-#     """实时语音配置"""
-#     enabled: bool = Field(default=False, description="是否启用实时语音功能")
-#     provider: str = Field(default="qwen", description="语音服务提供商 (qwen/openai/local)")
-#     api_key: str = Field(default="", description="语音服务API密钥")
-#     model: str = Field(default="qwen3-omni-flash-realtime", description="语音模型名称")
-#     voice: str = Field(default="Cherry", description="语音角色")
-#     input_sample_rate: int = Field(default=16000, description="输入采样率")
-#     output_sample_rate: int = Field(default=24000, description="输出采样率")
-#     chunk_size_ms: int = Field(default=200, description="音频块大小（毫秒）")
-#     vad_threshold: float = Field(default=0.02, ge=0.0, le=1.0, description="静音检测阈值")
-#     echo_suppression: bool = Field(default=True, description="回声抑制")
-#     min_user_interval: float = Field(default=2.0, ge=0.5, le=10.0, description="用户输入最小间隔（秒）")
-#     cooldown_duration: float = Field(default=1.0, ge=0.5, le=5.0, description="冷却期时长（秒）")
-#     max_user_speech: float = Field(default=30.0, ge=5.0, le=120.0, description="最大说话时长（秒）")
-#     debug: bool = Field(default=False, description="是否启用调试模式")
-#     integrate_with_memory: bool = Field(default=True, description="是否集成到记忆系统")
-#     show_in_chat: bool = Field(default=True, description="是否在聊天界面显示对话内容")
-#     use_api_server: bool = Field(default=False, description="是否通过API Server处理（支持MCP调用）")
-#     voice_mode: str = Field(default="auto", description="语音模式：auto/local/end2end/hybrid（auto会根据provider自动选择）")
-#     asr_host: str = Field(default="localhost", description="本地ASR服务地址")
-#     asr_port: int = Field(default=5000, description="本地ASR服务端口")
-#     record_duration: int = Field(default=10, ge=5, le=60, description="本地模式最大录音时长（秒）")
-#     tts_voice: str = Field(default="zh-CN-XiaoyiNeural", description="TTS语音选择（本地/混合模式）")
-#     tts_host: str = Field(default="localhost", description="TTS服务地址")
-#     tts_port: int = Field(default=5061, ge=1, le=65535, description="TTS服务端口")
-#     auto_play: bool = Field(default=True, description="AI回复后自动播放语音")
-#     interrupt_playback: bool = Field(default=True, description="用户说话时自动打断AI语音播放")
-
 class LingYiConfig(BaseModel):
     """LingYi主配置类"""
     system: SystemConfig = Field(default_factory=SystemConfig)
@@ -288,19 +214,16 @@ class LingYiConfig(BaseModel):
     grag: GRAGConfig = Field(default_factory=GRAGConfig)
     web_agent: WebAgentConfig = Field(default_factory=WebAgentConfig)
 
-    # tts: TTSConfig = Field(default_factory=TTSConfig)
-    # asr: ASRConfig = Field(default_factory=ASRConfig)  # ASR输入服务配置 #
+    tts: TTSConfig = Field(default_factory=TTSConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     qq_config: QQConfig = Field(default_factory=QQConfig)
-    # live2d: Live2DConfig = Field(default_factory=Live2DConfig)
-    # voice_realtime: VoiceRealtimeConfig = Field(default_factory=VoiceRealtimeConfig)  # 实时语音配置
-    window: QWidget = Field(default=None)
+    window: Any = Field(default=None)
 
     model_config = {
         "extra": "ignore",  # 保留原配置：忽略未定义的字段
-        "arbitrary_types_allowed": True,  # 允许非标准类型（如 QWidget）
+        "arbitrary_types_allowed": True,  # 允许非标准类型
         "json_schema_extra": {
-            "exclude": ["window"]  # 序列化到 config.json 时排除 window 字段（避免报错）
+            "exclude": ["window"]  # 序列化到 config.json 时排除 window 字段
         }
     }
     def __init__(self, **kwargs):

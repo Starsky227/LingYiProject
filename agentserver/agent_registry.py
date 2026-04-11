@@ -110,8 +110,67 @@ class AgentAIClient:
         self.agent_config = AgentModelConfig()
         self._client = None
         self._vision_client = None
-        # 媒体分析缓存：filename -> [{"q": ..., "a": ...}, ...]
-        self._media_history: Dict[str, List[Dict[str, str]]] = {}
+        # 媒体分析缓存：content-hash -> [{"q": ..., "a": ...}, ...]
+        self._media_history: Dict[str, List[Dict[str, str]]] = self._load_media_history()
+
+    def _load_media_history(self) -> Dict[str, List[Dict[str, str]]]:
+        from system.paths import CACHE_DIR, MEDIA_HISTORY_CACHE_FILE, ensure_dir
+
+        ensure_dir(CACHE_DIR)
+        if not MEDIA_HISTORY_CACHE_FILE.exists():
+            return {}
+
+        try:
+            data = json.loads(MEDIA_HISTORY_CACHE_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning(f"读取媒体分析历史缓存失败: {e}")
+            return {}
+
+        history = data.get("history") if isinstance(data, dict) else None
+        if not isinstance(history, dict):
+            return {}
+
+        normalized: Dict[str, List[Dict[str, str]]] = {}
+        for cache_key, items in history.items():
+            if not isinstance(cache_key, str) or not isinstance(items, list):
+                continue
+
+            valid_items: List[Dict[str, str]] = []
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                question = str(item.get("q", "")).strip()
+                answer = str(item.get("a", "")).strip()
+                if question or answer:
+                    valid_items.append({"q": question, "a": answer})
+
+            if valid_items:
+                normalized[cache_key] = valid_items
+
+        return normalized
+
+    def _persist_media_history(self) -> None:
+        from system.paths import CACHE_DIR, MEDIA_HISTORY_CACHE_FILE, ensure_dir
+
+        ensure_dir(CACHE_DIR)
+        payload = {
+            "version": 1,
+            "history": self._media_history,
+        }
+        temp_file = MEDIA_HISTORY_CACHE_FILE.with_suffix(".tmp")
+
+        try:
+            temp_file.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temp_file.replace(MEDIA_HISTORY_CACHE_FILE)
+        except OSError as e:
+            logger.warning(f"写入媒体分析历史缓存失败: {e}")
+            try:
+                temp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     def _get_client(self):
         if self._client is None:
@@ -156,10 +215,10 @@ class AgentAIClient:
 
         return await client.responses.create(**kwargs)
 
-    # -- 媒体分析历史缓存（基于文件名） --
+    # -- 媒体分析历史缓存（基于文件内容哈希） --
 
     def get_media_history(self, cache_key: str) -> List[Dict[str, str]]:
-        """获取指定文件名的历史分析记录。"""
+        """获取指定文件内容哈希的历史分析记录。"""
         return list(self._media_history.get(cache_key, []))
 
     def save_media_history(self, cache_key: str, question: str, answer: str) -> None:
@@ -167,6 +226,7 @@ class AgentAIClient:
         if cache_key not in self._media_history:
             self._media_history[cache_key] = []
         self._media_history[cache_key].append({"q": question, "a": answer})
+        self._persist_media_history()
 
     # -- 多模态分析 --
 

@@ -32,6 +32,11 @@ class ConversationSession:
         role = sender.get("role", "")
         nickname = sender.get("nickname", "")
         display_name = card if card else nickname
+
+        # 统一机器人名称，避免历史与模型上下文中出现 "Bot" 造成角色混淆。
+        bot_qq = getattr(config.qq_config, "bot_qq", None)
+        if bot_qq is not None and str(user_id) == str(bot_qq):
+            display_name = config.system.ai_name
         
         group_name = event.get("group_name", "")
         if group_name:

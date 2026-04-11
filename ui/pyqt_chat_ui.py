@@ -79,12 +79,14 @@ class ChatWindow(QWidget):
     chunk_received = pyqtSignal(str)
     thinking_received = pyqtSignal(str)
     finished_reply = pyqtSignal()
+    external_user_message = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
         config.window = self
         self.messages = []
         self.chat_with_model = None  # 由外部注入
+        self._service_manager = None
 
         self._setup_window()
         self._setup_layout()
@@ -282,15 +284,63 @@ class ChatWindow(QWidget):
         self.chunk_received.connect(self._on_chunk)
         self.thinking_received.connect(self._on_thinking)
         self.finished_reply.connect(self._on_finish_reply)
+        self.external_user_message.connect(self._on_user_send)
 
     # ---- 外部注入模型调用 ----
     def set_chat_callback(self, chat_with_model):
         """注入聊天回调函数"""
         self.chat_with_model = chat_with_model
 
+    def set_service_manager(self, service_manager):
+        """注入服务管理器到图片窗口，显示服务按钮"""
+        self._service_manager = service_manager
+        if hasattr(self, 'image_window') and service_manager:
+            self.image_window.set_service_manager(service_manager)
+            try:
+                self.image_window.service_feedback.disconnect(self._on_service_feedback)
+            except Exception:
+                pass
+            self.image_window.service_feedback.connect(self._on_service_feedback)
+
+        try:
+            voice_btn = self.main_window.chat_page.voice_btn
+            voice_btn.clicked.connect(self._toggle_voice_input)
+        except Exception as e:
+            print(f"[ChatWindow] 绑定语音按钮失败: {e}")
+
+    def _toggle_voice_input(self):
+        if not self._service_manager:
+            print("[ChatWindow] 服务管理器未初始化")
+            return
+        try:
+            self._service_manager.toggle_voice_input()
+        except Exception as e:
+            print(f"[ChatWindow] 切换语音输入失败: {e}")
+
+    def submit_external_message(self, text: str) -> None:
+        """线程安全地将外部输入（如语音转写）送入聊天流程。"""
+        clean = (text or "").strip()
+        if clean:
+            self.external_user_message.emit(clean)
+
+    def _on_service_feedback(self, text: str) -> None:
+        """显示服务按钮点击反馈（仅显示气泡，不进入上下文/记忆/日志）。"""
+        clean = (text or "").strip()
+        if not clean:
+            return
+        timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
+        chat_page = self.main_window.chat_page
+        chat_page.add_bubble("系统", clean, timestamp_str, is_self=False)
+
     # ---- 用户发送消息 ----
     def _on_user_send(self, text: str):
         """用户点击发送 / 按 Enter"""
+        if self._service_manager and hasattr(self._service_manager, "interrupt_voice_output"):
+            try:
+                self._service_manager.interrupt_voice_output()
+            except Exception as e:
+                print(f"[ChatWindow] 打断语音输出失败: {e}")
+
         timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
         user_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
 

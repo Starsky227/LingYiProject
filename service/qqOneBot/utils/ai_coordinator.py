@@ -123,6 +123,7 @@ class AICoordinator:
 
             display = f"[{MEDIA_LABELS[seg_type]}: {file_token}]"
             attachments.append({
+                "source": "qqOneBot",
                 "channel": "qq",
                 "resolver": "qq_image_token" if seg_type == "image" else "qq_media_token",
                 "media_type": seg_type,
@@ -133,6 +134,7 @@ class AICoordinator:
             })
 
         return {
+            "source": "qqOneBot",
             "channel": "qq",
             "session_key": session_key,
             "message_type": meta.get("message_type", ""),
@@ -147,6 +149,16 @@ class AICoordinator:
                 }
             ],
         }
+
+    @staticmethod
+    def _normalize_file_marker(raw: str) -> str:
+        """标准化附件标记，兼容 [token] / <token> / 引号包裹。"""
+        token = (raw or "").strip().strip('"').strip("'")
+        if len(token) >= 2 and token[0] == "[" and token[-1] == "]":
+            token = token[1:-1].strip()
+        if len(token) >= 2 and token[0] == "<" and token[-1] == ">":
+            token = token[1:-1].strip()
+        return token
 
     def _format_address_message(self, address_info: dict[str, Any]) -> str:
         """将结构化地址讯息格式化为给模型看的文本。"""
@@ -174,24 +186,26 @@ class AICoordinator:
             return None
 
         attachments = (address_info or {}).get("attachments", []) or []
-        normalized = source.strip().strip('"').strip("'")
+        normalized = self._normalize_file_marker(source)
         normalized_name = Path(normalized).name or normalized
 
         for item in attachments:
             token = str(item.get("token", "")).strip()
-            display = str(item.get("display", "")).strip()
+            display = self._normalize_file_marker(str(item.get("display", "")).strip())
             name = str(item.get("name", "")).strip()
             resolver = str(item.get("resolver", "")).strip()
+            normalized_token = self._normalize_file_marker(token)
+            normalized_name_item = self._normalize_file_marker(name)
 
-            matched = normalized in {token, display, name} or normalized_name in {token, display, name}
+            matched = normalized in {token, normalized_token, display, name, normalized_name_item} or normalized_name in {token, normalized_token, display, name, normalized_name_item}
             if not matched:
                 continue
 
             if resolver == "qq_image_token":
                 try:
-                    resolved = await self.onebot.get_image(token)
+                    resolved = await self.onebot.get_image(normalized_token or token)
                     if resolved:
-                        logger.info(f"[AICoordinator] resolved QQ image token via address info: {token}")
+                        logger.info(f"[AICoordinator] resolved QQ image token via address info: {normalized_token or token}")
                         return resolved
                 except Exception as e:
                     logger.warning(f"[AICoordinator] resolve QQ image token failed: {e}")
@@ -321,16 +335,23 @@ class AICoordinator:
     ) -> None:
         """将消息推送到 input_buffer 并确保处理流程已启动"""
         session_state = self.ai.get_session_state(session_key)
+        address_message = self._format_address_message(address_info or {})
+        message_payload = f"{message_content}\n{address_message}" if address_message else message_content
         # 推入 input_buffer，由 lingyi_core 统一收集和处理
-        await session_state.input_buffer.put(message_content, caller_message, key_word_list)
+        await session_state.input_buffer.put(message_payload, caller_message, key_word_list)
         # 更新 tool_context，供工具执行时动态引用最新的 QQ 上下文
         group_id = event.get("group_id", 0)
         user_id = event.get("sender", {}).get("user_id", 0)
+        merged_address_info = {
+            "source": "qqOneBot",
+            "channel": "qq",
+            **(address_info or {}),
+        }
         session_state.tool_context.update({
             "onebot": self.onebot,
             "session": session,
             "event": event,
-            "address_info": address_info or {},
+            "address_info": merged_address_info,
             "resolve_file_source_callback": self._resolve_file_source_from_address,
             "get_image_url_callback": self.onebot.get_image,
             "group_id": group_id if group_id else None,

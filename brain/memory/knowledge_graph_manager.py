@@ -66,9 +66,12 @@ MEMORY_RECORD_PROMPT = load_prompt_file("memory_record.txt", "记忆存储")
 try:
     from neo4j import GraphDatabase
     from neo4j.exceptions import ServiceUnavailable, AuthError, TransientError
+    _NEO4J_AVAILABLE = True
 except ImportError:
-    print("Neo4j driver not installed. Please install with: pip install neo4j")
-    sys.exit(1)
+    GraphDatabase = None
+    ServiceUnavailable = AuthError = TransientError = Exception
+    _NEO4J_AVAILABLE = False
+    logging.getLogger(__name__).warning("neo4j 包未安装，记忆图谱功能将不可用。安装: pip install neo4j")
 
 from system.system_checker import is_neo4j_available
 
@@ -86,6 +89,10 @@ class KnowledgeGraphManager:
 
     def _connect(self) -> bool:
         """连接到 Neo4j 数据库"""
+        if not _NEO4J_AVAILABLE:
+            logger.warning("neo4j 包未安装，跳过连接")
+            return False
+
         if not config.grag.enabled:
             logger.warning("GRAG is disabled, skipping Neo4j connection")
             return False
@@ -2799,54 +2806,56 @@ class KnowledgeGraphManager:
 
     def _get_checkpoint_date(self) -> Optional[str]:
         """
-        从Neo4j中读取全局checkpoint日期字符串（格式 YYYYMMDD）。
-        checkpoint 存储在一个 (:SystemMeta {key: 'daily_checkpoint'}) 节点上。
+        从本地JSON文件读取全局checkpoint日期字符串（格式 YYYYMMDD）。
+        为兼容旧数据，首次读取失败时会尝试从旧的Neo4j SystemMeta节点迁移。
 
         Returns:
             Optional[str]: checkpoint日期字符串，不存在或失败返回None
         """
-        if not self._ensure_connection():
-            return None
+        checkpoint_file = self._checkpoint_meta_file_path()
         try:
-            with self.driver.session() as session:
-                result = session.run(
-                    "MATCH (m:SystemMeta {key: 'daily_checkpoint'}) RETURN m.value AS value"
-                ).single()
-                return result["value"] if result else None
+            if checkpoint_file.exists():
+                with open(checkpoint_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                value = str(data.get("checkpoint_date", "")).strip()
+                # 文件模式启用后，尽量清除历史遗留的 SystemMeta 节点
+                return value or None
         except Exception as e:
-            logger.error(f"Failed to get checkpoint date: {e}")
-            return None
+            logger.error(f"Failed to read local checkpoint file: {e}")
+
+        return None
 
     def _set_checkpoint_date(self, date_str: str) -> bool:
         """
-        在Neo4j中写入/更新全局checkpoint日期。
+        在本地JSON文件中写入/更新全局checkpoint日期。
 
         Args:
             date_str: 日期字符串（格式 YYYYMMDD）
         Returns:
             bool: 是否成功
         """
-        if not self._ensure_connection():
-            return False
+        checkpoint_file = self._checkpoint_meta_file_path()
         try:
-            with self.driver.session() as session:
-                session.run(
-                    """
-                    MERGE (m:SystemMeta {key: 'daily_checkpoint'})
-                    SET m.value = $date_str, m.updated_at = $now
-                    """,
-                    date_str=date_str,
-                    now=datetime.now().isoformat(),
-                )
-                return True
+            os.makedirs(os.path.dirname(checkpoint_file), exist_ok=True)
+            payload = {
+                "checkpoint_date": date_str,
+                "updated_at": datetime.now().isoformat(),
+            }
+            with open(checkpoint_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            return True
         except Exception as e:
-            logger.error(f"Failed to set checkpoint date: {e}")
+            logger.error(f"Failed to write local checkpoint file: {e}")
             return False
+
+    def _checkpoint_meta_file_path(self) -> str:
+        """返回 daily checkpoint 元数据文件路径。"""
+        return os.path.join(project_root, "data", "memory_graph", "daily_checkpoint.json")
 
     def daily_checkpoint(self) -> bool:
         """
         每日检查点：
-        1. 读取Neo4j中保存的checkpoint日期
+        1. 读取本地JSON中保存的checkpoint日期
         2. 若与当前日期不一致，先将全部节点和关系导出到
            data/memory_graph/<checkpoint日期>.jsonl
         3. 执行一次 memory_decay

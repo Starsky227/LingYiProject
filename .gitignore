@@ -43,3 +43,6 @@ build/
 
 # config 文件（仅根目录，子目录的 config.json 需要提交）
 /config.json
+
+# design_voice 实验音频
+service/pcAssistant/voice_output/design_voice/*.wav

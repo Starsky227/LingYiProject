@@ -2,13 +2,17 @@
     "type": "function",
     "function": {
         "name": "cleanup_temp",
-        "description": "清理指定的下载缓存目录。用于在文件分析完成后删除缓存下载的文件。",
+        "description": "清理过期或超量的下载缓存文件，并同步缓存索引。",
         "parameters": {
             "type": "object",
             "properties": {
-                "task_uuid": {
-                    "type": "string",
-                    "description": "任务 UUID（缓存目录名），留空则清理所有下载缓存目录"
+                "max_age_hours": {
+                    "type": "integer",
+                    "description": "仅保留指定小时数以内仍有效的缓存文件；留空则使用默认值"
+                },
+                "max_files": {
+                    "type": "integer",
+                    "description": "缓存目录允许保留的最大文件数；超出时自动清理最旧文件"
                 }
             }
         }
