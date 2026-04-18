@@ -1,4 +1,5 @@
 import logging
+import os
 import queue
 import shutil
 import subprocess
@@ -11,6 +12,12 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+# 确保项目根目录在 sys.path 中
+_project_root = str(Path(__file__).resolve().parent.parent.parent.parent)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+os.chdir(_project_root)
 
 from system.config import config
 from system.paths import CACHE_DIR, ensure_dir
@@ -27,17 +34,28 @@ _LEGACY_MODEL_DIR_NAMES = (
 
 try:
     import sounddevice as sd  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
+except Exception as _e:  # pragma: no cover
+    logging.getLogger(__name__).warning(f"[VoiceOutput] failed to import sounddevice: {_e}")
     sd = None
 
 try:
     import torch  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
+    # 双重保证：若 main.py 的早期修复未覆盖，在此补充注册 torch DLL 目录
+    if sys.platform == "win32":
+        _torch_lib = os.path.join(os.path.dirname(torch.__file__), "lib")
+        if os.path.isdir(_torch_lib):
+            if hasattr(os, "add_dll_directory"):
+                os.add_dll_directory(_torch_lib)
+            if _torch_lib not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = _torch_lib + os.pathsep + os.environ.get("PATH", "")
+except Exception as _e:  # pragma: no cover
+    logging.getLogger(__name__).warning(f"[VoiceOutput] failed to import torch: {_e}")
     torch = None  # type: ignore[assignment]
 
 try:
     from qwen_tts import Qwen3TTSModel  # type: ignore[import-not-found]
-except Exception:  # pragma: no cover
+except Exception as _e:  # pragma: no cover
+    logging.getLogger(__name__).warning(f"[VoiceOutput] failed to import qwen_tts: {_e}")
     Qwen3TTSModel = None  # type: ignore[assignment]
 
 
@@ -169,40 +187,21 @@ class QwenTTSOutputService:
             return False, err
         return True, (proc.stdout or "").strip()
 
-    def _ensure_hf_cli(self) -> bool:
-        ok, _ = self._run_cmd([sys.executable, "-m", "huggingface_hub", "--help"])
-        if ok:
-            return True
-        logger.info("[VoiceOutput] huggingface_hub not found, installing...")
-        ok, out = self._run_cmd([sys.executable, "-m", "pip", "install", "huggingface_hub[cli]"])
-        if not ok:
-            logger.error(f"[VoiceOutput] failed to install huggingface_hub[cli]: {out}")
-            return False
-        return True
-
     def _ensure_runtime_model(self) -> bool:
         self._cleanup_legacy_models()
         if self._model_local_dir.exists() and any(self._model_local_dir.iterdir()):
             return True
         self._model_local_dir.mkdir(parents=True, exist_ok=True)
 
-        if not self._ensure_hf_cli():
-            return False
-
         logger.info(f"[VoiceOutput] downloading model {self._model_path} to {self._model_local_dir} ...")
-        ok, out = self._run_cmd(
-            [
-                sys.executable,
-                "-m",
-                "huggingface_hub",
-                "download",
-                self._model_path,
-                "--local-dir",
-                str(self._model_local_dir),
-            ]
-        )
-        if not ok:
-            logger.error(f"[VoiceOutput] failed to download model: {out}")
+        try:
+            from huggingface_hub import snapshot_download
+            snapshot_download(
+                repo_id=self._model_path,
+                local_dir=str(self._model_local_dir),
+            )
+        except Exception as e:
+            logger.error(f"[VoiceOutput] failed to download model: {e}")
             return False
         logger.info("[VoiceOutput] model download complete")
         return True
@@ -321,6 +320,7 @@ class QwenTTSOutputService:
         instructions: str = "",
         speed: float = 1.0,
         language: str = "",
+        append: bool = False,
     ) -> str:
         if not self._running:
             return "语音输出未开启"
@@ -340,8 +340,9 @@ class QwenTTSOutputService:
             language=normalized_language,
         )
 
-        # 新语音会打断当前播放；本地生成本身不可中断，完成后若已被打断会直接丢弃结果。
-        self.interrupt_playback(clear_pending=True)
+        if not append:
+            # 非追加模式：新语音打断当前播放，替换队列
+            self.interrupt_playback(clear_pending=True)
         self._interrupt_event.clear()
 
         try:
@@ -381,10 +382,11 @@ class QwenTTSOutputService:
 
             file_path = self._cache_dir / f"{req.speech_id}.wav"
             try:
-                wavs, sr = self._tts_model.generate(
+                wavs, sr = self._tts_model.generate_voice_clone(
                     text=req.text,
                     language=req.language,
-                    prompt_speech_path=str(self._voice_source),
+                    ref_audio=str(self._voice_source),
+                    x_vector_only_mode=True,
                     non_streaming_mode=True,
                     max_new_tokens=self._max_new_tokens,
                 )
@@ -465,3 +467,36 @@ class QwenTTSOutputService:
         except Exception as e:
             logger.error(f"[VoiceOutput] playback loop failed: {e}")
             self._stop_event.set()
+
+
+if __name__ == "__main__":
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+    _TEXT = "我梦见一片焦土，一株破土而出的新蕊。它迎着朝阳绽放，向我低语呢喃。飞萤扑火！向死，而生！"
+    _OUTPUT = Path(__file__).resolve().parent / "test_voice.wav"
+
+    print(f"[TEST] 正在加载模型...")
+    svc = QwenTTSOutputService()
+    if not svc._load_model():
+        print("[TEST] 模型加载失败，请检查依赖和配置")
+        sys.exit(1)
+
+    print(f"[TEST] 正在合成: {_TEXT}")
+    wavs, sr = svc._tts_model.generate_voice_clone(
+        prompt="sad, poetic, very slow",
+        text=_TEXT,
+        language=svc._default_language or "Chinese",
+        ref_audio=str(svc._voice_source),
+        x_vector_only_mode=True,
+        non_streaming_mode=True,
+        max_new_tokens=svc._max_new_tokens,
+    )
+
+    if not wavs:
+        print("[TEST] TTS 返回空音频")
+        sys.exit(1)
+
+    wav = np.asarray(wavs[0], dtype=np.float32)
+    svc._write_temp_wav(_OUTPUT, wav, sr)
+    print(f"[TEST] 已生成: {_OUTPUT.resolve()}  (采样率={sr}, 时长={len(wav)/sr:.2f}s)")

@@ -116,24 +116,73 @@ def _make_chat_callback(lingyi: LingYiCore, bridge: _AsyncBridge, service_manage
         if not user_msg:
             return []
 
+        # 语音交互模式：等待用户说完再处理
+        voice_interaction = service_manager.is_voice_interaction_running()
+        if voice_interaction:
+            try:
+                from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+                voice_mcp = VoiceMCPService.get_instance()
+                voice_mcp.on_user_speech_end()  # 文本已提交 → 标记用户说完
+            except Exception:
+                pass
+
         # 将消息放入 InputBuffer
         session_state = lingyi.get_session_state(SESSION_KEY)
         session_state.tool_context.update(
             {
-                "voice_output_service": service_manager.get_voice_output_service(),
-                "voice_output_enabled": service_manager.is_voice_output_running(),
+                "voice_interaction": voice_interaction,
                 "source": "pcAssistant",
                 "channel": "pc",
+                "screen_capture_enabled": service_manager.is_screen_capture_enabled()
+                    if hasattr(service_manager, 'is_screen_capture_enabled') else False,
             }
         )
 
         async def _put_and_process():
+            # 语音交互模式：若用户正在说话，等待说完
+            stream_cb = None
+            voice_mcp_ref = None
+            use_stream_tts = config.tts.stream
+            if voice_interaction:
+                try:
+                    from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+                    voice_mcp_ref = VoiceMCPService.get_instance()
+                    if voice_mcp_ref.is_user_speaking:
+                        logger.info("[PCAssistant] 等待用户说完...")
+                        voice_mcp_ref.wait_user_done(timeout=30.0)
+                    # 流式 TTS：边生成边说
+                    if voice_mcp_ref.has_tts and use_stream_tts:
+                        voice_mcp_ref.start_streaming()
+                        def _on_sentence(sentence: str, is_first: bool) -> None:
+                            voice_mcp_ref.speak_sentence(sentence, is_first)
+                        stream_cb = _on_sentence
+                except Exception:
+                    pass
+
             await session_state.input_buffer.put(
                 message=user_msg,
                 caller_message="来自PC客户端的消息",
                 key_words=[],
             )
-            return await lingyi.process_message(SESSION_KEY)
+            result = await lingyi.process_message(SESSION_KEY, stream_text_callback=stream_cb)
+
+            # 流式会话结束
+            if voice_mcp_ref and stream_cb:
+                try:
+                    voice_mcp_ref.finish_streaming()
+                except Exception as e:
+                    logger.warning(f"[PCAssistant] 语音交互流式结束处理失败: {e}")
+
+            # 非流式 TTS：等完整回复后一次性播放
+            if voice_interaction and voice_mcp_ref and voice_mcp_ref.has_tts and not use_stream_tts:
+                try:
+                    reply_text = _extract_reply_text(result)
+                    if reply_text:
+                        voice_mcp_ref.stream_speak(reply_text)
+                except Exception as e:
+                    logger.warning(f"[PCAssistant] 语音交互非流式播放失败: {e}")
+
+            return result
 
         try:
             output = bridge.run_sync(_put_and_process())
@@ -185,11 +234,23 @@ def main():
 
     window = ChatWindow()
 
-    # 注入服务管理器（图片区服务按钮 + 聊天区语音按钮）
+    # 注入服务管理器（图片区服务按钮）
     window.set_service_manager(service_manager)
 
-    # 注入语音输入文本回调：语音转写后自动作为用户消息发送
-    service_manager.set_voice_text_callback(window.submit_external_message)
+    # 注入语音输入文本回调：转写出文字后打断 TTS 并发送消息
+    def _on_voice_text(text: str):
+        try:
+            from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+            svc = VoiceMCPService.get_instance()
+            svc.interrupt()   # 打断 TTS
+        except Exception as e:
+            logger.warning(f"[PCAssistant] voice_text interrupt error: {e}")
+        window.submit_external_message(text)
+
+    service_manager.set_voice_text_callback(_on_voice_text)
+
+    # VAD 检测到语音不再打断 TTS，打断已移至转写完成时
+    service_manager.set_speech_start_callback(None)
 
     # 注入聊天回调
     window.set_chat_callback(_make_chat_callback(lingyi, bridge, service_manager))

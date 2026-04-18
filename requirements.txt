@@ -19,6 +19,11 @@ qwen-tts
 # torch: install CUDA variant from https://pytorch.org if GPU is available
 torch>=2.0.0
 faster-whisper>=1.0.0
+# Screen text extraction: PaddleOCR
+paddleocr>=2.7.0
+paddlepaddle>=2.5.0
+mss>=9.0.0
+Pillow>=10.0.0
 # agentserver 依赖
 aiofiles>=24.1.0
 chardet>=5.0.0

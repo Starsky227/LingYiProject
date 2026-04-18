@@ -1,10 +1,12 @@
-param(
+﻿param(
     [string]$VenvPath = ".venv",
     [string]$ModelId = "Qwen/Qwen3-TTS-12Hz-0.6B-Base",
     [string]$LocalModelDir = "data/cache/models/Qwen3-TTS-12Hz-0.6B-Base"
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..")

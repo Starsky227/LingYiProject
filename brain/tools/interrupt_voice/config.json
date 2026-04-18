@@ -1,9 +1,0 @@
-{
-    "type": "function",
-    "name": "interrupt_voice",
-    "description": "打断当前语音播放（仅影响语音输出，不影响消息记录）。",
-    "parameters": {
-        "type": "object",
-        "properties": {}
-    }
-}

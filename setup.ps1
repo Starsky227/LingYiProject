@@ -1,4 +1,4 @@
-#LingYi 智能安装脚本
+﻿#LingYi 智能安装脚本
 # 使用方法：
 #   .\setup.ps1         - 智能增量模式（推荐）
 #   .\setup.ps1 -Force  - 强制重新创建环境
@@ -7,6 +7,9 @@ param(
     [switch]$Force,
     [switch]$Help
 )
+
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # Display help information
 if ($Help) {

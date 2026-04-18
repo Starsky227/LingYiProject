@@ -1,0 +1,17 @@
+{
+    "type": "function",
+    "name": "send_reply",
+    "description": "向用户发送一条消息。在助手模式下，你的所有回复必须通过此工具发送。不调用此工具则表示你选择保持沉默。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "message": {
+                "type": "string",
+                "description": "要发送给用户的消息内容"
+            }
+        },
+        "required": [
+            "message"
+        ]
+    }
+}

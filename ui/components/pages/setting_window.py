@@ -200,18 +200,6 @@ class SettingPage(QWidget):
                         _line_edit(c.grag.neo4j_database))
         cl.addWidget(grp)
 
-        # ---- QQ ----
-        grp, form = _make_group("💬  QQ 配置")
-        self._add_field(form, "机器人 QQ 号", "qq_config.bot_qq",
-                        _line_edit(str(c.qq_config.bot_qq or "")))
-        self._add_field(form, "主人 QQ 号", "qq_config.master_qq",
-                        _line_edit(str(c.qq_config.master_qq or "")))
-        self._add_field(form, "OneBot WS URL", "qq_config.onebot_ws_url",
-                        _line_edit(c.qq_config.onebot_ws_url))
-        self._add_field(form, "OneBot Token", "qq_config.onebot_token",
-                        _line_edit(c.qq_config.onebot_token, password=True))
-        cl.addWidget(grp)
-
         # ---- 保存按钮 ----
         save_btn = QPushButton("💾  保存并应用")
         save_btn.setCursor(Qt.PointingHandCursor)
@@ -278,15 +266,6 @@ class SettingPage(QWidget):
         # 表单变更 merge
         form_values = self._collect_values()
 
-        # qq 整型字段处理
-        for qq_key in ("bot_qq", "master_qq"):
-            qq_sect = form_values.setdefault("qq_config", {})
-            raw_val = qq_sect.get(qq_key, "")
-            try:
-                qq_sect[qq_key] = int(str(raw_val).strip()) if str(raw_val).strip() else None
-            except (ValueError, TypeError):
-                qq_sect[qq_key] = None
-
         self._deep_merge(existing, form_values)
 
         # 写回 config.json
@@ -338,10 +317,6 @@ class SettingPage(QWidget):
             "grag.neo4j_user": lambda: c.grag.neo4j_user,
             "grag.neo4j_password": lambda: c.grag.neo4j_password,
             "grag.neo4j_database": lambda: c.grag.neo4j_database,
-            "qq_config.bot_qq": lambda: str(c.qq_config.bot_qq or ""),
-            "qq_config.master_qq": lambda: str(c.qq_config.master_qq or ""),
-            "qq_config.onebot_ws_url": lambda: c.qq_config.onebot_ws_url,
-            "qq_config.onebot_token": lambda: c.qq_config.onebot_token,
         }
         for key, getter in mapping.items():
             w = self._fields.get(key)

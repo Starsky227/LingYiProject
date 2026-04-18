@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
 
 from ui.components.pages.chat_window import ChatPage
 from ui.components.pages.setting_window import SettingPage
+from ui.components.pages.qq_window import QQPage
 
 
 class MainWindow(QWidget):
@@ -33,6 +34,10 @@ class MainWindow(QWidget):
         # 页面 1: 设置
         self.setting_page = SettingPage(self)
         self.stack.addWidget(self.setting_page)
+
+        # 页面 2: QQ
+        self.qq_page = QQPage(self)
+        self.stack.addWidget(self.qq_page)
 
         layout.addWidget(self.stack)
 

@@ -215,6 +215,42 @@ def extract_keyword_from_text(recent_message: str) -> Dict[str, Any]:
     return result
 
 
+# ---- 节点/关系 display 格式化常量与辅助函数 ----
+_DISPLAY_SKIP_NODE = {"embedding", "importance", "created_at", "last_updated",
+                      "trust", "significance", "node_type"}
+_DISPLAY_SKIP_REL = {"importance", "created_at", "last_updated",
+                     "significance", "predicate"}
+
+
+def _format_node_tag(properties: Dict[str, Any], labels: list) -> str:
+    """将节点格式化为 name:label{k:v, ...} 标签字符串"""
+    name = properties.get("name", "?") if properties else "?"
+    label = (labels or ["?"])[0]
+    extras = {k: v for k, v in (properties or {}).items()
+              if k not in _DISPLAY_SKIP_NODE and k != "name"
+              and v is not None and str(v).strip() and str(v) != "无"}
+    tag = f"{name}:{label}"
+    if extras:
+        tag += "{" + ", ".join(f"{k}:{v}" for k, v in extras.items()) + "}"
+    return tag
+
+
+def _format_display_line(start_props: Dict, start_labels: list,
+                         rel_type: str, rel_props: Dict,
+                         end_props: Dict, end_labels: list) -> str:
+    """格式化为 (node{info})--REL{info}-->(node{info}) 图谱记号"""
+    start_tag = _format_node_tag(start_props, start_labels)
+    end_tag = _format_node_tag(end_props, end_labels)
+    rel_extras = {k: v for k, v in (rel_props or {}).items()
+                  if k not in _DISPLAY_SKIP_REL
+                  and v is not None and str(v).strip()}
+    if rel_extras:
+        rbrief = ", ".join(f"{k}:{v}" for k, v in rel_extras.items())
+        return f"({start_tag})--{rel_type}{{{rbrief}}}-->({end_tag})"
+    else:
+        return f"({start_tag})--{rel_type}-->({end_tag})"
+
+
 def _filter_related_nodes(nodes: Dict[str, Any], summary: str) -> Dict[str, Any]:
     """
     让AI对每个节点进行判断，是否为当前话题需要的记忆信息
@@ -226,7 +262,7 @@ def _filter_related_nodes(nodes: Dict[str, Any], summary: str) -> Dict[str, Any]
                 "node_id": reached_node_id,
                 "relation_id": rel_id
             },
-            "display": "(当前节点名) -[关系名]-> (连接节点名)"  # 方向根据实际关系确定
+            "display": "(node:label{info})--REL_TYPE{info}-->(node:label{info})"  # 图谱记号格式
         }
     }
     """
@@ -450,15 +486,17 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
                 # 非时间节点走正常筛选流程
                 nodes_to_add[reached_node_id] = node_data
                 relations_to_add[rel_id] = rel_data
-                # 将节点关系转换为简洁的方向性文字版交由AI审阅
-                root_name = reached_node["root_properties"].get("name", "Unknown") if reached_node["root_properties"] else "Unknown"
-                connected_name = reached_node["connected_properties"].get("name", "Unknown") if reached_node["connected_properties"] else "Unknown"
+                # 将节点关系转换为图谱记号格式交由AI审阅
+                root_props = dict(reached_node["root_properties"]) if reached_node["root_properties"] else {}
+                root_lbls = reached_node["root_labels"] or []
+                connected_props = dict(reached_node["connected_properties"]) if reached_node["connected_properties"] else {}
                 rel_type = reached_node["rel_type"]
+                rel_props = dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
                 
                 if reached_node["rel_start"] == reached_node["root_id"]:
-                    display = f"({root_name}) -[{rel_type}]-> ({connected_name})"
+                    display = _format_display_line(root_props, root_lbls, rel_type, rel_props, connected_props, connected_labels)
                 else:
-                    display = f"({root_name}) <-[{rel_type}]- ({connected_name})"
+                    display = _format_display_line(connected_props, connected_labels, rel_type, rel_props, root_props, root_lbls)
                 
                 memories_to_be_viewed[reached_node_id] = {
                     "ids": {
@@ -519,9 +557,13 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
                     # 非Time下游节点：加入待AI筛选
                     nodes_to_add[ds_id] = ds_node_data
                     relations_to_add[ds_rel_id] = ds_rel_data
-                    ds_name = tr["ds_properties"].get("name", "Unknown") if tr["ds_properties"] else "Unknown"
-                    time_name = tr["time_name"] or "Unknown"
-                    display = f"({ds_name}) -[{tr['rel_type']}]-> ({time_name})"
+                    ds_props = dict(tr["ds_properties"]) if tr["ds_properties"] else {}
+                    time_id = tr["time_id"]
+                    time_node_data = all_nodes.get(time_id, {})
+                    time_props = time_node_data.get("properties", {"name": tr["time_name"] or "Unknown"})
+                    time_labels_list = time_node_data.get("labels", ["Time"])
+                    tr_rel_props = dict(tr["rel_properties"]) if tr["rel_properties"] else {}
+                    display = _format_display_line(ds_props, ds_labels, tr["rel_type"], tr_rel_props, time_props, time_labels_list)
                     
                     memories_to_be_viewed[ds_id] = {
                         "ids": {
@@ -840,6 +882,83 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
     except Exception as e:
         logger.error(f"[错误] 基于关键词的记忆查询失败: {e}")
         return {"nodes": [], "relationships": []}
+
+def get_formatted_memory_graph(
+    message: str = "",
+    *,
+    memory_data: Dict[str, Any] = None,
+    save_temp_memory: bool = False,
+    add_keywords: list = None,
+) -> str:
+    """将记忆搜索结果转换为图谱记号格式的文本。
+
+    可以传入 message 自动调用 full_memory_search，也可以直接传入
+    memory_data ({"nodes": [...], "relationships": [...]}) 跳过搜索步骤。
+
+    Args:
+        message: 输入文本消息（与 memory_data 二选一）
+        memory_data: 已搜索的记忆数据，传入则跳过搜索直接格式化
+        save_temp_memory: 是否保存临时记忆结果
+        add_keywords: 手动输入的额外关键词列表
+
+    Returns:
+        图谱记号格式的字符串，无结果时返回空字符串
+    """
+    if memory_data is None:
+        memory_data = full_memory_search(message, save_temp_memory=save_temp_memory, add_keywords=add_keywords)
+
+    nodes = memory_data.get("nodes", [])
+    rels = memory_data.get("relationships", [])
+    if not nodes:
+        return ""
+
+    _SKIP_NODE = {"embedding", "importance", "created_at", "last_updated",
+                  "trust", "significance", "node_type"}
+    _SKIP_REL = {"importance", "created_at", "last_updated",
+                 "significance", "predicate"}
+
+    node_map: Dict[str, str] = {}
+    for node in nodes:
+        nid = node.get("id", "")
+        props = node.get("properties", {})
+        name = props.get("name", "?")
+        label = (node.get("labels") or ["?"])[0]
+        extras = {k: v for k, v in props.items()
+                  if k not in _SKIP_NODE and k != "name"
+                  and v is not None and str(v).strip() and str(v) != "无"}
+        tag = f"{name}:{label}"
+        if extras:
+            tag += "{" + ", ".join(f"{k}:{v}" for k, v in extras.items()) + "}"
+        node_map[nid] = tag
+
+    referenced: set = set()
+    lines: list = []
+
+    for rel in rels:
+        src = rel.get("start_node", "")
+        dst = rel.get("end_node", "")
+        rtype = rel.get("type", "RELATED")
+        src_tag = node_map.get(src, "?")
+        dst_tag = node_map.get(dst, "?")
+        referenced.add(src)
+        referenced.add(dst)
+        rprops = rel.get("properties", {})
+        rel_extras = {k: v for k, v in rprops.items()
+                      if k not in _SKIP_REL
+                      and v is not None and str(v).strip()}
+        if rel_extras:
+            rbrief = ", ".join(f"{k}:{v}" for k, v in rel_extras.items())
+            lines.append(f"({src_tag})--{rtype}{{{rbrief}}}-->({dst_tag})")
+        else:
+            lines.append(f"({src_tag})--{rtype}-->({dst_tag})")
+
+    for node in nodes:
+        nid = node.get("id", "")
+        if nid not in referenced:
+            lines.append(f"({node_map.get(nid, '?')})")
+
+    return "\n".join(lines)
+
 
 def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None) -> Dict[str, Any]:
     """

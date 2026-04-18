@@ -16,10 +16,43 @@ import json
 import logging
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# 记忆工具调用日志 — 写入 data/memory_graph/memory_tool_YYYYMMDD.log
+# ---------------------------------------------------------------------------
+
+_LOG_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "memory_graph"
+_MAX_LOG_FILES = 3
+
+
+def _rotate_log_files() -> None:
+    """保留最近 _MAX_LOG_FILES 个日志文件，删除更早的。"""
+    logs = sorted(_LOG_DIR.glob("memory_tool_*.log"))
+    while len(logs) > _MAX_LOG_FILES:
+        oldest = logs.pop(0)
+        try:
+            oldest.unlink()
+        except OSError:
+            pass
+
+
+def _write_memory_log(entry: dict) -> None:
+    """追加一条 JSON 日志到当天的日志文件。"""
+    _LOG_DIR.mkdir(parents=True, exist_ok=True)
+    today = datetime.now().strftime("%Y%m%d")
+    log_path = _LOG_DIR / f"memory_tool_{today}.log"
+    entry["timestamp"] = datetime.now().isoformat()
+    try:
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        _rotate_log_files()
+    except OSError as e:
+        logger.warning("写入记忆日志失败: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -226,7 +259,13 @@ async def run_memory_agent(
 ) -> str:
     """执行 memory_agent 工具调用循环。"""
     if not user_content.strip():
+        _write_memory_log({"event": "skip", "reason": "空内容"})
         return "无内容"
+
+    _write_memory_log({
+        "event": "start",
+        "user_content_preview": user_content[:300],
+    })
 
     tool_registry = _ToolRegistry(tools_dir, agent_name=agent_name)
     tools = tool_registry.get_tools_schema()
@@ -262,6 +301,12 @@ async def run_memory_agent(
                     function_calls.append(item)
 
             if not function_calls:
+                _write_memory_log({
+                    "event": "ai_decision",
+                    "iteration": iteration,
+                    "action": "no_tool_call",
+                    "ai_text": content_text[:500],
+                })
                 return content_text
 
             input_items.extend(response.output)
@@ -277,6 +322,12 @@ async def run_memory_agent(
                 )
                 if not isinstance(function_args, dict):
                     function_args = {}
+                _write_memory_log({
+                    "event": "tool_call",
+                    "iteration": iteration,
+                    "tool": fn_name,
+                    "args": function_args,
+                })
                 tool_call_ids.append(fc.call_id)
                 tool_tasks.append(
                     asyncio.ensure_future(
@@ -293,6 +344,12 @@ async def run_memory_agent(
                     if isinstance(tool_result, Exception)
                     else str(tool_result)
                 )
+                _write_memory_log({
+                    "event": "tool_result",
+                    "iteration": iteration,
+                    "call_id": tool_call_ids[index],
+                    "output": output_str[:500],
+                })
                 input_items.append({
                     "type": "function_call_output",
                     "call_id": tool_call_ids[index],
@@ -301,6 +358,12 @@ async def run_memory_agent(
 
         except Exception as exc:
             logger.exception("[%s] 执行失败: %s", agent_name, exc)
+            _write_memory_log({
+                "event": "error",
+                "iteration": iteration,
+                "error": str(exc),
+            })
             return f"处理失败: {exc}"
 
+    _write_memory_log({"event": "max_iterations_reached", "max": max_iterations})
     return "达到最大迭代次数"

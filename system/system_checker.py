@@ -3,7 +3,11 @@
 提供系统环境和依赖检查功能，如果环境不正确自主执行setup.py进行修复。
 """
 
+import logging
+import os
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 # 确保项目根目录在sys.path中，以便直接运行时也能正确导入

@@ -19,6 +19,8 @@ class ImageWindow(QWidget):
     service_toggled = pyqtSignal(str, bool)
     # 服务按钮点击反馈（用于在聊天气泡区显示，不写入上下文）
     service_feedback = pyqtSignal(str)
+    # 助手模式请求信号
+    assistant_mode_requested = pyqtSignal()
 
     def __init__(self, image_name: str = "", parent=None):
         super().__init__(parent)
@@ -53,17 +55,15 @@ class ImageWindow(QWidget):
     # ------------------------------------------------------------------ #
 
     _SERVICE_DEFS = [
-        ("qq",      "🤖",  "QQ Bot"),
         ("screen",  "📸",  "屏幕捕捉"),
-        ("voice",   "🎤",  "语音输入"),
-        ("voice_out", "🔊",  "语音输出"),
-        ("pet",     "🐾",  "桌宠模式"),
+        ("voice_interact", "🎙️", "语音交互"),
+        ("assistant",     "🐾",  "助手模式"),
         ("memviz",  "🌐",  "记忆云图"),
     ]
 
     # 暂未实装的服务（只展示，不可交互）
-    _STUB_SERVICES = {"screen", "pet"}
-    _TOGGLE_SERVICES = {"qq", "voice", "voice_out", "memviz"}
+    _STUB_SERVICES = set()
+    _TOGGLE_SERVICES = {"screen", "voice_interact", "memviz"}
     _START_ONLY_SERVICES = set()
 
     def _build_service_panel(self) -> QWidget:
@@ -142,18 +142,18 @@ class ImageWindow(QWidget):
             return
 
         try:
-            if svc_id == "qq":
-                running = self._service_manager.toggle_qq()
-                feedback = "QQ Bot 已开启" if running else "QQ Bot 已关闭"
-            elif svc_id == "voice":
-                running = self._service_manager.toggle_voice_input()
-                feedback = "语音输入已开启" if running else "语音输入已关闭"
-            elif svc_id == "voice_out":
-                running = self._service_manager.toggle_voice_output()
-                feedback = "语音输出已开启" if running else "语音输出已关闭"
+            if svc_id == "screen":
+                running = self._service_manager.toggle_screen_capture()
+                feedback = "屏幕捕捉已开启" if running else "屏幕捕捉已关闭"
+            elif svc_id == "voice_interact":
+                running = self._service_manager.toggle_voice_interaction()
+                feedback = "语音交互已开启" if running else "语音交互已关闭"
             elif svc_id == "memviz":
                 running = self._service_manager.toggle_memory_visualizer()
                 feedback = "记忆云图已开启" if running else "记忆云图已关闭"
+            elif svc_id == "assistant":
+                self.assistant_mode_requested.emit()
+                return
             else:
                 return
 
@@ -180,28 +180,22 @@ class ImageWindow(QWidget):
         self._service_panel.show()
         # 同步初始状态（带错误处理）
         try:
-            if hasattr(service_manager, 'is_qq_running'):
-                self._update_button_state("qq", service_manager.is_qq_running())
-        except Exception as e:
-            print(f"[ImageWindow] 获取 QQ 状态失败: {e}")
-        
-        try:
             if hasattr(service_manager, 'is_memory_viz_running'):
                 self._update_button_state("memviz", service_manager.is_memory_viz_running())
         except Exception as e:
             print(f"[ImageWindow] 获取记忆云图状态失败: {e}")
 
         try:
-            if hasattr(service_manager, 'is_voice_input_running'):
-                self._update_button_state("voice", service_manager.is_voice_input_running())
+            if hasattr(service_manager, 'is_screen_capture_enabled'):
+                self._update_button_state("screen", service_manager.is_screen_capture_enabled())
         except Exception as e:
-            print(f"[ImageWindow] 获取语音输入状态失败: {e}")
+            print(f"[ImageWindow] 获取屏幕捕捉状态失败: {e}")
 
         try:
-            if hasattr(service_manager, 'is_voice_output_running'):
-                self._update_button_state("voice_out", service_manager.is_voice_output_running())
+            if hasattr(service_manager, 'is_voice_interaction_running'):
+                self._update_button_state("voice_interact", service_manager.is_voice_interaction_running())
         except Exception as e:
-            print(f"[ImageWindow] 获取语音输出状态失败: {e}")
+            print(f"[ImageWindow] 获取语音交互状态失败: {e}")
 
         # 启动定时轮询：检测子进程是否已自行退出（如记忆云图关闭浏览器后自动停止）
         self._service_poll_timer = QTimer(self)
@@ -214,10 +208,9 @@ class ImageWindow(QWidget):
         if self._service_manager is None:
             return
         _checks = [
-            ("qq",        "is_qq_running"),
-            ("memviz",    "is_memory_viz_running"),
-            ("voice",     "is_voice_input_running"),
-            ("voice_out", "is_voice_output_running"),
+            ("screen",          "is_screen_capture_enabled"),
+            ("memviz",          "is_memory_viz_running"),
+            ("voice_interact",  "is_voice_interaction_running"),
         ]
         for svc_id, attr in _checks:
             btn = self._service_buttons.get(svc_id)

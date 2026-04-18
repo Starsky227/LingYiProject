@@ -18,6 +18,7 @@ from ui.components.title_bar import TitleBar
 from ui.components.side_bar import SideBar
 from ui.components.main_window import MainWindow
 from ui.components.image_window import ImageWindow
+from ui.components.assistant_mode_window import PetModeWindow
 
 
 # 读取UI配置
@@ -79,7 +80,10 @@ class ChatWindow(QWidget):
     chunk_received = pyqtSignal(str)
     thinking_received = pyqtSignal(str)
     finished_reply = pyqtSignal()
+    immediate_reply_signal = pyqtSignal(str)  # AI 回复立即推送（不等待循环结束）
     external_user_message = pyqtSignal(str)
+    _pending_file_signal = pyqtSignal(str, str, str)
+    _silent_process_signal = pyqtSignal()  # 后台服务触发静默处理（如 OCR 文字注入）
 
     def __init__(self):
         super().__init__()
@@ -87,6 +91,8 @@ class ChatWindow(QWidget):
         self.messages = []
         self.chat_with_model = None  # 由外部注入
         self._service_manager = None
+        self._pet_window = None  # 桌宠模式窗口
+        self._screenshot_callback = None  # 截屏发送给AI的回调
 
         self._setup_window()
         self._setup_layout()
@@ -284,7 +290,13 @@ class ChatWindow(QWidget):
         self.chunk_received.connect(self._on_chunk)
         self.thinking_received.connect(self._on_thinking)
         self.finished_reply.connect(self._on_finish_reply)
+        self.immediate_reply_signal.connect(self._on_immediate_reply)
         self.external_user_message.connect(self._on_user_send)
+        self._pending_file_signal.connect(self._on_pending_file_added)
+        self._silent_process_signal.connect(self._on_silent_process_trigger)
+
+        # 桌宠模式
+        self.image_window.assistant_mode_requested.connect(self.enter_pet_mode)
 
     # ---- 外部注入模型调用 ----
     def set_chat_callback(self, chat_with_model):
@@ -292,7 +304,7 @@ class ChatWindow(QWidget):
         self.chat_with_model = chat_with_model
 
     def set_service_manager(self, service_manager):
-        """注入服务管理器到图片窗口，显示服务按钮"""
+        """注入服务管理器到图片窗口和QQ页面，显示服务按钮"""
         self._service_manager = service_manager
         if hasattr(self, 'image_window') and service_manager:
             self.image_window.set_service_manager(service_manager)
@@ -301,27 +313,84 @@ class ChatWindow(QWidget):
             except Exception:
                 pass
             self.image_window.service_feedback.connect(self._on_service_feedback)
-
-        try:
-            voice_btn = self.main_window.chat_page.voice_btn
-            voice_btn.clicked.connect(self._toggle_voice_input)
-        except Exception as e:
-            print(f"[ChatWindow] 绑定语音按钮失败: {e}")
-
-    def _toggle_voice_input(self):
-        if not self._service_manager:
-            print("[ChatWindow] 服务管理器未初始化")
-            return
-        try:
-            self._service_manager.toggle_voice_input()
-        except Exception as e:
-            print(f"[ChatWindow] 切换语音输入失败: {e}")
+        # 注入到 QQ 页面
+        qq_page = self.main_window.qq_page
+        if qq_page and service_manager:
+            qq_page.set_service_manager(service_manager)
+            try:
+                qq_page.service_feedback.disconnect(self._on_service_feedback)
+            except Exception:
+                pass
+            qq_page.service_feedback.connect(self._on_service_feedback)
 
     def submit_external_message(self, text: str) -> None:
         """线程安全地将外部输入（如语音转写）送入聊天流程。"""
         clean = (text or "").strip()
         if clean:
             self.external_user_message.emit(clean)
+
+    def trigger_silent_processing(self) -> None:
+        """线程安全地触发静默 AI 处理（不显示用户气泡）。
+
+        用于后台服务（如 OCR）已将消息推入 input_buffer 后，
+        需要触发 AI 处理但不显示用户消息的场景。
+        """
+        self._silent_process_signal.emit()
+
+    def set_screenshot_callback(self, callback) -> None:
+        """注入截屏发送给AI的回调函数"""
+        self._screenshot_callback = callback
+
+    def add_pending_attachment(self, name: str, data_url: str, description: str = "") -> None:
+        """线程安全地向输入区添加待发送附件。"""
+        self._pending_file_signal.emit(name, data_url, description or name)
+
+    def _on_pending_file_added(self, name: str, data_url: str, description: str):
+        chat_page = self.main_window.chat_page
+        chat_page.add_pending_file(name, data_url, description)
+
+    def take_pending_attachments(self) -> list:
+        """取走所有待发送附件（由 chat_with_lingyi_core 调用）。"""
+        chat_page = self.main_window.chat_page
+        return chat_page.take_pending_files()
+
+    # ---- 桌宠模式 ---- #
+
+    def enter_pet_mode(self):
+        """进入助手模式：隐藏主窗口，显示助手小窗，切换到助手 prompt"""
+        pixmap = getattr(self.image_window, '_original_pixmap', None)
+        if pixmap is None or pixmap.isNull():
+            self._on_service_feedback("无法进入助手模式：未加载图片")
+            return
+
+        # 切换后端为助手模式（注入 LY_assistant_prompt）
+        if self._service_manager and hasattr(self._service_manager, 'enter_assistant_mode'):
+            self._service_manager.enter_assistant_mode()
+
+        self._pet_window = PetModeWindow(pixmap, self._service_manager)
+        self._pet_window.exit_pet_mode.connect(self.exit_pet_mode)
+        self._pet_window.service_feedback.connect(self._on_service_feedback)
+        self._pet_window.screenshot_to_ai.connect(self._on_pet_screenshot)
+        self._pet_window.show()
+        self.hide()
+
+    def exit_pet_mode(self):
+        """退出助手模式：关闭助手小窗，恢复主窗口，恢复普通 prompt"""
+        # 退出助手模式（恢复原始 prompt）
+        if self._service_manager and hasattr(self._service_manager, 'exit_assistant_mode'):
+            self._service_manager.exit_assistant_mode()
+
+        if self._pet_window:
+            self._pet_window.close()
+            self._pet_window.deleteLater()
+            self._pet_window = None
+        self.show()
+        self.activateWindow()
+
+    def _on_pet_screenshot(self):
+        """桌宠模式下截屏发送给AI"""
+        if self._screenshot_callback:
+            self._screenshot_callback()
 
     def _on_service_feedback(self, text: str) -> None:
         """显示服务按钮点击反馈（仅显示气泡，不进入上下文/记忆/日志）。"""
@@ -335,11 +404,17 @@ class ChatWindow(QWidget):
     # ---- 用户发送消息 ----
     def _on_user_send(self, text: str):
         """用户点击发送 / 按 Enter"""
-        if self._service_manager and hasattr(self._service_manager, "interrupt_voice_output"):
-            try:
-                self._service_manager.interrupt_voice_output()
-            except Exception as e:
-                print(f"[ChatWindow] 打断语音输出失败: {e}")
+        # 取出待发送附件（供 chat_with_lingyi_core 消费）
+        self._attachments_for_send = self.take_pending_attachments()
+
+        # 打断当前语音播放
+        try:
+            from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+            voice_mcp = VoiceMCPService.get_instance()
+            if voice_mcp.has_tts:
+                voice_mcp.interrupt()
+        except Exception:
+            pass
 
         timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
         user_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
@@ -347,9 +422,13 @@ class ChatWindow(QWidget):
         # 写日志
         write_chat_log(USERNAME, text)
 
-        # 添加气泡
+        # 添加气泡（含附件提示）
         chat_page = self.main_window.chat_page
-        chat_page.add_bubble(USERNAME, text, timestamp_str, is_self=True)
+        display_text = text
+        if self._attachments_for_send:
+            names = ", ".join(a.get("name", "附件") for a in self._attachments_for_send)
+            display_text = f"{text}\n📎 {names}"
+        chat_page.add_bubble(USERNAME, display_text, timestamp_str, is_self=True)
 
         # 记录消息
         self.messages.append({
@@ -386,11 +465,71 @@ class ChatWindow(QWidget):
         chat_page = self.main_window.chat_page
         chat_page.remove_thinking()
 
+        # 兜底：如果仍有未推送的累积文本（正常不会出现）
         reply = getattr(self, '_current_reply', "")
         if reply:
             timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
             chat_page.add_bubble(AI_NAME, reply, timestamp_str, is_self=False)
+            if self._pet_window is not None:
+                self._pet_window.show_bubble(reply)
         self._current_reply = ""
+
+    def _on_immediate_reply(self, text: str):
+        """AI 回复立即触发 — 每条回复独立创建气泡，不等待循环结束"""
+        import re
+        # 剥离 <thinking> 标签（部分模型可能在文本中嵌入）
+        clean = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL).strip()
+        if not clean:
+            return
+        chat_page = self.main_window.chat_page
+        chat_page.remove_thinking()
+        timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
+        chat_page.add_bubble(AI_NAME, clean, timestamp_str, is_self=False)
+        if self._pet_window is not None:
+            self._pet_window.show_bubble(clean)
+
+    # ---- 静默处理（后台服务触发） ----
+
+    _silent_processing = False  # 防止并发静默处理
+
+    def _on_silent_process_trigger(self):
+        """后台服务触发的静默 AI 处理（不显示用户消息气泡）"""
+        if self._silent_processing:
+            return  # 已在静默处理中，跳过
+        if self.chat_with_model:
+            self._silent_processing = True
+            threading.Thread(target=self._worker_silent_call, daemon=True).start()
+
+    def _worker_silent_call(self):
+        """工作线程：静默处理 — 不推送用户消息，直接触发 process_message。
+        input_buffer 中已有待处理内容（由 OCR 等后台服务写入）。"""
+        try:
+            self._current_reply = ""
+
+            def on_response(chunk: str):
+                self.chunk_received.emit(chunk)
+
+            # 传入空 messages，chat_with_lingyi_core 将跳过用户消息推送，
+            # 直接从 input_buffer 读取后台注入的内容
+            response_messages = self.chat_with_model([], on_response)
+
+            reply_content = ""
+            if response_messages and isinstance(response_messages, list):
+                for msg in reversed(response_messages):
+                    if msg.get("role") == "assistant":
+                        reply_content = msg.get("content", "")
+                        break
+                # chat_log 已在 _on_reply_immediate 回调中实时写入，此处不再重复
+
+            if reply_content:
+                self.messages.append({
+                    "role": "assistant",
+                    "content": reply_content,
+                    "timestamp": datetime.datetime.now().isoformat(timespec='milliseconds'),
+                })
+            self.finished_reply.emit()
+        finally:
+            self._silent_processing = False
 
     # ---- 工作线程 ----
     def _worker_call_model(self):
@@ -432,26 +571,15 @@ class ChatWindow(QWidget):
 
         response_messages = self.chat_with_model(self.messages, on_response)
 
-        # 提取回复内容
+        # 提取回复内容（chat_log 已在 _on_reply_immediate 回调中实时写入，此处不再重复）
         reply_content = ""
         if response_messages and isinstance(response_messages, list):
             for msg in reversed(response_messages):
                 if msg.get("role") == "assistant":
                     reply_content = msg.get("content", "")
                     break
-            # 记录日志
-            for msg in response_messages:
-                msg_role = msg.get("role", "")
-                msg_content = msg.get("content", "").strip()
-                msg_timestamp = msg.get("timestamp")
-                if msg_content:
-                    if msg_role == "assistant":
-                        write_chat_log(AI_NAME, msg_content, msg_timestamp)
-                    else:
-                        write_chat_log(msg_role, msg_content, msg_timestamp)
         elif isinstance(response_messages, str) and response_messages.strip():
             reply_content = response_messages
-            write_chat_log(AI_NAME, reply_content)
 
         assistant_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
         self.messages.append({

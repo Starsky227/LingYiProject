@@ -3,11 +3,10 @@
 调用 get_relevant_memories 完成多轮扩展式记忆检索。
 """
 
-import json
 import logging
 from typing import Any
 
-from brain.memory.search_memory import get_relevant_memories
+from brain.memory.search_memory import get_relevant_memories, get_formatted_memory_graph
 from system.system_checker import is_neo4j_available
 
 logger = logging.getLogger(__name__)
@@ -41,16 +40,8 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
         if not nodes:
             return "未找到相关记忆"
 
-        return json.dumps(
-            {
-                "nodes_count": len(nodes),
-                "relationships_count": len(relationships),
-                "nodes": nodes,
-                "relationships": relationships,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+        formatted = get_formatted_memory_graph(memory_data=result)
+        return f"找到 {len(nodes)} 个节点、{len(relationships)} 条关系\n{formatted}"
 
     except Exception as e:
         logger.error(f"[search_memory] 记忆搜索失败: {e}")

@@ -4,10 +4,13 @@
 #     输入区域顶部有一个细长的工具栏，从最左侧开始有：上传文件，打开心智云图，开启/关闭语音输入。（当前这三个按钮均无需实装）。最右侧为一个发送按钮。
 #     输入区域底部为一个文本输入框，用户可以在其中输入消息内容。文本输入框支持多行输入，按下Enter键可以发送消息（如果需要换行，可以使用Alt+Enter或Shift+Enter）。
 
+import base64
 import datetime
+import os
+
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QScrollArea,
-    QPushButton, QLabel, QSizePolicy, QFrame
+    QPushButton, QLabel, QSizePolicy, QFrame, QFileDialog
 )
 from PyQt5.QtCore import pyqtSignal, Qt, QEvent
 from PyQt5.QtGui import QKeyEvent, QFontMetrics, QFont, QColor
@@ -198,12 +201,11 @@ class ChatPage(QWidget):
         toolbar.setSpacing(4)
 
         self.upload_btn = self._make_toolbar_button("📎", "上传文件")
+        self.upload_btn.clicked.connect(self._on_upload_clicked)
         self.mindmap_btn = self._make_toolbar_button("🧠", "心智云图")
-        self.voice_btn = self._make_toolbar_button("🎤", "语音输入")
 
         toolbar.addWidget(self.upload_btn)
         toolbar.addWidget(self.mindmap_btn)
-        toolbar.addWidget(self.voice_btn)
         toolbar.addStretch()
 
         self.send_btn = QPushButton("发送")
@@ -230,6 +232,17 @@ class ChatPage(QWidget):
         toolbar.addWidget(self.send_btn)
 
         input_layout.addLayout(toolbar)
+
+        # -- 待发送文件提示栏 --
+        self._pending_files = []
+        self._pending_file_counter = 0
+        self._pending_bar = QWidget()
+        self._pending_bar.setStyleSheet("background: transparent; border: none;")
+        self._pending_bar_layout = QHBoxLayout(self._pending_bar)
+        self._pending_bar_layout.setContentsMargins(4, 2, 4, 2)
+        self._pending_bar_layout.setSpacing(6)
+        self._pending_bar.setVisible(False)
+        input_layout.addWidget(self._pending_bar)
 
         # -- 文本输入框 --
         self.input_field = QTextEdit()
@@ -357,3 +370,111 @@ class ChatPage(QWidget):
         QTimer.singleShot(50, lambda: self.scroll_area.verticalScrollBar().setValue(
             self.scroll_area.verticalScrollBar().maximum()
         ))
+
+    # ---- 待发送文件管理 ----
+
+    def add_pending_file(self, name: str, data_url: str, description: str = ""):
+        """添加一个待发送文件到缓存区"""
+        self._pending_file_counter += 1
+        self._pending_files.append({
+            "id": self._pending_file_counter,
+            "name": name,
+            "data_url": data_url,
+            "description": description or name,
+        })
+        self._update_pending_bar()
+
+    def remove_pending_file(self, file_id: int):
+        """按 id 移除一个待发送文件"""
+        self._pending_files = [f for f in self._pending_files if f["id"] != file_id]
+        self._update_pending_bar()
+
+    def take_pending_files(self) -> list:
+        """取走所有待发送文件并清空缓存区"""
+        files = list(self._pending_files)
+        self._pending_files.clear()
+        self._update_pending_bar()
+        return files
+
+    def _update_pending_bar(self):
+        """重建待发送文件提示栏"""
+        while self._pending_bar_layout.count() > 0:
+            item = self._pending_bar_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        for f in self._pending_files:
+            tag = self._create_file_tag(f["id"], f["name"])
+            self._pending_bar_layout.addWidget(tag)
+
+        self._pending_bar.setVisible(len(self._pending_files) > 0)
+
+    def _create_file_tag(self, file_id: int, name: str) -> QWidget:
+        """创建一个文件标签控件（带删除按钮）"""
+        tag = QWidget()
+        tag.setStyleSheet("""
+            QWidget {
+                background: rgba(0, 120, 215, 30);
+                border: 1px solid rgba(0, 120, 215, 80);
+                border-radius: 10px;
+            }
+        """)
+        tag_layout = QHBoxLayout(tag)
+        tag_layout.setContentsMargins(8, 2, 4, 2)
+        tag_layout.setSpacing(4)
+
+        label = QLabel(f"📎 {name}")
+        label.setStyleSheet(
+            "color: rgba(0, 80, 160, 220); font-size: 12px; border: none; background: transparent;"
+        )
+        tag_layout.addWidget(label)
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(18, 18)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: rgba(0, 80, 160, 180);
+                border: none;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                color: rgba(200, 50, 50, 255);
+            }
+        """)
+        close_btn.clicked.connect(lambda checked, fid=file_id: self.remove_pending_file(fid))
+        tag_layout.addWidget(close_btn)
+
+        return tag
+
+    def _on_upload_clicked(self):
+        """📎 按钮点击：打开文件选择对话框"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
+            self, "选择图片", "",
+            "图片文件 (*.png *.jpg *.jpeg *.gif *.webp *.bmp);;所有文件 (*.*)"
+        )
+        for file_path in file_paths:
+            try:
+                from PIL import Image
+                import io
+
+                img = Image.open(file_path)
+                if img.mode in ("RGBA", "P", "LA"):
+                    img = img.convert("RGB")
+
+                max_dim = 1920
+                if img.width > max_dim or img.height > max_dim:
+                    img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+
+                buf = io.BytesIO()
+                img.save(buf, format="JPEG", quality=85)
+                b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+                data_url = f"data:image/jpeg;base64,{b64}"
+
+                name = os.path.basename(file_path)
+                self.add_pending_file(name, data_url, name)
+            except Exception as e:
+                print(f"文件加载失败 [{file_path}]: {e}")

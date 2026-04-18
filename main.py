@@ -3,12 +3,29 @@ import os
 import sys
 import subprocess
 
+# Windows DLL 兼容修复 —— 必须在所有第三方库之前执行
+# Python 3.8+ 不再自动搜索 PATH 中的 DLL；torch 的 C 扩展 (c10.dll 等)
+# 需要显式注册目录，否则 qwen_tts / faster_whisper 等后续库会因找不到依赖而失败。
+if sys.platform == "win32":
+    try:
+        import torch as _torch_early
+        _torch_lib = os.path.join(os.path.dirname(_torch_early.__file__), "lib")
+        if os.path.isdir(_torch_lib):
+            if hasattr(os, "add_dll_directory"):
+                os.add_dll_directory(_torch_lib)
+            if _torch_lib not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = _torch_lib + os.pathsep + os.environ.get("PATH", "")
+        del _torch_early, _torch_lib
+    except Exception:
+        pass
+
 # 标准库导入
 import asyncio
 import logging
 import socket
 import threading
 import time
+from pathlib import Path
 
 import requests
 import uvicorn
@@ -36,7 +53,7 @@ from PyQt5.QtWidgets import QApplication
 from system.config import config, AI_NAME
 from system.system_checker import run_system_check
 from brain.lingyi_core.lingyi_core import LingYiCore
-from ui.pyqt_chat_ui import ChatWindow
+from ui.pyqt_chat_ui import ChatWindow, write_chat_log
 
 
 def _configure_logging() -> logging.Logger:
@@ -94,94 +111,6 @@ def _extract_reply_text(output_messages: list) -> str:
     return "\n".join([p for p in parts if p]).strip()
 
 
-def _is_ollama_required() -> bool:
-    """根据配置判断是否需要本地 Ollama。"""
-    candidates = [
-        str(getattr(config.main_api, "base_url", "") or ""),
-        str(getattr(config.memory_api, "embedding_base_url", "") or ""),
-        str(getattr(config.agent_api, "agent_base_url", "") or ""),
-        str(getattr(config.vision_api, "vision_base_url", "") or ""),
-    ]
-    model_candidates = [
-        str(getattr(config.main_api, "model", "") or ""),
-        str(getattr(config.memory_api, "embedding_model", "") or ""),
-        str(getattr(config.agent_api, "agent_model", "") or ""),
-        str(getattr(config.vision_api, "vision_model", "") or ""),
-    ]
-
-    for url in candidates:
-        lower = url.lower()
-        if "11434" in lower or "ollama" in lower:
-            return True
-
-    return any("ollama" in model.lower() for model in model_candidates)
-
-
-def _is_ollama_healthy(timeout_sec: float = 1.5) -> bool:
-    """探测 Ollama 服务是否可用。"""
-    endpoints = [
-        "http://127.0.0.1:11434/api/tags",
-        "http://localhost:11434/api/tags",
-    ]
-    for url in endpoints:
-        try:
-            resp = requests.get(url, timeout=timeout_sec)
-            if resp.status_code == 200:
-                return True
-        except Exception:
-            continue
-    return False
-
-
-def _start_ollama_process() -> bool:
-    """尝试后台启动 ollama serve。"""
-    creation_flags = 0
-    if os.name == "nt":
-        creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
-
-    try:
-        subprocess.Popen(
-            ["ollama", "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=creation_flags,
-        )
-        return True
-    except FileNotFoundError:
-        logger.error("未找到 ollama 命令，请先安装 Ollama 并加入 PATH")
-    except Exception as e:
-        logger.error(f"启动 Ollama 失败: {e}")
-    return False
-
-
-def ensure_ollama_running(wait_sec: int = 25) -> bool:
-    """确保 Ollama 服务处于可用状态。"""
-    if not _is_ollama_required():
-        logger.info("当前配置未要求本地 Ollama，跳过检查")
-        return True
-
-    if _is_ollama_healthy():
-        logger.info("Ollama 已在运行")
-        return True
-
-    logger.info("检测到需要 Ollama，正在尝试自动启动...")
-    if not _start_ollama_process():
-        return False
-
-    deadline = time.time() + max(wait_sec, 1)
-    while time.time() < deadline:
-        if _is_ollama_healthy(timeout_sec=1.0):
-            logger.info("Ollama 启动成功")
-            return True
-        time.sleep(1)
-
-    logger.error("Ollama 启动超时，请手动执行: ollama serve")
-    return False
-
-
-
-
-
 # 服务管理器类
 class ServiceManager:
     """服务管理器 - 统一管理所有后台服务"""
@@ -192,6 +121,11 @@ class ServiceManager:
         self.mcp_thread = None
         self._services_ready = False
         self._pc_log_threads = {}
+
+        # 助手模式状态
+        self._assistant_mode = False
+        self._original_prompt: str | None = None
+        self._lingyi = None
         
         # 初始化 PC 服务管理器（QQ、记忆云图等）
         try:
@@ -429,7 +363,7 @@ class ServiceManager:
             )
         return running
 
-    # -------------------- 语音输入/输出转发接口（供 UI 调用） --------------------
+    # -------------------- 语音交互转发接口（供 UI 调用） --------------------
 
     def is_voice_input_running(self) -> bool:
         if self.pc_service_manager:
@@ -451,10 +385,113 @@ class ServiceManager:
             return self.pc_service_manager.toggle_voice_output()
         return False
 
+    def is_voice_interaction_running(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.is_voice_interaction_running()
+        return False
+
+    def toggle_voice_interaction(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.toggle_voice_interaction()
+        return False
+
     def interrupt_voice_output(self) -> str:
         if self.pc_service_manager:
             return self.pc_service_manager.interrupt_voice_output()
         return "语音输出未开启"
+
+    def set_voice_text_callback(self, callback) -> None:
+        if self.pc_service_manager:
+            self.pc_service_manager.set_voice_text_callback(callback)
+
+    def set_speech_start_callback(self, callback) -> None:
+        if self.pc_service_manager:
+            self.pc_service_manager.set_speech_start_callback(callback)
+
+    def set_screen_ocr_callback(self, callback) -> None:
+        if self.pc_service_manager:
+            self.pc_service_manager.set_screen_ocr_callback(callback)
+
+    # -------------------- 屏幕捕捉权限转发接口 --------------------
+
+    def is_screen_capture_enabled(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.is_screen_capture_enabled()
+        return False
+
+    def toggle_screen_capture(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.toggle_screen_capture()
+        return False
+
+    # -------------------- 屏幕文字提取转发接口 --------------------
+
+    def is_screen_ocr_running(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.is_screen_ocr_running()
+        return False
+
+    def start_screen_ocr(self, region, interval=0.5, hash_threshold=5, stable_count=2) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.start_screen_ocr(region, interval, hash_threshold, stable_count)
+        return False
+
+    def stop_screen_ocr(self) -> bool:
+        if self.pc_service_manager:
+            return self.pc_service_manager.stop_screen_ocr()
+        return False
+
+    def set_screen_ocr_region(self, left, top, width, height) -> None:
+        if self.pc_service_manager:
+            self.pc_service_manager.set_screen_ocr_region(left, top, width, height)
+
+    def select_screen_region(self):
+        """弹出全屏遮罩让用户框选区域，返回 (left, top, width, height) 或 None"""
+        if self.pc_service_manager:
+            return self.pc_service_manager.select_screen_region()
+        return None
+
+    # -------------------- 助手模式 --------------------
+
+    def set_lingyi(self, lingyi_instance) -> None:
+        """注入 LingYiCore 引用（供助手模式切换 prompt / tools）。"""
+        self._lingyi = lingyi_instance
+
+    def is_assistant_mode(self) -> bool:
+        return self._assistant_mode
+
+    def enter_assistant_mode(self) -> bool:
+        """进入助手模式：注入 LY_assistant_prompt，启用 send_reply 工具。"""
+        if self._assistant_mode:
+            return True
+        if not self._lingyi:
+            logger.warning("LingYiCore 未注入，无法进入助手模式")
+            return False
+
+        self._original_prompt = self._lingyi.main_prompt
+        assistant_prompt = self._load_assistant_prompt()
+        self._lingyi.main_prompt = self._lingyi._compose_main_prompt(assistant_prompt)
+        self._assistant_mode = True
+        logger.info("已进入助手模式")
+        return True
+
+    def exit_assistant_mode(self) -> None:
+        """退出助手模式：恢复原始 prompt。"""
+        if not self._assistant_mode:
+            return
+        if self._lingyi and self._original_prompt is not None:
+            self._lingyi.main_prompt = self._original_prompt
+        self._assistant_mode = False
+        self._original_prompt = None
+        logger.info("已退出助手模式")
+
+    @staticmethod
+    def _load_assistant_prompt() -> str:
+        prompt_path = Path(os.path.dirname(__file__)) / "service" / "pcAssistant" / "prompt" / "LY_assistant_prompt.xml"
+        if not prompt_path.exists():
+            logger.warning(f"助手模式提示词文件不存在: {prompt_path}")
+            return ""
+        return prompt_path.read_text(encoding="utf-8").strip()
 
     def cleanup(self):
         """主程序退出时统一清理 PC 相关子服务。"""
@@ -475,6 +512,21 @@ def _deffered_init_services():
         
         # 初始化服务管理器
         service_manager = ServiceManager()
+
+        # 注入 LingYiCore 引用（助手模式 prompt 切换需要）
+        if lingyi:
+            service_manager.set_lingyi(lingyi)
+
+            # 注册助手模式工具（pc- 前缀），始终可用但仅在助手 prompt 指引下调用
+            try:
+                from brain.lingyi_core.tool_manager import LocalToolRegistry
+                _assistant_tools_dir = Path(os.path.dirname(__file__)) / "service" / "pcAssistant" / "tools"
+                _pc_registry = LocalToolRegistry(_assistant_tools_dir)
+                _pc_registry.load_items()
+                lingyi.tool_manager.register_sub_registry("pc-", _pc_registry)
+                logger.info(f"助手模式工具已注册: {[s.get('name') for s in _pc_registry.get_schema()]}")
+            except Exception as e:
+                logger.warning(f"助手模式工具注册失败: {e}")
         
         print("=" * 30)
         print(f'【{AI_NAME}】已启动')
@@ -484,8 +536,92 @@ def _deffered_init_services():
         if window:
             window.set_service_manager(service_manager)
         
+        # 注入语音输入文本回调：语音转写出文字后打断 TTS 并发送消息
+        if window:
+            def _on_voice_text(text: str):
+                try:
+                    from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+                    svc = VoiceMCPService.get_instance()
+                    svc.interrupt()   # 打断 TTS
+                except Exception as e:
+                    logger.warning(f"voice_text interrupt error: {e}")
+                window.submit_external_message(text)
+
+            service_manager.set_voice_text_callback(_on_voice_text)
+
+        # 注入截屏发送给AI回调（桌宠模式使用）
+        def send_screenshot_to_ai():
+            """截取屏幕并注入到对话流"""
+            try:
+                import base64, io, mss
+                from PIL import Image
+
+                # 截屏前隐藏桌宠窗口，避免助手图片出现在截图中
+                pet_win = getattr(window, '_pet_window', None) if window else None
+                if pet_win and pet_win.isVisible():
+                    pet_win.hide()
+                    QApplication.processEvents()
+                    time.sleep(0.05)
+
+                with mss.mss() as sct:
+                    monitor = sct.monitors[1]
+                    screenshot = sct.grab(monitor)
+
+                # 截屏后恢复桌宠窗口
+                if pet_win:
+                    pet_win.show()
+                    img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
+                    max_dim = 1920
+                    if img.width > max_dim or img.height > max_dim:
+                        img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=80)
+                    b64 = base64.b64encode(buf.getvalue()).decode("ascii")
+                    data_url = f"data:image/jpeg;base64,{b64}"
+
+                if window:
+                    window.add_pending_attachment("屏幕截图", data_url, "用户当前的屏幕截图")
+            except Exception as e:
+                logger.error(f"桌宠截屏失败: {e}")
+
+        if window:
+            window.set_screenshot_callback(send_screenshot_to_ai)
+
+        # VAD 检测到语音不再打断 TTS，打断已移至转写完成时
+        service_manager.set_speech_start_callback(None)
+
+        # 屏幕 OCR 文字回调：主动注入给 AI（写入 screen_context + 推入 input_buffer）
+        if lingyi:
+            def _on_screen_ocr_text(text: str):
+                try:
+                    ss = lingyi.get_session_state("default")
+                    # 被动上下文：始终保持最新（每轮模型调用自动注入 [屏幕环境]）
+                    ss.screen_context = text
+                    # 主动注入：推入 input_buffer，让 AI 立即感知屏幕文字变化
+                    import asyncio as _aio
+                    _aio.run(ss.input_buffer.put(
+                        message=f"\n{text}",
+                        caller_message="这是当前屏幕的文字内容，通常是游戏剧情对话，你可以决定是否要进行点评，如觉得角色发言有趣，或者对未来事件的发展进行推测。",
+                    ))
+                    # 如果当前没有正在进行的 AI 处理，触发静默处理
+                    if not ss.input_buffer.is_processing and window:
+                        window.trigger_silent_processing()
+                except Exception as e:
+                    logger.warning(f"screen_ocr callback error: {e}")
+            service_manager.set_screen_ocr_callback(_on_screen_ocr_text)
+
         # 启动服务（并行异步）
         service_manager.start_all_servers()
+
+        # 屏幕文字提取：根据配置自动启动
+        if config.screen_ocr.enabled:
+            region = tuple(config.screen_ocr.region)
+            service_manager.start_screen_ocr(
+                region=region,
+                interval=config.screen_ocr.interval,
+                hash_threshold=config.screen_ocr.hash_threshold,
+                stable_count=config.screen_ocr.stable_count,
+            )
         
         _deffered_init_services._initialized = True
 
@@ -493,14 +629,20 @@ def _deffered_init_services():
 
 # =============== 启动器部分 ===============
 if __name__ == "__main__":
+    # 提升进程优先级，避免全屏游戏等前台应用抢占 CPU 导致 TTS 合成卡顿
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.GetCurrentProcess()
+            ABOVE_NORMAL_PRIORITY_CLASS = 0x00008000
+            kernel32.SetPriorityClass(handle, ABOVE_NORMAL_PRIORITY_CLASS)
+        except Exception:
+            pass
+
     # 系统环境检测
     print("🚀 正在启动智能体...")
     print("=" * 50)
-
-    # 主入口先确保 Ollama 可用（若配置需要）
-    ollama_ok = ensure_ollama_running()
-    if not ollama_ok:
-        print("⚠️ Ollama 未就绪：将继续启动 UI，但依赖本地模型的功能可能不可用")
 
     # 快速启动UI，后台服务延迟初始化
     app = QApplication(sys.argv)
@@ -525,8 +667,24 @@ if __name__ == "__main__":
             return [{"role": "assistant", "content": "错误：模型未初始化"}]
         
         try:
+            is_assistant = service_manager is not None and service_manager.is_assistant_mode()
+
             # 在输入缓冲区中添加消息
             session_state = lingyi.get_session_state("default")
+
+            # 将 UI 待发送附件推入会话缓冲区
+            if window and hasattr(window, '_attachments_for_send'):
+                for att in window._attachments_for_send:
+                    session_state.external_pending_images.append({
+                        "data_url": att["data_url"],
+                        "description": att.get("description", att.get("name", "附件")),
+                    })
+                window._attachments_for_send = []
+
+            if is_assistant:
+                caller_msg = "来自PC客户端的消息（助手模式：请自行判断是否需要回复）"
+            else:
+                caller_msg = "用户直接对你发送的消息，必须回复"
             
             # 将消息添加到缓冲区
             for msg in messages[-1:]:
@@ -535,21 +693,86 @@ if __name__ == "__main__":
                     asyncio.run(
                         session_state.input_buffer.put(
                             message=text,
-                            caller_message=text,
+                            caller_message=caller_msg,
                         )
                     )
-            
+
+            # 更新工具上下文：屏幕捕捉权限
+            session_state.tool_context["screen_capture_enabled"] = (
+                service_manager is not None and service_manager.is_screen_capture_enabled()
+            )
+
+            # ---- 统一的即时回复处理器 ----
+            # 每条 AI 回复（send_reply 工具 / 模型文本输出）立即推送 UI 气泡 + 写日志 + TTS
+            all_immediate_replies: list[str] = []
+
+            # 语音交互：准备流式 TTS（仅非助手模式 + 流式 TTS 配置时启用）
+            stream_cb = None
+            voice_mcp = None
+            use_stream_tts = config.tts.stream
+            if not is_assistant and service_manager and service_manager.is_voice_interaction_running():
+                try:
+                    from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+                    voice_mcp = VoiceMCPService.get_instance()
+                    if voice_mcp.has_tts and use_stream_tts:
+                        voice_mcp.start_streaming()
+                        def _on_sentence(sentence: str, is_first: bool) -> None:
+                            voice_mcp.speak_sentence(sentence, is_first)
+                        stream_cb = _on_sentence
+                except Exception as e:
+                    logger.warning(f"语音交互回调设置失败: {e}")
+
+            def _on_reply_immediate(text: str):
+                """每条 AI 回复立即触发 — UI 气泡 + chat_log + TTS"""
+                all_immediate_replies.append(text)
+                write_chat_log(config.system.ai_name, text)
+                if window:
+                    window.immediate_reply_signal.emit(text)
+                # 非流式 TTS：逐条播放（流式 TTS 由 stream_cb 按句子处理，此处跳过）
+                if stream_cb is None and service_manager and service_manager.is_voice_interaction_running():
+                    try:
+                        from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+                        _voice = VoiceMCPService.get_instance()
+                        if _voice.has_tts:
+                            _voice.stream_speak(text)
+                    except Exception as e:
+                        logger.warning(f"即时回复 TTS 失败: {e}")
+
+            # 助手模式：send_reply 工具回调
+            if is_assistant:
+                session_state.tool_context["assistant_reply_callback"] = _on_reply_immediate
+
             # 异步处理消息
-            response = asyncio.run(lingyi.process_message("default"))
+            response = asyncio.run(
+                lingyi.process_message(
+                    "default",
+                    stream_text_callback=stream_cb,
+                    on_text_output=_on_reply_immediate if not is_assistant else None,
+                )
+            )
 
-            reply = _extract_reply_text(response)
-            if reply:
-                on_response(reply)
+            # 流式会话结束：启动播放完毕监视
+            if voice_mcp and stream_cb:
+                try:
+                    voice_mcp.finish_streaming()
+                except Exception as e:
+                    logger.warning(f"语音交互流式结束处理失败: {e}")
+
+            # 提取最终回复内容（用于 messages 历史记录）
+            if is_assistant:
+                session_state.tool_context.pop("assistant_reply_callback", None)
+
+            if all_immediate_replies:
+                reply = "\n".join(all_immediate_replies)
             else:
-                reply = ""
+                # 兜底：如果即时回调未触发，尝试从 response 提取
+                reply = _extract_reply_text(response) if not is_assistant else ""
+                if reply:
+                    on_response(reply)
+                    write_chat_log(config.system.ai_name, reply)
 
-            # 统一返回 UI 可识别结构
-            return [{"role": "assistant", "content": reply}]
+            # 统一返回 UI 可识别结构（用于 messages 历史，不再触发气泡）
+            return [{"role": "assistant", "content": reply or ""}]
         except Exception as e:
             logger.error(f"LingYiCore 处理失败: {e}")
             error_msg = f"处理失败: {str(e)}"
@@ -574,6 +797,21 @@ if __name__ == "__main__":
     QTimer.singleShot(120, init_services_async)
 
     # 退出时清理后台服务，避免残留子进程。
-    app.aboutToQuit.connect(lambda: service_manager and service_manager.cleanup())
+    def _on_quit():
+        # 先刷新所有未保存的记忆
+        if lingyi:
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(lingyi.flush_all_pending_memory())
+                else:
+                    loop.run_until_complete(lingyi.flush_all_pending_memory())
+            except Exception as e:
+                logger.warning(f"记忆刷新失败: {e}")
+        # 再清理后台服务
+        if service_manager:
+            service_manager.cleanup()
+    app.aboutToQuit.connect(_on_quit)
     
     sys.exit(app.exec_())

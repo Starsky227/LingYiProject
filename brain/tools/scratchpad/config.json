@@ -1,0 +1,20 @@
+{
+    "type": "function",
+    "name": "scratchpad",
+    "description": "你的临时便签，可以随时读写。用于记录当前对话中需要暂存的信息、待办事项或中间结果。内容仅在当前会话内有效。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["read", "write"],
+                "description": "read=读取当前便签内容, write=覆盖写入新内容"
+            },
+            "content": {
+                "type": "string",
+                "description": "write时的新内容（最多500字）"
+            }
+        },
+        "required": ["action"]
+    }
+}

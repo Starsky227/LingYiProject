@@ -6,7 +6,7 @@ PCAssistant 服务管理器
   - 屏幕捕捉         (暂未实装)
     - 语音输入         (voice_input_VDL)
     - 语音输出         (Qwen3-TTS)
-  - 桌宠模式         (暂未实装)
+  - 助手模式         (暂未实装)
 """
 
 import os
@@ -22,7 +22,7 @@ from system.config import config
 
 # 延迟导入语音服务：依赖可能未安装，不应阻塞主程序
 VoiceInputVDLService = None
-QwenTTSOutputService = None
+TTSOutputService = None
 
 def _lazy_import_voice_input():
     global VoiceInputVDLService
@@ -35,14 +35,26 @@ def _lazy_import_voice_input():
     return VoiceInputVDLService
 
 def _lazy_import_voice_output():
-    global QwenTTSOutputService
-    if QwenTTSOutputService is None:
+    global TTSOutputService
+    if TTSOutputService is None:
         try:
-            from service.pcAssistant.voice_output import QwenTTSOutputService as _cls
-            QwenTTSOutputService = _cls
+            from service.pcAssistant.voice_output import TTSOutputService as _cls
+            TTSOutputService = _cls
         except Exception as e:
             logging.getLogger(__name__).warning(f"语音输出模块加载失败: {e}")
-    return QwenTTSOutputService
+    return TTSOutputService
+
+ScreenTextExtractor = None
+
+def _lazy_import_screen_ocr():
+    global ScreenTextExtractor
+    if ScreenTextExtractor is None:
+        try:
+            from service.pcAssistant.screen_text_extract import ScreenTextExtractor as _cls
+            ScreenTextExtractor = _cls
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"屏幕文字提取模块加载失败: {e}")
+    return ScreenTextExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -60,10 +72,23 @@ class PCServiceManager:
         self._napcat_process: Optional[subprocess.Popen] = None
         self._voice_service = None
         self._voice_text_callback: Optional[Callable[[str], None]] = None
+        self._screen_ocr_callback: Optional[Callable[[str], None]] = None
         self._voice_output_service = None
+        self._voice_interaction_active = False
+        self._speech_start_callback: Optional[Callable[[], None]] = None
+        self._screen_ocr_service = None
+        self._screen_capture_enabled = False  # 屏幕捕捉权限（view_screen 工具依赖此标志）
 
     def set_voice_text_callback(self, callback: Callable[[str], None]) -> None:
         self._voice_text_callback = callback
+
+    def set_screen_ocr_callback(self, callback: Callable[[str], None]) -> None:
+        """设置屏幕 OCR 文字回调（独立于语音回调，写入 session_state.screen_context）"""
+        self._screen_ocr_callback = callback
+
+    def set_speech_start_callback(self, callback: Callable[[], None]) -> None:
+        """注入"用户开始说话"回调，语音交互模式下 VAD 检测到语音即调用"""
+        self._speech_start_callback = callback
 
     # ------------------------------------------------------------------ #
     #  语音输入 (voice_input_VDL)
@@ -84,7 +109,16 @@ class PCServiceManager:
             logger.error("[PCService] Voice input module not available")
             return False
         try:
-            self._voice_service = cls(text_callback=self._voice_text_callback)
+            stt_cfg = config.stt
+            self._voice_service = cls(
+                text_callback=self._voice_text_callback,
+                speech_start_callback=self._speech_start_callback,
+                whisper_model_size=stt_cfg.whisper_model_size,
+                whisper_device=stt_cfg.whisper_device,
+                whisper_compute_type=stt_cfg.whisper_compute_type,
+                language=stt_cfg.language,
+                mic_device=stt_cfg.mic_device,
+            )
             started = self._voice_service.start()
             if started:
                 logger.info("[PCService] Voice input started")
@@ -165,6 +199,166 @@ class PCServiceManager:
 
     def get_voice_output_service(self):
         return self._voice_output_service
+
+    # ------------------------------------------------------------------ #
+    #  语音交互 (voice_input + voice_output 联动)
+    # ------------------------------------------------------------------ #
+
+    def is_voice_interaction_running(self) -> bool:
+        return self._voice_interaction_active
+
+    def start_voice_interaction(self) -> bool:
+        """启动语音交互：同时开启语音输入和语音输出，并注入 VoiceMCPService"""
+        if self._voice_interaction_active:
+            return True
+
+        # 启动语音输出（允许失败，仅保留语音输入）
+        if not self.is_voice_output_running():
+            if not self.start_voice_output():
+                logger.warning("[PCService] 语音交互：语音输出启动失败，仅使用语音输入")
+
+        # 将 TTS 服务注入 VoiceMCPService 单例
+        try:
+            from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+            voice_mcp = VoiceMCPService.get_instance()
+            voice_mcp.set_tts_service(self._voice_output_service)
+        except Exception as e:
+            logger.warning(f"[PCService] VoiceMCPService 注入失败: {e}")
+
+        # 启动语音输入
+        if not self.is_voice_input_running():
+            if not self.start_voice_input():
+                logger.error("[PCService] 语音交互：语音输入启动失败")
+                return False
+
+        # 将语音输入服务注入 VoiceMCPService（信号隔离：TTS 播放时静音麦克风）
+        try:
+            from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+            voice_mcp = VoiceMCPService.get_instance()
+            voice_mcp.set_voice_input_service(self._voice_service)
+        except Exception as e:
+            logger.warning(f"[PCService] VoiceMCPService 语音输入注入失败: {e}")
+
+        self._voice_interaction_active = True
+        logger.info("[PCService] 语音交互已开启")
+        return True
+
+    def stop_voice_interaction(self) -> bool:
+        """停止语音交互：同时关闭语音输入和语音输出"""
+        self.stop_voice_input()
+        self.stop_voice_output()
+
+        try:
+            from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
+            voice_mcp = VoiceMCPService.get_instance()
+            voice_mcp.set_tts_service(None)
+            voice_mcp.set_voice_input_service(None)
+        except Exception:
+            pass
+
+        self._voice_interaction_active = False
+        logger.info("[PCService] 语音交互已关闭")
+        return True
+
+    def toggle_voice_interaction(self) -> bool:
+        """切换语音交互状态，返回新状态"""
+        if self._voice_interaction_active:
+            self.stop_voice_interaction()
+            return False
+        return self.start_voice_interaction()
+
+    # ------------------------------------------------------------------ #
+    #  屏幕文字提取 (screen_text_extract / PaddleOCR)
+    # ------------------------------------------------------------------ #
+
+    def is_screen_capture_enabled(self) -> bool:
+        return self._screen_capture_enabled
+
+    def toggle_screen_capture(self) -> bool:
+        """切换屏幕文字提取（OCR 服务 + 权限标志），返回新状态"""
+        if self.is_screen_ocr_running():
+            # 当前正在运行 → 停止
+            self.stop_screen_ocr()
+            self._screen_capture_enabled = False
+            logger.info("[PCService] 屏幕文字提取已关闭")
+            return False
+        else:
+            # 当前未运行 → 使用配置参数启动
+            from system.config import config
+            ocr_cfg = config.screen_ocr
+            region = tuple(ocr_cfg.region)
+            started = self.start_screen_ocr(
+                region=region,
+                interval=ocr_cfg.interval,
+                hash_threshold=ocr_cfg.hash_threshold,
+                stable_count=ocr_cfg.stable_count,
+            )
+            self._screen_capture_enabled = started
+            logger.info(f"[PCService] 屏幕文字提取启动{'成功' if started else '失败'}, region={region}")
+            return started
+
+    def is_screen_ocr_running(self) -> bool:
+        return self._screen_ocr_service is not None and self._screen_ocr_service.is_running
+
+    def start_screen_ocr(
+        self,
+        region: tuple[int, int, int, int],
+        interval: float = 0.5,
+        hash_threshold: int = 5,
+        stable_count: int = 2,
+    ) -> bool:
+        """启动屏幕文字提取，region = (left, top, width, height)"""
+        if self.is_screen_ocr_running():
+            logger.info("[PCService] Screen OCR already running")
+            return True
+        ocr_cb = self._screen_ocr_callback or self._voice_text_callback
+        if ocr_cb is None:
+            logger.error("[PCService] No callback set for screen OCR")
+            return False
+        cls = _lazy_import_screen_ocr()
+        if cls is None:
+            logger.error("[PCService] Screen OCR module not available")
+            return False
+        try:
+            self._screen_ocr_service = cls(
+                text_callback=ocr_cb,
+                region=region,
+                interval=interval,
+                hash_threshold=hash_threshold,
+                stable_count=stable_count,
+            )
+            started = self._screen_ocr_service.start()
+            if started:
+                logger.info(f"[PCService] Screen OCR started, region={region}")
+            return started
+        except Exception as e:
+            logger.error(f"[PCService] Failed to start screen OCR: {e}")
+            self._screen_ocr_service = None
+            return False
+
+    def stop_screen_ocr(self) -> bool:
+        if self._screen_ocr_service is None:
+            return True
+        try:
+            self._screen_ocr_service.stop()
+            logger.info("[PCService] Screen OCR stopped")
+            return True
+        except Exception as e:
+            logger.error(f"[PCService] Failed to stop screen OCR: {e}")
+            return False
+        finally:
+            self._screen_ocr_service = None
+
+    def set_screen_ocr_region(self, left: int, top: int, width: int, height: int) -> None:
+        """动态更新截屏区域（运行中也可调整）"""
+        if self._screen_ocr_service is not None:
+            self._screen_ocr_service.set_region(left, top, width, height)
+
+    @staticmethod
+    def select_screen_region():
+        """弹出全屏遮罩让用户框选区域，返回 (left, top, width, height) 或 None"""
+        from service.pcAssistant.screen_text_extract.region_selector import select_screen_region
+        return select_screen_region()
 
     def _build_child_env(self) -> dict:
         """为子进程统一设置 UTF-8，避免 Windows 控制台编码导致崩溃。"""
@@ -425,3 +619,5 @@ class PCServiceManager:
                 logger.info(f"[PCService] {name} terminated on cleanup")
         self.stop_voice_input()
         self.stop_voice_output()
+        self.stop_screen_ocr()
+        self._voice_interaction_active = False

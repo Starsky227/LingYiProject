@@ -166,9 +166,28 @@ class WebAgentConfig(BaseModel):
     https_proxy: Optional[str] = Field(default=None, description="HTTPS代理地址（如 https://127.0.0.1:8080）")
 
 
+class STTConfig(BaseModel):
+    """语音输入配置。"""
+    mic_device: Optional[int] = Field(
+        default=None,
+        description="麦克风设备索引。None 表示自动选择物理麦克风；"
+                    "可通过运行 python -m sounddevice 查看可用设备列表"
+    )
+    whisper_model_size: str = Field(default="small", description="faster-whisper 模型大小")
+    whisper_device: str = Field(default="cpu", description="faster-whisper 推理设备")
+    whisper_compute_type: str = Field(default="int8", description="faster-whisper compute type")
+    language: str = Field(default="zh", description="语音识别语言")
+
+
 class TTSConfig(BaseModel):
-    """本地 Qwen3-TTS 配置。"""
-    enabled: bool = Field(default=True, description="是否启用本地语音输出")
+    """TTS 语音合成配置。"""
+    enabled: bool = Field(default=True, description="是否启用语音输出")
+    backend: str = Field(default="qwen", description="TTS 后端：qwen（本地 Qwen3-TTS）或 stepfun（StepFun 实时 TTS API）")
+    stream: bool = Field(default=True, description="是否启用流式语音合成（边生成边说）。关闭则等完整回复后再整句播放")
+    # StepFun 实时 TTS API 配置
+    tts_api_key: str = Field(default="", description="StepFun API Key")
+    tts_voice_id: str = Field(default="qingchunshaonv", description="StepFun 音色 ID，如 qingchunshaonv / cixiangnvsheng 等")
+    # Qwen3-TTS 本地模型配置
     model_path: str = Field(
         default="Qwen/Qwen3-TTS-12Hz-0.6B-Base",
         description="模型ID或本地模型目录"
@@ -190,6 +209,15 @@ class UIConfig(BaseModel):
     """用户界面配置"""
     text_size: str = Field(default="10", description="文本大小")
     image_name: str = Field(default="LingYi_img.png", description="AI头像文件名")
+
+class ScreenOCRConfig(BaseModel):
+    """屏幕文字提取配置"""
+    enabled: bool = Field(default=False, description="是否启用屏幕文字提取")
+    region: list[int] = Field(default=[0, 0, 800, 200], description="截屏区域 [left, top, width, height]")
+    interval: float = Field(default=0.5, ge=0.1, le=5.0, description="截屏检测间隔（秒）")
+    hash_threshold: int = Field(default=5, ge=1, le=30, description="dHash 汉明距离阈值，超过此值认为画面有变化")
+    stable_count: int = Field(default=2, ge=1, le=10, description="连续多少次相同才认为文字已稳定")
+    lang: str = Field(default="ch", description="PaddleOCR 语言：ch / en / japan 等")
 
 class QQConfig(BaseModel):
     """QQ相关配置"""
@@ -214,7 +242,9 @@ class LingYiConfig(BaseModel):
     grag: GRAGConfig = Field(default_factory=GRAGConfig)
     web_agent: WebAgentConfig = Field(default_factory=WebAgentConfig)
 
+    stt: STTConfig = Field(default_factory=STTConfig)
     tts: TTSConfig = Field(default_factory=TTSConfig)
+    screen_ocr: ScreenOCRConfig = Field(default_factory=ScreenOCRConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     qq_config: QQConfig = Field(default_factory=QQConfig)
     window: Any = Field(default=None)
@@ -334,3 +364,34 @@ AI_NAME = config.system.ai_name
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def save_screen_ocr_region(region: list[int]) -> None:
+    """将屏幕 OCR 区域保存到 config.json（保留注释和格式）。
+
+    通过正则替换 "region": [...] 行，不破坏其余内容。
+    同时更新内存中的 config 对象。
+    """
+    import re
+    config.screen_ocr.region = list(region)
+
+    config_path = str(Path(__file__).parent.parent / "config.json")
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 匹配 "region": [数字, 数字, 数字, 数字] 及其后可能的注释
+        new_region_str = f'"region": [{region[0]}, {region[1]}, {region[2]}, {region[3]}]'
+        content_new = re.sub(
+            r'"region"\s*:\s*\[[\d\s,]+\]',
+            new_region_str,
+            content,
+            count=1,
+        )
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(content_new)
+
+        logger.info(f"[Config] 屏幕 OCR 区域已保存: {region}")
+    except Exception as e:
+        logger.error(f"[Config] 保存屏幕 OCR 区域失败: {e}")

@@ -11,7 +11,7 @@ from PyQt5.QtGui import QPainter, QColor, QBrush
 class SideBar(QWidget):
     """侧边栏：提供页面切换按钮"""
 
-    # 信号：page_index (0=聊天, 1=设置)
+    # 信号：page_index (0=聊天, 1=设置, 2=QQ)
     page_switched = pyqtSignal(int)
 
     SIDEBAR_WIDTH = 64
@@ -38,9 +38,14 @@ class SideBar(QWidget):
         self.settings_btn.clicked.connect(lambda: self._switch_page(1))
         layout.addWidget(self.settings_btn)
 
+        # QQ 按钮
+        self.qq_btn = self._make_button("🤖", "QQ")
+        self.qq_btn.clicked.connect(lambda: self._switch_page(2))
+        layout.addWidget(self.qq_btn)
+
         layout.addStretch()
 
-        self._buttons = [self.chat_btn, self.settings_btn]
+        self._buttons = [self.chat_btn, self.settings_btn, self.qq_btn]
         self._current_index = 0
 
     def _make_button(self, icon_text: str, tooltip: str) -> QPushButton:

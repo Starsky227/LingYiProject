@@ -29,7 +29,7 @@ ui/
 
 ### components/image_window.py - 立绘与服务面板
 - 显示AI人格形象图片（占窗口 20% 宽度）
-- 服务控制按钮：QQ Bot、截图、语音输入、语音输出、桌宠模式
+- 服务控制按钮：QQ Bot、截图、语音输入、语音输出、助手模式
 - 发射 `service_toggled(service_name, is_running)` 信号控制后台服务
 
 ### components/side_bar.py - 侧边导航

@@ -1,13 +1,15 @@
-param(
+﻿param(
     [string]$VenvPath = ".venv",
     [string]$ModelId = "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign",
     [string]$LocalModelDir = "data/cache/models/Qwen3-TTS-12Hz-1.7B-VoiceDesign"
 )
 
 $ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..")
+$ProjectRoot = Resolve-Path (Join-Path $ScriptDir "..\..\..\..")
 $PythonExe = Join-Path $ProjectRoot "$VenvPath\Scripts\python.exe"
 
 if (-not (Test-Path $PythonExe)) {

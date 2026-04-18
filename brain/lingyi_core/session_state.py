@@ -5,7 +5,8 @@ Per-session 状态管理
 - MemoryCache: 储存最近 N 次长期记忆检索结果，去重后提供给模型
 - ToolProgress: 追踪当前正在执行的工具，供模型感知
 - InputBuffer: 模型处理期间新到达的消息暂存，在工具等待间隙释放给模型
-- SessionState: 聚合以上三者的 session 级容器
+- MemoryBatchBuffer: 按固定条数累计条目，到达阈值后触发记忆搜索+记录
+- SessionState: 聚合以上各组件的 session 级容器
 """
 
 import asyncio
@@ -14,48 +15,41 @@ import time
 from collections import deque
 from typing import Any
 
+from system.system_checker import is_neo4j_available
+
 logger = logging.getLogger(__name__)
 
 
-class MemoryCache:
-    """记忆缓存 — 储存最近 N 次提取到的记忆节点图，去重后提供给模型
+# 空闲超时刷新记忆（秒）—— 当对话结束后超过该时间没有新消息，强制刷新未保存的记忆
+MEMORY_IDLE_FLUSH_TIMEOUT = 600  # 10分钟
 
-    每次 process_message 搜索到的记忆结果(nodes + relationships)会存入缓存，
-    通过 get_deduplicated() 获取最近几轮去重合并后的完整记忆上下文。
+
+class MemoryCache:
+    """记忆缓存 — 储存最近 N 次格式化后的记忆文本
+
+    每次消息到达时搜索记忆，格式化后存入缓存，
+    通过 get_merged() 获取最近几轮合并去重后的记忆上下文。
     """
 
     def __init__(self, max_entries: int = 3):
-        self._cache: deque[dict] = deque(maxlen=max_entries)
+        self._cache: deque[str] = deque(maxlen=max_entries)
 
-    def add(self, memory_result: dict):
-        """添加一次记忆搜索结果到缓存"""
-        if memory_result and memory_result.get("nodes"):
-            self._cache.append(memory_result)
+    def add(self, formatted_text: str):
+        """添加一次格式化后的记忆搜索结果"""
+        if formatted_text and formatted_text.strip():
+            self._cache.append(formatted_text)
 
-    def get_deduplicated(self) -> dict:
-        """返回去重合并后的所有缓存记忆"""
-        all_nodes: list[dict] = []
-        all_rels: list[dict] = []
-        seen_node_ids: set = set()
-        seen_rel_keys: set = set()
-
-        for result in self._cache:
-            for node in result.get("nodes", []):
-                nid = node.get("id") or node.get("name", "")
-                if nid and nid not in seen_node_ids:
-                    seen_node_ids.add(nid)
-                    all_nodes.append(node)
-            for rel in result.get("relationships", []):
-                rkey = (
-                    rel.get("source", ""),
-                    rel.get("type", ""),
-                    rel.get("target", ""),
-                )
-                if rkey not in seen_rel_keys:
-                    seen_rel_keys.add(rkey)
-                    all_rels.append(rel)
-
-        return {"nodes": all_nodes, "relationships": all_rels}
+    def get_merged(self) -> str:
+        """合并所有缓存记忆，按行去重"""
+        seen: set[str] = set()
+        lines: list[str] = []
+        for text in self._cache:
+            for line in text.strip().split("\n"):
+                stripped = line.strip()
+                if stripped and stripped not in seen:
+                    seen.add(stripped)
+                    lines.append(stripped)
+        return "\n".join(lines)
 
     def has_content(self) -> bool:
         return bool(self._cache)
@@ -186,7 +180,7 @@ class ConversationContext:
     lingyi_core 通过 get_formatted_context() 获取完整对话历史。
     """
 
-    def __init__(self, max_messages: int = 15):
+    def __init__(self, max_messages: int = 25):
         self._messages: list[str] = []
         self._max_messages = max_messages
 
@@ -219,6 +213,15 @@ class MemoryBatchBuffer:
         self.trigger_count = max(1, trigger_count)
         self._entries: list[dict[str, Any]] = []
 
+    @staticmethod
+    def _dedupe_keywords(keywords: list[str]) -> list[str]:
+        ordered: list[str] = []
+        for kw in keywords:
+            token = str(kw or "").strip()
+            if token and token not in ordered:
+                ordered.append(token)
+        return ordered
+
     def add_entry(self, text: str, fixed_keywords: list[str]):
         if not text or not text.strip():
             return
@@ -226,6 +229,21 @@ class MemoryBatchBuffer:
             "text": text.strip(),
             "fixed_keywords": [kw for kw in (fixed_keywords or []) if kw],
         })
+
+    def build_batch_payload(self, batch: list[dict[str, Any]]) -> tuple[str, list[str]]:
+        """将一组条目构建为记忆搜索/记录所需的文本和关键词"""
+        lines: list[str] = []
+        merged_keywords: list[str] = []
+
+        for idx, item in enumerate(batch, start=1):
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            lines.append(f"{idx}. {text}")
+            merged_keywords.extend(item.get("fixed_keywords", []))
+
+        payload = "[批次消息]\n" + "\n".join(lines)
+        return payload, self._dedupe_keywords(merged_keywords)
 
     def has_ready_batch(self) -> bool:
         return len(self._entries) >= self.trigger_count
@@ -240,6 +258,14 @@ class MemoryBatchBuffer:
     def pending_count(self) -> int:
         return len(self._entries)
 
+    def flush_all(self) -> list[dict[str, Any]]:
+        """强制弹出所有剩余条目（不足 trigger_count 也弹出），用于关闭或超时场景"""
+        if not self._entries:
+            return []
+        batch = list(self._entries)
+        self._entries.clear()
+        return batch
+
 
 class SessionState:
     """单个 session 的完整运行状态
@@ -250,8 +276,102 @@ class SessionState:
     def __init__(self, session_key: str):
         self.session_key = session_key
         self.memory_cache = MemoryCache()
-        self.memory_batch = MemoryBatchBuffer(trigger_count=10)
+        self.memory_batch = MemoryBatchBuffer(trigger_count=20)
         self.activity_tracker = ActiveToolTracker()
         self.input_buffer = InputBuffer()
         self.conversation_context = ConversationContext()
         self.tool_context: dict[str, Any] = {}  # 外部上下文，由调用方设置（如 QQ 的 onebot/session/event）
+        self.external_pending_images: list[dict] = []  # 外部注入的待处理图片 [{data_url, description}]
+        self.screen_context: str = ""  # 屏幕 OCR 最新文字（被动环境信息）
+        self.scratchpad: str = ""  # AI 可读写的临时便签（session 级）
+        self._memory_writer = None  # 由外部设置，用于空闲刷新
+        self._idle_flush_task: asyncio.Task | None = None
+
+    # ------------------------------------------------------------------ #
+    #  记忆批处理：搜索 + 记录
+    # ------------------------------------------------------------------ #
+
+    async def process_ready_batches(self, memory_writer) -> None:
+        """处理所有就绪的记忆批次（每个批次作为后台非阻塞任务）"""
+        if not is_neo4j_available():
+            return
+        while self.memory_batch.has_ready_batch():
+            ready_batch = self.memory_batch.pop_ready_batch()
+            memory_text, fixed_keywords = self.memory_batch.build_batch_payload(ready_batch)
+            if not memory_text.strip():
+                continue
+            asyncio.create_task(
+                self._memory_search_and_record(
+                    memory_writer, memory_text, fixed_keywords, len(ready_batch),
+                )
+            )
+
+    async def flush_pending_memory(self, memory_writer) -> None:
+        """强制刷新所有未保存的记忆条目（不足阈值也刷新）"""
+        if not is_neo4j_available():
+            return
+        remaining = self.memory_batch.flush_all()
+        if not remaining:
+            return
+        memory_text, fixed_keywords = self.memory_batch.build_batch_payload(remaining)
+        if not memory_text.strip():
+            return
+        await self._memory_search_and_record(
+            memory_writer, memory_text, fixed_keywords, len(remaining),
+        )
+
+    async def _memory_search_and_record(
+        self,
+        memory_writer,
+        memory_text: str,
+        fixed_keywords: list[str],
+        batch_count: int,
+    ) -> None:
+        """后台执行：同步的 full_memory_search 放入线程池，完成后异步写入记忆"""
+        from brain.memory.search_memory import full_memory_search
+
+        try:
+            related_memory = await asyncio.to_thread(
+                full_memory_search,
+                memory_text,
+                False,          # save_temp_memory
+                fixed_keywords,  # add_keywords
+            )
+            logger.info(
+                f"[记忆批处理] session={self.session_key} 触发一次，条数={batch_count}，"
+                f"关键词数={len(fixed_keywords)}，关联节点={len(related_memory.get('nodes', []))}"
+            )
+            record_payload = f"{memory_text}\n\n[固定关键词]\n{fixed_keywords}"
+            await memory_writer.full_memory_record(record_payload, related_memory)
+        except Exception as e:
+            logger.error(f"[记忆批处理] session={self.session_key} 失败: {e}")
+
+    # ------------------------------------------------------------------ #
+    #  记忆刷新：空闲超时
+    # ------------------------------------------------------------------ #
+
+    def schedule_idle_flush(self, memory_writer) -> None:
+        """启动空闲刷新计时器：如果 MEMORY_IDLE_FLUSH_TIMEOUT 秒内无新对话，强制刷新未保存的记忆
+
+        每次对话结束时调用，会取消已有计时器并重新计时。
+        计时器到期后只触发一次刷新，不会反复触发。
+        """
+        self._memory_writer = memory_writer
+        self.cancel_idle_flush()
+
+        async def _idle_wait():
+            await asyncio.sleep(MEMORY_IDLE_FLUSH_TIMEOUT)
+            logger.info(f"[记忆刷新] session={self.session_key} 空闲超时，强制刷新未保存的记忆")
+            await self.flush_pending_memory(self._memory_writer)
+
+        try:
+            self._idle_flush_task = asyncio.create_task(_idle_wait())
+        except RuntimeError:
+            # 没有运行中的事件循环，忽略
+            pass
+
+    def cancel_idle_flush(self) -> None:
+        """取消已有的空闲刷新计时器"""
+        if self._idle_flush_task and not self._idle_flush_task.done():
+            self._idle_flush_task.cancel()
+        self._idle_flush_task = None

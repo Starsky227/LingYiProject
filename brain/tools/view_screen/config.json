@@ -1,0 +1,15 @@
+{
+    "type": "function",
+    "name": "view_screen",
+    "description": "截取当前屏幕画面。用于查看屏幕上正在发生什么、阅读屏幕内容、理解用户正在做什么。",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "reason": {
+                "type": "string",
+                "description": "截屏的原因或目的，简要说明你想了解什么。"
+            }
+        },
+        "required": ["reason"]
+    }
+}

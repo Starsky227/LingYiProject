@@ -14,9 +14,9 @@ except Exception:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-instruct = "年轻女性声音，柔和、轻声、略带气声，语气温柔自然，带一点内向和细腻情绪，语速适中，语气轻快干净，有亲近感"
-prompt = "重要的不是他们变成什么样子，而是你仍然对他们抱有同一份真实的感情。"
-
+instruct = "年轻女性声音，柔和、轻声、略带气声，语气温柔自然，轻快干净。语速适中，语气有亲近感"
+prompt = "你好，我是铃依。我喜欢和人聊天，也很爱观察生活里那些细小但真实的瞬间。平时说话可能会有一点慢热，但熟悉之后，会很愿意陪大家聊很多东西——比如日常、心情、故事，还有那些说不清却很在意的事。"
+# 带一点内向和细腻情绪，
 
 class VoiceDesignService:
 	"""VoiceDesign helper for local Qwen3-TTS model.
