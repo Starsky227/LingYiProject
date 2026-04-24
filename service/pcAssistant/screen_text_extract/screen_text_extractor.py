@@ -12,6 +12,7 @@
 import hashlib
 import logging
 import os
+import queue
 import threading
 import time
 from datetime import datetime
@@ -94,6 +95,17 @@ class ScreenTextExtractor:
         self._thread: Optional[threading.Thread] = None
         self._ocr = None
 
+        # 回调调度（解耦抓图线程）——
+        # 抓图线程只负责把文本入队，独立线程负责调用 ``text_callback``。
+        # 这样即使下游（LingYiCore / Qt 信号）一时卡顿，也不会阻塞 OCR 节拍。
+        # 队列使用“丢弃最旧”语义：超出容量时其实代表“后台还没来得及处理”，
+        # 原本的 dedup（``_last_submitted_text``）依然提供幂等保护。
+        self._DISPATCH_QUEUE_MAX = 4
+        self._dispatch_queue: "queue.Queue[Optional[str]]" = queue.Queue(
+            maxsize=self._DISPATCH_QUEUE_MAX
+        )
+        self._dispatch_thread: Optional[threading.Thread] = None
+
         # 状态跟踪
         self._last_hash: Optional[str] = None
         self._last_ocr_text: str = ""
@@ -133,6 +145,13 @@ class ScreenTextExtractor:
 
         self._reset_state()
         self._running = True
+        # 启动调度线程（额外一个轻量线程）
+        self._dispatch_thread = threading.Thread(
+            target=self._dispatch_loop,
+            name="screen-ocr-dispatch",
+            daemon=True,
+        )
+        self._dispatch_thread.start()
         self._thread = threading.Thread(
             target=self._capture_loop,
             name="screen-ocr-capture",
@@ -147,6 +166,22 @@ class ScreenTextExtractor:
         if self._thread is not None:
             self._thread.join(timeout=3.0)
             self._thread = None
+        # 唤醒调度线程退出
+        if self._dispatch_thread is not None:
+            try:
+                self._dispatch_queue.put_nowait(None)
+            except queue.Full:
+                # 队列满，先清空一格再放哨兵
+                try:
+                    self._dispatch_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                try:
+                    self._dispatch_queue.put_nowait(None)
+                except queue.Full:
+                    pass
+            self._dispatch_thread.join(timeout=2.0)
+            self._dispatch_thread = None
         self._ocr = None
         logger.info("[ScreenOCR] 已停止")
 
@@ -349,6 +384,42 @@ class ScreenTextExtractor:
         except Exception as e:
             logger.error(f"[ScreenOCR] 写入测试日志失败: {e}")
         if self._text_callback:
+            # 非阻塞入队：队列满时丢弃最旧以迅速让位给新文本，
+            # 避免抓图线程被下游回调连随。
+            try:
+                self._dispatch_queue.put_nowait(text)
+            except queue.Full:
+                try:
+                    dropped = self._dispatch_queue.get_nowait()
+                    logger.warning(
+                        f"[ScreenOCR] 调度队列满，丢弃旧文本 (长度={len(dropped) if dropped else 0})"
+                    )
+                except queue.Empty:
+                    pass
+                try:
+                    self._dispatch_queue.put_nowait(text)
+                except queue.Full:
+                    pass
+
+    def _dispatch_loop(self) -> None:
+        """独立线程：从队列取出文本调用 text_callback。
+
+        这一层存在的唯一目的是：隔离下游（LingYiCore.process_message 准备、Qt 信号发布、
+        ``asyncio.run`` 创建临时事件循环等）的偶发卡顿，避免抓图线程被拖慢。
+
+        CPU 压力防护并未减弱：
+        * ``_capture_loop`` 中的 ``time.sleep(self._interval)`` 依旧是提交后的冷却后门；
+        * ``_last_submitted_text`` dedup 避免重复提交。
+        两者联合代表：即使下游处理耗时远远超过 ``interval``，由于同一画面
+        不会反复提交，队列也不会无限增长。
+        """
+        while self._running or not self._dispatch_queue.empty():
+            try:
+                text = self._dispatch_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+            if text is None:  # 哨兵
+                break
             try:
                 self._text_callback(text)
             except Exception as e:

@@ -1,9 +1,10 @@
 """
-StepFun 实时 TTS 语音合成服务
+StepFun 实时 TTS 语音合成服务（备份实现 / 未接入主链路）
 
-参考 xiao8-main 的 step_realtime_tts_worker 实现。
-通过 StepFun WebSocket API（step-tts-2）进行实时语音合成，
-适配 LingYiProject 的线程队列 + sounddevice 播放架构。
+⚠️  当前 PCServiceManager 仅使用 ``qwen_tts_service.QwenTTSOutputService``。
+本文件保留为可切换的备选实现：通过 StepFun WebSocket API（step-tts-2）做实时
+语音合成，参考 xiao8-main 的 step_realtime_tts_worker。如需启用，需要在
+``service_manager._lazy_import_voice_output`` 里手动切换导入目标。
 
 接口与 QwenTTSOutputService 保持一致，可在 service_manager 中无缝切换。
 """

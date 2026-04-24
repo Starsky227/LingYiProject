@@ -53,7 +53,7 @@ from PyQt5.QtWidgets import QApplication
 from system.config import config, AI_NAME
 from system.system_checker import run_system_check
 from brain.lingyi_core.lingyi_core import LingYiCore
-from ui.pyqt_chat_ui import ChatWindow, write_chat_log
+from ui.pyqt_chat_ui import ChatWindow
 
 
 def _configure_logging() -> logging.Logger:
@@ -109,6 +109,71 @@ def _extract_reply_text(output_messages: list) -> str:
                     parts.append(str(text).strip())
 
     return "\n".join([p for p in parts if p]).strip()
+
+
+# ===================== 单例后台 asyncio loop =====================
+#
+# 历史实现里每次 ``chat_with_lingyi_core`` / OCR 回调都用一次 ``asyncio.run()``，
+# 这意味着：
+#   1) 每次调用都新建并销毁一个 event loop（小开销但累积可观）；
+#   2) 在 ``process_message`` 里通过 ``asyncio.create_task`` fire-and-forget 出去
+#      的并行任务（例如附件图像的描述任务）会随着 loop 关闭而被取消，结果
+#      "[图片{描述}]" 永远写不进对话历史。
+#   3) 同一个 ``asyncio.Queue``（``input_buffer``）在不同的 loop 里被 put/await，
+#      Python 3.10+ 会报 ``RuntimeError: ... attached to a different loop``。
+#
+# 所以这里维护一个全局后台 loop（独立守护线程）。所有 LingYiCore 协程都通过
+# ``submit_async`` 提交到该 loop 里执行，``asyncio.create_task`` 创建的子任务
+# 也共享这个 loop，能存活到协程自然完成。
+_BACKGROUND_LOOP: asyncio.AbstractEventLoop | None = None
+_BACKGROUND_LOOP_READY = threading.Event()
+
+
+def _start_background_loop() -> None:
+    global _BACKGROUND_LOOP
+    loop = asyncio.new_event_loop()
+    _BACKGROUND_LOOP = loop
+    asyncio.set_event_loop(loop)
+    _BACKGROUND_LOOP_READY.set()
+    try:
+        loop.run_forever()
+    finally:
+        try:
+            pending = asyncio.all_tasks(loop)
+            for t in pending:
+                t.cancel()
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            loop.close()
+
+
+def _ensure_background_loop() -> asyncio.AbstractEventLoop:
+    if _BACKGROUND_LOOP is None:
+        t = threading.Thread(
+            target=_start_background_loop,
+            name="lingyi-async-loop",
+            daemon=True,
+        )
+        t.start()
+        _BACKGROUND_LOOP_READY.wait(timeout=5.0)
+    assert _BACKGROUND_LOOP is not None
+    return _BACKGROUND_LOOP
+
+
+def submit_async(coro):
+    """把协程提交到后台 loop 并阻塞等待结果（在调用者线程中）。
+
+    用法等价于 ``asyncio.run(coro)``，区别是所有调用共享同一个 loop。
+    必须在非 loop 自身的线程上调用——UI worker 线程 / OCR 派发线程都满足。
+    """
+    loop = _ensure_background_loop()
+    return asyncio.run_coroutine_threadsafe(coro, loop).result()
+
+
+def submit_async_nowait(coro):
+    """提交协程到后台 loop，不阻塞等待。返回 ``concurrent.futures.Future``。"""
+    loop = _ensure_background_loop()
+    return asyncio.run_coroutine_threadsafe(coro, loop)
 
 
 # 服务管理器类
@@ -363,93 +428,34 @@ class ServiceManager:
             )
         return running
 
-    # -------------------- 语音交互转发接口（供 UI 调用） --------------------
+    # -------------------- 通用委托：语音 / 屏幕 / OCR 等 UI 接口 --------------------
+    #
+    # 历史上这里有 ~30 个手写的 if-pc-then-call-else-False 转发方法。
+    # 现在统一通过 ``__getattr__`` 委托到 ``self.pc_service_manager``。
+    # 仅在需要"额外副作用"（例如 QQ/MemViz 启动后挂日志转发）时才显式定义。
+    #
+    # 委托后行为：
+    #   * pc_service_manager 已就绪 → 返回真实方法（保留原签名 / 返回值）；
+    #   * pc_service_manager 为 None → 返回 no-op，调用结果一律为 ``False``。
+    #     调用方原本就用 truthy 判断结果，所以兼容。
+    _DELEGATE_NULL_DEFAULTS = {
+        "interrupt_voice_output": "语音输出未开启",
+        "select_screen_region": None,
+    }
 
-    def is_voice_input_running(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.is_voice_input_running()
-        return False
-
-    def toggle_voice_input(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.toggle_voice_input()
-        return False
-
-    def is_voice_output_running(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.is_voice_output_running()
-        return False
-
-    def toggle_voice_output(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.toggle_voice_output()
-        return False
-
-    def is_voice_interaction_running(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.is_voice_interaction_running()
-        return False
-
-    def toggle_voice_interaction(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.toggle_voice_interaction()
-        return False
-
-    def interrupt_voice_output(self) -> str:
-        if self.pc_service_manager:
-            return self.pc_service_manager.interrupt_voice_output()
-        return "语音输出未开启"
-
-    def set_voice_text_callback(self, callback) -> None:
-        if self.pc_service_manager:
-            self.pc_service_manager.set_voice_text_callback(callback)
-
-    def set_speech_start_callback(self, callback) -> None:
-        if self.pc_service_manager:
-            self.pc_service_manager.set_speech_start_callback(callback)
-
-    def set_screen_ocr_callback(self, callback) -> None:
-        if self.pc_service_manager:
-            self.pc_service_manager.set_screen_ocr_callback(callback)
-
-    # -------------------- 屏幕捕捉权限转发接口 --------------------
-
-    def is_screen_capture_enabled(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.is_screen_capture_enabled()
-        return False
-
-    def toggle_screen_capture(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.toggle_screen_capture()
-        return False
-
-    # -------------------- 屏幕文字提取转发接口 --------------------
-
-    def is_screen_ocr_running(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.is_screen_ocr_running()
-        return False
-
-    def start_screen_ocr(self, region, interval=0.5, hash_threshold=5, stable_count=2) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.start_screen_ocr(region, interval, hash_threshold, stable_count)
-        return False
-
-    def stop_screen_ocr(self) -> bool:
-        if self.pc_service_manager:
-            return self.pc_service_manager.stop_screen_ocr()
-        return False
-
-    def set_screen_ocr_region(self, left, top, width, height) -> None:
-        if self.pc_service_manager:
-            self.pc_service_manager.set_screen_ocr_region(left, top, width, height)
-
-    def select_screen_region(self):
-        """弹出全屏遮罩让用户框选区域，返回 (left, top, width, height) 或 None"""
-        if self.pc_service_manager:
-            return self.pc_service_manager.select_screen_region()
-        return None
+    def __getattr__(self, name: str):
+        # __getattr__ 仅在常规属性查找失败后调用。
+        # 不要拦截私有/dunder，以免污染 pickle / copy 等机制。
+        if name.startswith("_"):
+            raise AttributeError(name)
+        pc = self.__dict__.get("pc_service_manager")
+        if pc is not None and hasattr(pc, name):
+            return getattr(pc, name)
+        # PC 服务管理器缺失时的兼容兜底
+        default = type(self)._DELEGATE_NULL_DEFAULTS.get(name, False)
+        def _missing(*_args, **_kwargs):
+            return default
+        return _missing
 
     # -------------------- 助手模式 --------------------
 
@@ -549,14 +555,14 @@ def _deffered_init_services():
 
             service_manager.set_voice_text_callback(_on_voice_text)
 
-        # 注入截屏发送给AI回调（桌宠模式使用）
+        # 注入截屏发送给AI回调（助手模式使用）
         def send_screenshot_to_ai():
             """截取屏幕并注入到对话流"""
             try:
                 import base64, io, mss
                 from PIL import Image
 
-                # 截屏前隐藏桌宠窗口，避免助手图片出现在截图中
+                # 截屏前隐藏助手窗口，避免助手图片出现在截图中
                 pet_win = getattr(window, '_pet_window', None) if window else None
                 if pet_win and pet_win.isVisible():
                     pet_win.hide()
@@ -567,7 +573,7 @@ def _deffered_init_services():
                     monitor = sct.monitors[1]
                     screenshot = sct.grab(monitor)
 
-                # 截屏后恢复桌宠窗口
+                # 截屏后恢复助手窗口
                 if pet_win:
                     pet_win.show()
                     img = Image.frombytes("RGB", screenshot.size, screenshot.rgb)
@@ -582,7 +588,7 @@ def _deffered_init_services():
                 if window:
                     window.add_pending_attachment("屏幕截图", data_url, "用户当前的屏幕截图")
             except Exception as e:
-                logger.error(f"桌宠截屏失败: {e}")
+                logger.error(f"助手截屏失败: {e}")
 
         if window:
             window.set_screenshot_callback(send_screenshot_to_ai)
@@ -590,18 +596,15 @@ def _deffered_init_services():
         # VAD 检测到语音不再打断 TTS，打断已移至转写完成时
         service_manager.set_speech_start_callback(None)
 
-        # 屏幕 OCR 文字回调：主动注入给 AI（写入 screen_context + 推入 input_buffer）
+        # 屏幕 OCR 文字回调：通过新消息主动注入给 AI
         if lingyi:
             def _on_screen_ocr_text(text: str):
                 try:
                     ss = lingyi.get_session_state("default")
-                    # 被动上下文：始终保持最新（每轮模型调用自动注入 [屏幕环境]）
-                    ss.screen_context = text
                     # 主动注入：推入 input_buffer，让 AI 立即感知屏幕文字变化
-                    import asyncio as _aio
-                    _aio.run(ss.input_buffer.put(
-                        message=f"\n{text}",
-                        caller_message="这是当前屏幕的文字内容，通常是游戏剧情对话，你可以决定是否要进行点评，如觉得角色发言有趣，或者对未来事件的发展进行推测。",
+                    submit_async(ss.input_buffer.put(
+                        message=f"[屏幕内容]\n{text}",
+                        caller_message="这是当前屏幕上的文字内容，通常是游戏剧情对话。可以适当进行评价。",
                     ))
                     # 如果当前没有正在进行的 AI 处理，触发静默处理
                     if not ss.input_buffer.is_processing and window:
@@ -690,9 +693,10 @@ if __name__ == "__main__":
             for msg in messages[-1:]:
                 if msg.get("role") != "assistant":
                     text = str(msg.get("content", "") or "")
-                    asyncio.run(
+                    user_name = config.system.user_name or "用户"
+                    submit_async(
                         session_state.input_buffer.put(
-                            message=text,
+                            message=f"<{user_name}> {text}",
                             caller_message=caller_msg,
                         )
                     )
@@ -723,9 +727,8 @@ if __name__ == "__main__":
                     logger.warning(f"语音交互回调设置失败: {e}")
 
             def _on_reply_immediate(text: str):
-                """每条 AI 回复立即触发 — UI 气泡 + chat_log + TTS"""
+                """每条 AI 回复立即触发 — UI 气泡 + TTS（chat_log 由 lingyi_core 统一写入）"""
                 all_immediate_replies.append(text)
-                write_chat_log(config.system.ai_name, text)
                 if window:
                     window.immediate_reply_signal.emit(text)
                 # 非流式 TTS：逐条播放（流式 TTS 由 stream_cb 按句子处理，此处跳过）
@@ -742,8 +745,8 @@ if __name__ == "__main__":
             if is_assistant:
                 session_state.tool_context["assistant_reply_callback"] = _on_reply_immediate
 
-            # 异步处理消息
-            response = asyncio.run(
+            # 异步处理消息（提交到后台常驻 loop）
+            response = submit_async(
                 lingyi.process_message(
                     "default",
                     stream_text_callback=stream_cb,
@@ -765,11 +768,10 @@ if __name__ == "__main__":
             if all_immediate_replies:
                 reply = "\n".join(all_immediate_replies)
             else:
-                # 兜底：如果即时回调未触发，尝试从 response 提取
+                # 兜底：如果即时回调未触发，尝试从 response 提取（chat_log 已由 lingyi_core 写入）
                 reply = _extract_reply_text(response) if not is_assistant else ""
                 if reply:
                     on_response(reply)
-                    write_chat_log(config.system.ai_name, reply)
 
             # 统一返回 UI 可识别结构（用于 messages 历史，不再触发气泡）
             return [{"role": "assistant", "content": reply or ""}]
@@ -798,15 +800,10 @@ if __name__ == "__main__":
 
     # 退出时清理后台服务，避免残留子进程。
     def _on_quit():
-        # 先刷新所有未保存的记忆
+        # 先刷新所有未保存的记忆（在后台 loop 上同步执行）
         if lingyi:
             try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(lingyi.flush_all_pending_memory())
-                else:
-                    loop.run_until_complete(lingyi.flush_all_pending_memory())
+                submit_async(lingyi.flush_all_pending_memory())
             except Exception as e:
                 logger.warning(f"记忆刷新失败: {e}")
         # 再清理后台服务

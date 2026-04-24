@@ -34,6 +34,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
             keywords=[event],
             summary=event,
             max_results=50,
+            max_expansion_rounds=3,
         )
 
         # 构建消息文本，委托给 memory_agent 处理

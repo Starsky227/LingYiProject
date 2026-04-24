@@ -15,6 +15,13 @@ from brain.memory.knowledge_graph_manager import get_knowledge_graph_manager
 from system.system_checker import is_neo4j_available
 from brain.lingyi_core.tool_manager import ToolManager, LocalToolRegistry, AgentSubRegistry
 from brain.lingyi_core.session_state import SessionState
+from brain.lingyi_core.session_state import MemoryBatchBuffer  # 仅用于 _dedupe_keywords 静态方法
+from brain.lingyi_core.chat_logger import write_chat_log
+from brain.lingyi_core.model_logger import (
+    log_model_input as _log_model_input,
+    log_model_output as _log_model_output,
+    log_tool_result as _log_tool_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,158 +44,6 @@ BATCH_MAX_WAIT = 5.0  # 首条消息后最多等待秒数
 
 # 流式文本句子分隔符
 _SENTENCE_DELIMITERS = re.compile(r'[。！？.!?\n；;]')
-
-
-# ---- 模型调试日志（输入 + 输出 + 工具结果，写入同一文件） ----
-_MODEL_LOG_DIR = Path("data/cache/model_input_logs")
-_MODEL_LOG_MAX_FILES = 5
-
-
-def _write_model_log(content: str) -> None:
-    """将内容追加写入按日期命名的调试日志文件，最多保留 _MODEL_LOG_MAX_FILES 个文件。"""
-    try:
-        _MODEL_LOG_DIR.mkdir(parents=True, exist_ok=True)
-        today = datetime.now().strftime("%Y_%m_%d")
-        log_file = _MODEL_LOG_DIR / f"model_log_{today}.txt"
-
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(content)
-
-        # 清理旧文件
-        log_files = sorted(_MODEL_LOG_DIR.glob("model_log_*.txt"))
-        if len(log_files) > _MODEL_LOG_MAX_FILES:
-            for old_file in log_files[:-_MODEL_LOG_MAX_FILES]:
-                old_file.unlink(missing_ok=True)
-    except Exception as e:
-        logger.warning(f"[模型日志] 写入失败: {e}")
-
-
-def _serialize_input_items(input_items: list, round_num: int) -> str:
-    """将 input_items 序列化为模型实际阅读到的文本格式。"""
-    lines: list[str] = []
-    lines.append(f"第 {round_num} 轮模型调用  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("")
-
-    # 第一条 system 消息是 prompt，省略其内容；后续 system 消息（屏幕环境/便签/记忆等）正常记录
-    prompt_skipped = False
-
-    for item in input_items:
-        if isinstance(item, dict):
-            role = item.get("role", "")
-            content = item.get("content", "")
-            item_type = item.get("type", "")
-
-            if item_type == "function_call_output":
-                lines.append(f"[function_call_output] call_id={item.get('call_id', '')}")
-                lines.append(str(item.get("output", "")))
-                lines.append("")
-            elif role == "system" and not prompt_skipped:
-                # 首条 system 消息是主 prompt，省略内容
-                prompt_skipped = True
-                lines.append("[system] (prompt省略)")
-                lines.append("")
-            elif isinstance(content, list):
-                # 多模态内容（图片+文本）
-                lines.append(f"[{role}]")
-                for part in content:
-                    if isinstance(part, dict):
-                        if part.get("type") == "input_text":
-                            lines.append(part.get("text", ""))
-                        elif part.get("type") == "input_image":
-                            lines.append("[图片内容 - 省略base64数据]")
-                lines.append("")
-            elif content:
-                lines.append(f"[{role}]")
-                lines.append(str(content))
-                lines.append("")
-        else:
-            # SDK 对象（reasoning / function_call 等）
-            obj_type = getattr(item, "type", "unknown")
-            if obj_type == "function_call":
-                name = getattr(item, "name", "")
-                arguments = getattr(item, "arguments", "")
-                call_id = getattr(item, "call_id", "")
-                lines.append(f"[function_call] {name}  call_id={call_id}")
-                lines.append(str(arguments))
-                lines.append("")
-            elif obj_type == "reasoning":
-                summaries = getattr(item, "summary", None)
-                if summaries:
-                    lines.append("[reasoning]")
-                    for s in summaries:
-                        lines.append(getattr(s, "text", ""))
-                    lines.append("")
-            else:
-                lines.append(f"[{obj_type}] {str(item)[:500]}")
-                lines.append("")
-
-    return "\n".join(lines)
-
-
-def _serialize_model_output(response, round_num: int) -> str:
-    """将模型响应序列化为可读文本。"""
-    lines: list[str] = []
-    lines.append(f"第 {round_num} 轮模型输出  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append("")
-
-    for item in response.output:
-        item_type = getattr(item, "type", "unknown")
-        if item_type == "message":
-            for content in getattr(item, "content", []):
-                if getattr(content, "type", "") == "output_text":
-                    lines.append("[assistant]")
-                    lines.append(getattr(content, "text", ""))
-                    lines.append("")
-        elif item_type == "function_call":
-            name = getattr(item, "name", "")
-            arguments = getattr(item, "arguments", "")
-            call_id = getattr(item, "call_id", "")
-            lines.append(f"[function_call] {name}  call_id={call_id}")
-            lines.append(str(arguments))
-            lines.append("")
-        elif item_type == "reasoning":
-            summaries = getattr(item, "summary", None)
-            if summaries:
-                lines.append("[reasoning]")
-                for s in summaries:
-                    lines.append(getattr(s, "text", ""))
-                lines.append("")
-        else:
-            lines.append(f"[{item_type}] {str(item)[:500]}")
-            lines.append("")
-
-    # 附加 usage 信息
-    usage = getattr(response, "usage", None)
-    if usage:
-        lines.append(f"[usage] input_tokens={getattr(usage, 'input_tokens', '?')}  "
-                      f"output_tokens={getattr(usage, 'output_tokens', '?')}")
-        lines.append("")
-
-    return "\n".join(lines)
-
-
-def _log_model_input(input_items: list, round_num: int) -> None:
-    """记录本轮模型输入。"""
-    content = _serialize_input_items(input_items, round_num)
-    separator = "=" * 60
-    _write_model_log(f"{separator}\n[INPUT]\n{content}\n")
-
-
-def _log_model_output(response, round_num: int) -> None:
-    """记录本轮模型输出（文本消息 + 工具调用 + reasoning + usage）。"""
-    content = _serialize_model_output(response, round_num)
-    _write_model_log(f"[OUTPUT]\n{content}\n")
-
-
-def _log_tool_result(tool_name: str, call_id: str, result: str, round_num: int) -> None:
-    """记录工具执行结果。"""
-    lines = [
-        f"[TOOL_RESULT] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  round={round_num}",
-        f"工具: {tool_name}  call_id={call_id}",
-        f"结果: {result[:2000]}",
-        "",
-    ]
-    _write_model_log("\n".join(lines) + "\n")
 
 
 class _SentenceAccumulator:
@@ -232,6 +87,8 @@ class LingYiCore:
             api_key=config.main_api.api_key,
             base_url=config.main_api.base_url,
         )
+        # 视觉描述客户端：延迟到首次使用时创建（用独立的 VisionAPIConfig）
+        self._vision_client: Optional[OpenAI] = None
 
         # 工具管理器 — 多来源聚合
         self.tool_manager = ToolManager()
@@ -249,6 +106,21 @@ class LingYiCore:
 
         # Per-session 状态（memory_cache / activity_tracker / input_buffer）
         self._session_states: dict[str, SessionState] = {}
+
+        # 强引用集合：避免 fire-and-forget asyncio.create_task 被 GC 回收
+        # （图片描述任务、记忆批次后台任务都注册到这里）
+        self._background_tasks: set[asyncio.Task] = set()
+
+    def _spawn_background(self, coro) -> "asyncio.Task | None":
+        """安全地创建一个 fire-and-forget 后台任务并保留强引用，避免被 GC 回收。"""
+        try:
+            task = asyncio.create_task(coro)
+        except RuntimeError:
+            # 没有运行中的事件循环（极少见，例如关闭路径上）
+            return None
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     def _load_core_prompt(self) -> str:
         """加载 LingYiCore 的全局人格提示词。"""
@@ -287,41 +159,6 @@ class LingYiCore:
             self._memory_writers[session_key] = MemoryWriter(kg_manager=self._kg_manager)
         return self._memory_writers[session_key]
 
-    @staticmethod
-    def _dedupe_keywords(keywords: list[str]) -> list[str]:
-        ordered: list[str] = []
-        for kw in keywords:
-            token = str(kw or "").strip()
-            if token and token not in ordered:
-                ordered.append(token)
-        return ordered
-
-    def _fixed_keywords_for_message(self, session_key: str, key_words: list[str]) -> list[str]:
-        base = [
-            "会话消息",
-            "对话",
-            config.system.ai_name,
-            session_key,
-        ]
-        return self._dedupe_keywords(base + list(key_words or []))
-
-    def _fixed_keywords_for_tool(self, session_key: str, tool_name: str) -> list[str]:
-        return self._dedupe_keywords([
-            "工具调用",
-            "工具结果",
-            config.system.ai_name,
-            session_key,
-            tool_name,
-        ])
-
-    def _fixed_keywords_for_assistant_message(self, session_key: str) -> list[str]:
-        return self._dedupe_keywords([
-            "AI回复",
-            "对话",
-            config.system.ai_name,
-            session_key,
-        ])
-
     def _parse_response(self, resp):
         messages = []
         toolcalls = []
@@ -338,6 +175,7 @@ class LingYiCore:
         self,
         session_key: str = "default",
         stream_text_callback: Optional[Callable[[str, bool], None]] = None,
+        on_text_output: Optional[Callable[[str], None]] = None,
     ) -> list:
         """处理输入信息，通过工具调用循环生成回复
 
@@ -348,6 +186,7 @@ class LingYiCore:
             session_key: 会话标识（用于隔离 MemoryWriter / SessionState）
             stream_text_callback: 流式文本回调，签名 (sentence: str, is_first: bool)。
                 当设置时，模型文本输出将以句子为单位实时回调，用于流式 TTS。
+            on_text_output: 文本输出回调，签名 (text: str)。
 
         Returns:
             模型输出的消息列表
@@ -362,6 +201,7 @@ class LingYiCore:
             return await self._process_message_inner(
                 session_key, session_state,
                 stream_text_callback=stream_text_callback,
+                on_text_output=on_text_output,
             )
         finally:
             session_state.input_buffer.is_processing = False
@@ -410,11 +250,37 @@ class LingYiCore:
         """
         memory_writer = self._get_memory_writer(session_key)
 
+        # ---- chat_logs：统一记录 AI 输出（用户输入在 ingestion 处理 incoming 时记录）----
+        ai_name = config.system.ai_name
+        original_on_text_output = on_text_output
+
+        def _logged_on_text_output(text: str) -> None:
+            try:
+                write_chat_log(f"<{ai_name}> {text}")
+            except Exception:
+                pass
+            if original_on_text_output:
+                original_on_text_output(text)
+        on_text_output = _logged_on_text_output
+
+        external_assistant_cb = session_state.tool_context.get("assistant_reply_callback")
+        if external_assistant_cb is not None:
+            def _logged_assistant_cb(text: str, _orig=external_assistant_cb):
+                try:
+                    write_chat_log(f"<{ai_name}> {text}")
+                except Exception:
+                    pass
+                return _orig(text)
+            session_state.tool_context["assistant_reply_callback"] = _logged_assistant_cb
+
         # 0. 等待收集初始消息批次
         await self._collect_batch(session_state)
         initial_messages = session_state.input_buffer.drain_all()
         if not initial_messages:
             logger.info(f"[process_message] session={session_key} 无消息可处理")
+            # 还原外部回调，避免影响下次调用
+            if external_assistant_cb is not None:
+                session_state.tool_context["assistant_reply_callback"] = external_assistant_cb
             return []
 
         # 1. 初始化消息状态
@@ -441,6 +307,12 @@ class LingYiCore:
         # 收集外部注入的图片（如助手模式截屏发送）
         if session_state.external_pending_images:
             pending_images.extend(session_state.external_pending_images)
+            # 同时为每张外部注入的图片异步生成文本描述，写入历史/记忆，
+            # 使后续轮次的 history_context 能"看到"这张图的内容。
+            for img_item in session_state.external_pending_images:
+                self._spawn_background(
+                    self._describe_image_for_history(img_item, session_state)
+                )
             session_state.external_pending_images.clear()
 
         # 4. 进入循环
@@ -474,8 +346,8 @@ class LingYiCore:
                         valuable_results.append((tc_obj.name, result_str))
                         # 长期记忆批次：仅 valuable 工具结果计入触发计数
                         session_state.memory_batch.add_entry(
-                            text=f"[工具调用-{tc_obj.name}] {result_str}",
-                            fixed_keywords=self._fixed_keywords_for_tool(session_key, tc_obj.name),
+                            text=result_str,
+                            fixed_keywords=[],
                         )
 
                     # tc_obj (function_call) 已在模型响应时加入 tool_items，此处只追加结果
@@ -497,6 +369,13 @@ class LingYiCore:
                     rounds_since_input = 0
                     new_messages = [msg["message"] for msg in incoming]
 
+                    # chat_logs：统一记录每条新进来的用户/外部消息（原文完整写入）
+                    for msg in incoming:
+                        try:
+                            write_chat_log(str(msg.get("message", "")))
+                        except Exception:
+                            pass
+
                     # 立即搜索长期记忆：每次收到新消息即触发一次记忆搜索
                     if is_neo4j_available():
                         try:
@@ -507,6 +386,7 @@ class LingYiCore:
                             formatted_memory = get_formatted_memory_graph(
                                 search_text,
                                 add_keywords=search_keywords or None,
+                                max_expansion_rounds=1,
                             )
                             session_state.memory_cache.add(formatted_memory)
                             logger.info(f"[记忆搜索] 已缓存格式化记忆")
@@ -516,10 +396,7 @@ class LingYiCore:
                     # 长期记忆批次：消息计入触发计数
                     for msg in incoming:
                         msg_text = str(msg.get("message", "")).strip()
-                        msg_keywords = self._fixed_keywords_for_message(
-                            session_key,
-                            msg.get("key_words", []) or [],
-                        )
+                        msg_keywords = MemoryBatchBuffer._dedupe_keywords(msg.get("key_words", []) or [])
                         session_state.memory_batch.add_entry(
                             text=msg_text,
                             fixed_keywords=msg_keywords,
@@ -533,9 +410,9 @@ class LingYiCore:
                     caller_message = incoming[-1].get("caller_message", caller_message)
                     logger.info(f"[收到消息] {len(incoming)} 条")
 
-                    message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]\n" + "\n".join(new_messages)
+                    message_chunk = "[历史消息]\n" + history_context + "\n[新消息]\n[消息来源] " + caller_message + "\n" + "\n".join(new_messages)
                 else:
-                    message_chunk = "[消息来源] " + caller_message + "\n[历史消息]\n" + history_context + "\n[新消息]没有新消息，请检查工具返回结果，"
+                    message_chunk = "[历史消息]\n" + history_context + "\n[新消息]没有新消息，请检查工具返回结果，"
 
                 # Step 3: 清理 tool_items 中过期的 reasoning + function_call + function_call_output
                 if call_round_map:
@@ -573,15 +450,13 @@ class LingYiCore:
                         logger.warning(f"已达最大模型调用轮次 {MAX_TOOL_ROUNDS}，停止处理")
                         break
 
-                    # 组装模型输入：prompt + 便签 + 记忆 + 屏幕环境 + 消息上下文 + 工具进度
+                    # 组装模型输入：prompt + 便签 + 记忆 + 消息上下文 + 工具进度
                     input_items = list(prompt_items) #prompt
                     if session_state.scratchpad:  # 便签
                         input_items.append({"role": "system", "content": f"[你的便签]\n{session_state.scratchpad}"})
                     memory_text = session_state.memory_cache.get_merged() #记忆
                     if memory_text:
                         input_items.append({"role": "system", "content": f"[相关记忆] 请参考以下记忆信息进行回复\n{memory_text}"})
-                    if session_state.screen_context:  # 屏幕环境
-                        input_items.append({"role": "system", "content": f"[屏幕环境]\n{session_state.screen_context}"})
                     input_items.append({"role": "user", "content": message_chunk}) #消息上下文
                     input_items.extend(tool_items) #工具信息
                     progress_text = session_state.activity_tracker.get_status_text()
@@ -676,7 +551,7 @@ class LingYiCore:
                                 session_state.conversation_context.add_message(formatted)
                                 session_state.memory_batch.add_entry(
                                     text=formatted.rstrip(),
-                                    fixed_keywords=self._fixed_keywords_for_assistant_message(session_key),
+                                    fixed_keywords=[],
                                 )
 
                     # 启动新的工具调用为后台异步任务（不阻塞循环）
@@ -713,6 +588,9 @@ class LingYiCore:
                     task.cancel()
                 session_state.activity_tracker.complete(call_id)
             background_tasks.clear()
+            # 还原外部注入的 assistant_reply_callback（避免 chat_log 包装层泄漏）
+            if external_assistant_cb is not None:
+                session_state.tool_context["assistant_reply_callback"] = external_assistant_cb
 
         # 对话结束后启动空闲计时器，如果 10 分钟内无新对话则强制刷新未保存的记忆
         session_state.schedule_idle_flush(memory_writer)
@@ -744,6 +622,90 @@ class LingYiCore:
         else:
             result = f"未找到工具: {tc.name}"
         return str(result)
+
+    # ------------------------------------------------------------------ #
+    #  外部注入图片 → 异步生成文本描述写入历史
+    # ------------------------------------------------------------------ #
+
+    def _get_vision_client(self) -> OpenAI:
+        """懒加载 vision 模型客户端（用独立的 VisionAPIConfig）"""
+        if self._vision_client is None:
+            vision_cfg = config.vision_api
+            self._vision_client = OpenAI(
+                api_key=vision_cfg.vision_api_key,
+                base_url=vision_cfg.vision_base_url,
+            )
+        return self._vision_client
+
+    async def _describe_image_for_history(
+        self,
+        img_item: dict,
+        session_state: "SessionState",
+    ) -> None:
+        """异步对外部注入的图片生成文本描述，并以 [图片{描述}] 形式写入历史与记忆。
+
+        本方法与主轮次模型调用并行执行：
+        - 当前轮次模型直接看到原图（多模态 input_image）；
+        - 该描述用于**后续轮次**的 history_context，让会话能"记住"这张图的内容。
+        """
+        vision_cfg = config.vision_api
+        if not vision_cfg.enabled:
+            return
+
+        data_url = (img_item.get("data_url") or "").strip()
+        if not data_url:
+            return
+
+        user_hint = (img_item.get("description") or "用户提供的图片").strip()
+
+        try:
+            client = self._get_vision_client()
+            response = await asyncio.to_thread(
+                client.responses.create,
+                model=vision_cfg.vision_model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是图像描述助手。请用一段中文详细描述图片中的所有可见内容："
+                            "场景、物体、人物、UI 界面、可见文字等都要覆盖到。"
+                            "直接输出描述本身，不要带任何前缀、序号或解释。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": f"图片用途：{user_hint}\n请详细描述这张图片。"},
+                            {"type": "input_image", "image_url": data_url},
+                        ],
+                    },
+                ],
+                max_output_tokens=1024,
+            )
+            description = (getattr(response, "output_text", "") or "").strip()
+        except Exception as e:
+            logger.warning(f"[图片描述] 调用 vision 模型失败: {e}")
+            return
+
+        # 压成单行，避免破坏 history_context 的逐行格式
+        description = " ".join(description.split())
+        if not description:
+            return
+
+        formatted = f"[图片{{{description}}}]"
+        try:
+            session_state.conversation_context.add_message(formatted + "\n")
+        except Exception as e:
+            logger.warning(f"[图片描述] 写入会话上下文失败: {e}")
+        try:
+            write_chat_log(formatted)
+        except Exception:
+            pass
+        try:
+            session_state.memory_batch.add_entry(text=formatted, fixed_keywords=[])
+        except Exception:
+            pass
+        logger.info(f"[图片描述] 已写入历史: {description[:80]}{'...' if len(description) > 80 else ''}")
 
     # ------------------------------------------------------------------ #
     #  记忆刷新：程序关闭

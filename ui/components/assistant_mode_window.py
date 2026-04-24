@@ -21,13 +21,16 @@ from PyQt5.QtGui import QPixmap, QCursor, QFont, QFontMetrics
 # ------------------------------------------------------------------ #
 
 class _BubbleLabel(QLabel):
-    """一个悬浮在桌宠图片上方的消息气泡"""
+    """一个悬浮在助手图片上方的消息气泡"""
 
     removed = pyqtSignal(object)  # 自身被移除时发出
 
     BUBBLE_LIFETIME_MS = 10_000  # 10 秒显示时间
     FADE_DURATION_MS = 400       # 淡出动画时长
-    MAX_BUBBLE_WIDTH = 260       # 气泡最大宽度
+    MAX_BUBBLE_WIDTH = 260       # 气泡最大宽度（含 padding）
+    PADDING_H = 12               # 与 stylesheet padding 保持一致
+    PADDING_V = 8
+    BORDER = 1
 
     def __init__(self, text: str, parent: QWidget):
         super().__init__(parent)
@@ -35,7 +38,6 @@ class _BubbleLabel(QLabel):
         self.setTextFormat(Qt.PlainText)
         self.setText(text)
         self.setFont(QFont("Microsoft YaHei", 9))
-        self.setMaximumWidth(self.MAX_BUBBLE_WIDTH)
         self.setStyleSheet("""
             QLabel {
                 background: rgba(255, 255, 255, 230);
@@ -53,7 +55,27 @@ class _BubbleLabel(QLabel):
         shadow.setColor(Qt.gray)
         self.setGraphicsEffect(shadow)
 
-        self.adjustSize()
+        # 用 QFontMetrics 自己算宽高：
+        # - 单行能放下 → 宽度 = 实际文本宽度（短文本不被拉伸）
+        # - 超过最大宽 → 锁定到 MAX_BUBBLE_WIDTH 并按 word-wrap 计算所需高度
+        fm = QFontMetrics(self.font())
+        chrome_w = (self.PADDING_H + self.BORDER) * 2  # 左右 padding + 边框
+        chrome_h = (self.PADDING_V + self.BORDER) * 2
+        max_text_w = self.MAX_BUBBLE_WIDTH - chrome_w
+
+        single_line_w = fm.horizontalAdvance(text)
+        if single_line_w <= max_text_w and "\n" not in text:
+            text_w = single_line_w
+        else:
+            text_w = max_text_w
+        text_rect = fm.boundingRect(
+            0, 0, text_w, 0,
+            Qt.TextWordWrap | Qt.TextWrapAnywhere,
+            text,
+        )
+        # +2 给字体 hinting 的安全裕量，避免末字被裁
+        self.setFixedSize(text_rect.width() + chrome_w + 2,
+                          text_rect.height() + chrome_h + 2)
         self.show()
 
         # 淡出动画用的透明度效果（和阴影分开，套在外层不行，直接用 windowOpacity 替代）
@@ -333,7 +355,7 @@ class PetModeWindow(QWidget):
         )
         bubble.setAttribute(Qt.WA_TranslucentBackground, False)
         bubble.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        bubble.adjustSize()
+        # 注意：不要再调 bubble.adjustSize()，构造函数已用 QFontMetrics 锁定尺寸
         bubble.show()
 
         bubble.removed.connect(self._on_bubble_removed)

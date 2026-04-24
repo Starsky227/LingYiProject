@@ -9,7 +9,7 @@ import uuid
 import wave
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import numpy as np
 
@@ -187,13 +187,19 @@ class QwenTTSOutputService:
             return False, err
         return True, (proc.stdout or "").strip()
 
-    def _ensure_runtime_model(self) -> bool:
+    def _ensure_runtime_model(self, progress_callback: Optional[Callable[[str, str], None]] = None) -> bool:
         self._cleanup_legacy_models()
         if self._model_local_dir.exists() and any(self._model_local_dir.iterdir()):
             return True
         self._model_local_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info(f"[VoiceOutput] downloading model {self._model_path} to {self._model_local_dir} ...")
+        msg = f"首次使用语音输出，正在下载模型 {self._model_path}，首次可能耗时 1–5 分钟。"
+        logger.info(f"[VoiceOutput] {msg}")
+        if progress_callback:
+            try:
+                progress_callback("download_start", msg)
+            except Exception:
+                pass
         try:
             from huggingface_hub import snapshot_download
             snapshot_download(
@@ -201,12 +207,62 @@ class QwenTTSOutputService:
                 local_dir=str(self._model_local_dir),
             )
         except Exception as e:
-            logger.error(f"[VoiceOutput] failed to download model: {e}")
+            err_msg = f"语音模型下载失败: {e}"
+            logger.error(f"[VoiceOutput] {err_msg}")
+            if progress_callback:
+                try:
+                    progress_callback("error", err_msg)
+                except Exception:
+                    pass
             return False
-        logger.info("[VoiceOutput] model download complete")
+        done_msg = "语音模型下载完成。"
+        logger.info(f"[VoiceOutput] {done_msg}")
+        if progress_callback:
+            try:
+                progress_callback("download_complete", done_msg)
+            except Exception:
+                pass
+        return True
+
+    def prepare(self, progress_callback: Optional[Callable[[str, str], None]] = None) -> bool:
+        """预加载语音模型。
+
+        预期在任意“可能耗时”的时机调用（如 UI 启动后后台线程、启用语音交互之前）。
+        ``start()`` 内部会再调用一次，但本方法幂等，已加载不会重复工作。
+
+        progress_callback 签名：``(stage, message)``，stage 取值:
+            ``"download_start"`` / ``"download_complete"`` / ``"load_start"`` /
+            ``"load_complete"`` / ``"error"``。
+        仅用于 UI 提示，不影响实际业务逻辑。
+        """
+        if not self._ensure_runtime_model(progress_callback):
+            return False
+        if self._tts_model is None:
+            if progress_callback:
+                try:
+                    progress_callback("load_start", "正在加载语音模型到内存…")
+                except Exception:
+                    pass
+            ok = self._load_model_inner()
+            if progress_callback:
+                try:
+                    progress_callback(
+                        "load_complete" if ok else "error",
+                        "语音模型已就绪" if ok else "语音模型加载失败",
+                    )
+                except Exception:
+                    pass
+            return ok
         return True
 
     def _load_model(self) -> bool:
+        if self._tts_model is not None:
+            return True
+        if not self._ensure_runtime_model():
+            return False
+        return self._load_model_inner()
+
+    def _load_model_inner(self) -> bool:
         if self._tts_model is not None:
             return True
         if torch is None:
@@ -214,8 +270,6 @@ class QwenTTSOutputService:
             return False
         if Qwen3TTSModel is None:
             logger.error("[VoiceOutput] qwen-tts is not available. Please install qwen-tts.")
-            return False
-        if not self._ensure_runtime_model():
             return False
 
         model_source = self._resolve_model_source()
@@ -267,6 +321,12 @@ class QwenTTSOutputService:
     def start(self) -> bool:
         if self._running:
             return True
+        if getattr(self, "_zombie", False):
+            logger.error(
+                "[VoiceOutput] 上次 stop() 后 worker/player 线程未退出（zombie 状态），"
+                "为避免重复占用音频设备/显存，拒绝再次 start()。请重启进程。"
+            )
+            return False
         if sd is None:
             logger.error("[VoiceOutput] sounddevice is not available. Please install sounddevice.")
             return False
@@ -301,17 +361,30 @@ class QwenTTSOutputService:
         self._request_queue.put_nowait(None)
         self._playback_queue.put_nowait(None)
 
-        if self._worker_thread and self._worker_thread.is_alive():
-            self._worker_thread.join(timeout=3.0)
-        if self._player_thread and self._player_thread.is_alive():
-            self._player_thread.join(timeout=3.0)
+        zombies: list[str] = []
+        for label, t in (("worker", self._worker_thread), ("player", self._player_thread)):
+            if t and t.is_alive():
+                t.join(timeout=3.0)
+                if t.is_alive():
+                    zombies.append(label)
 
-        self._worker_thread = None
-        self._player_thread = None
+        if zombies:
+            self._zombie = True
+            logger.error(
+                f"[VoiceOutput] 以下 TTS 线程未能在超时内退出: {zombies}; "
+                f"QwenTTSService 进入 zombie 状态，下次 start() 会被拒绝。"
+            )
+        else:
+            self._worker_thread = None
+            self._player_thread = None
+
         self._running = False
         self._cleanup_cache_dir()
-        logger.info("[VoiceOutput] Qwen3-TTS service stopped")
-        return True
+        logger.info(
+            "[VoiceOutput] Qwen3-TTS service stopped"
+            + (f" (zombie threads: {zombies})" if zombies else "")
+        )
+        return not zombies
 
     def speak_text(
         self,
@@ -473,8 +546,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-    _TEXT = "我梦见一片焦土，一株破土而出的新蕊。它迎着朝阳绽放，向我低语呢喃。飞萤扑火！向死，而生！"
-    _OUTPUT = Path(__file__).resolve().parent / "test_voice.wav"
+    _TEXT = "这句太重了……像是把最后一点执念也说出口了。阿达希尔这一声“王啊”，听着真的有种要结束了的味道。"
+    _OUTPUT = Path(__file__).resolve().parent / "voice.wav"
 
     print(f"[TEST] 正在加载模型...")
     svc = QwenTTSOutputService()

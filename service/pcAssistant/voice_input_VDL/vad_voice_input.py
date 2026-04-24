@@ -28,6 +28,12 @@ except Exception:  # pragma: no cover
 
 @dataclass
 class _VadConfig:
+    """VAD/采集参数。
+
+    与 ``STTConfig`` 重复的字段以 ``STTConfig`` 为准。
+    sample_rate / channels / frame_ms 强依赖 Silero VAD（512 samples @ 16 kHz），
+    不开放为可调。其余字段默认值 ≡ ``STTConfig`` 默认值。
+    """
     sample_rate: int = 16000
     channels: int = 1
     frame_ms: int = 32          # Silero VAD requires 512 samples = 32 ms @ 16 kHz
@@ -51,7 +57,10 @@ class VoiceInputVDLService:
         whisper_compute_type: str = "int8",
         language: str = "zh",
         mic_device: Optional[int] = None,
+        vad_config: Optional[_VadConfig] = None,
     ):
+        # 一次性快照调用者传入的所有参数，运行期不再读 config.json，
+        # 避免“部分热加载”这种难以推理的中间状态。
         self._text_callback = text_callback
         self._speech_start_callback = speech_start_callback
         self._whisper_model_size = whisper_model_size
@@ -59,7 +68,7 @@ class VoiceInputVDLService:
         self._whisper_compute_type = whisper_compute_type
         self._language = language
         self._mic_device = mic_device
-        self._vad_cfg = _VadConfig()
+        self._vad_cfg = vad_config if vad_config is not None else _VadConfig()
 
         self._running = False
         self._stream = None
@@ -208,6 +217,12 @@ class VoiceInputVDLService:
     def start(self) -> bool:
         if self._running:
             return True
+        if getattr(self, "_zombie", False):
+            logger.error(
+                "[VoiceVDL] 上次 stop() 后仍有线程未退出（zombie 状态），"
+                "为避免句柄/麦克风重复占用，拒绝再次 start()。请重启进程。"
+            )
+            return False
         if sd is None:
             logger.error("[VoiceVDL] sounddevice is not available. Please install sounddevice.")
             return False
@@ -262,20 +277,37 @@ class VoiceInputVDLService:
         except queue.Full:
             pass
 
-        if self._capture_thread and self._capture_thread.is_alive():
-            self._capture_thread.join(timeout=2.0)
-        if self._vad_thread and self._vad_thread.is_alive():
-            self._vad_thread.join(timeout=2.0)
-        if self._transcribe_thread and self._transcribe_thread.is_alive():
-            self._transcribe_thread.join(timeout=3.0)
+        # join + 校验：若线程在 timeout 后仍 alive，则进入 zombie 状态
+        # 拒绝后续 start()，避免麦克风/模型句柄被重复持有。
+        zombies: list[str] = []
+        for label, t, t_to in (
+            ("capture", self._capture_thread, 2.0),
+            ("vad", self._vad_thread, 2.0),
+            ("transcribe", self._transcribe_thread, 3.0),
+        ):
+            if t and t.is_alive():
+                t.join(timeout=t_to)
+                if t.is_alive():
+                    zombies.append(label)
 
-        self._capture_thread = None
-        self._vad_thread = None
-        self._transcribe_thread = None
-        self._stream = None
+        if zombies:
+            self._zombie = True
+            logger.error(
+                f"[VoiceVDL] 以下线程未能在超时内退出: {zombies}; "
+                f"VoiceInputVDLService 进入 zombie 状态，下次 start() 会被拒绝。"
+            )
+        else:
+            self._capture_thread = None
+            self._vad_thread = None
+            self._transcribe_thread = None
+            self._stream = None
+
         self._running = False
-        logger.info("[VoiceVDL] voice input stopped")
-        return True
+        logger.info(
+            "[VoiceVDL] voice input stopped"
+            + (f" (zombie threads: {zombies})" if zombies else "")
+        )
+        return not zombies
 
     # ------------------------------------------------------------------ #
     #  静音控制 — TTS 播放期间暂停麦克风采集（信号隔离）

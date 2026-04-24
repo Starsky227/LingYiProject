@@ -32,6 +32,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
         result = get_relevant_memories(
             keywords=key_words,
             max_results=max_results,
+            max_expansion_rounds=3,
         )
 
         nodes = result.get("nodes", [])

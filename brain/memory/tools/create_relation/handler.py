@@ -19,7 +19,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
         confidence = float(args.get("confidence", 0.5))
         importance = float(args.get("importance", 0.5))
     except (TypeError, ValueError):
-        return format_json({"success": False, "error": "confidence/importance 必须是数�?})
+        return format_json({"success": False, "error": "confidence/importance 必须是数字"})
 
     confidence = max(0.0, min(1.0, confidence))
     importance = max(0.0, min(1.0, importance))

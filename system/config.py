@@ -178,6 +178,35 @@ class STTConfig(BaseModel):
     whisper_compute_type: str = Field(default="int8", description="faster-whisper compute type")
     language: str = Field(default="zh", description="语音识别语言")
 
+    # ---- VAD 调参 ----
+    # 这些字段从 vad_voice_input._VadConfig 抬到这里，让用户可以在 config.json 里调。
+    # sample_rate / channels / frame_ms 强依赖 Silero VAD（512 samples @ 16 kHz），
+    # 所以不开放为可调字段，仍写死在 _VadConfig 里。
+    vad_pre_roll_ms: int = Field(
+        default=320, ge=0, le=2000,
+        description="语音段前预录时长（毫秒）。32 ms/帧 → 默认 10 帧",
+    )
+    vad_end_silence_ms: int = Field(
+        default=700, ge=200, le=3000,
+        description="句末静音判定阈值（毫秒）。短=反应快易切句，长=完整但延迟高",
+    )
+    vad_min_speech_ms: int = Field(
+        default=320, ge=64, le=2000,
+        description="语音段最短长度，低于此值丢弃（防止咳嗽/单音节噪声触发）",
+    )
+    vad_speech_confirm_ms: int = Field(
+        default=1000, ge=100, le=5000,
+        description="持续语音超过此时长才算\"用户真的开口\"，触发 TTS 打断",
+    )
+    vad_max_speech_ms: int = Field(
+        default=15000, ge=2000, le=60000,
+        description="单段语音最长时长，超过强制切句送 ASR",
+    )
+    vad_threshold: float = Field(
+        default=0.65, ge=0.1, le=0.95,
+        description="Silero VAD speech-probability 阈值。环境吵则调高",
+    )
+
 
 class TTSConfig(BaseModel):
     """TTS 语音合成配置。"""

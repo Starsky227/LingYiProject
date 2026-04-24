@@ -17,7 +17,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
     try:
         confidence = float(args.get("confidence", 0.5))
     except (TypeError, ValueError):
-        return format_json({"success": False, "error": "参数 confidence 必须是数�?})
+        return format_json({"success": False, "error": "参数 confidence 必须是数字"})
 
     confidence = max(0.0, min(1.0, confidence))
 
@@ -27,7 +27,7 @@ async def execute(args: dict[str, Any], context: dict[str, Any]) -> str:
             importance = float(importance)
             importance = max(0.0, min(1.0, importance))
         except (TypeError, ValueError):
-            return format_json({"success": False, "error": "参数 importance 必须是数�?})
+            return format_json({"success": False, "error": "参数 importance 必须是数字"})
 
     if not all([relation_id, predicate, source]):
         return format_json({"success": False, "error": "缺少必要参数"})

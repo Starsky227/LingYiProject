@@ -150,8 +150,19 @@ class InputBuffer:
     def is_processing(self, value: bool):
         self._is_processing = value
 
-    async def put(self, message: str, caller_message: str = "", key_words: list = None):
-        """将消息放入缓冲"""
+    async def put(
+        self,
+        message: str,
+        caller_message: str = "",
+        key_words: list = None,
+    ):
+        """将消息放入缓冲
+
+        Args:
+            message: 消息正文（可含 ``<发送者>`` 前缀）。
+            caller_message: 调用方提示文本，附在 [新消息] 段首。
+            key_words: 关键词列表，用于长期记忆搜索。
+        """
         await self._queue.put({
             "message": message,
             "caller_message": caller_message,
@@ -209,9 +220,12 @@ class MemoryBatchBuffer:
     2) memory_record
     """
 
-    def __init__(self, trigger_count: int = 10):
+    def __init__(self, trigger_count: int = 10, batch_size: int | None = None):
         self.trigger_count = max(1, trigger_count)
+        self.batch_size = max(self.trigger_count, int(batch_size or self.trigger_count))
+        self._overlap_count = self.batch_size - self.trigger_count
         self._entries: list[dict[str, Any]] = []
+        self._tail_context: list[dict[str, Any]] = []
 
     @staticmethod
     def _dedupe_keywords(keywords: list[str]) -> list[str]:
@@ -251,8 +265,15 @@ class MemoryBatchBuffer:
     def pop_ready_batch(self) -> list[dict[str, Any]]:
         if not self.has_ready_batch():
             return []
-        batch = self._entries[:self.trigger_count]
+        new_chunk = self._entries[:self.trigger_count]
         self._entries = self._entries[self.trigger_count:]
+        batch = list(self._tail_context) + new_chunk
+        if len(batch) > self.batch_size:
+            batch = batch[-self.batch_size:]
+        if self._overlap_count > 0:
+            self._tail_context = batch[-self._overlap_count:]
+        else:
+            self._tail_context = []
         return batch
 
     def pending_count(self) -> int:
@@ -262,8 +283,11 @@ class MemoryBatchBuffer:
         """强制弹出所有剩余条目（不足 trigger_count 也弹出），用于关闭或超时场景"""
         if not self._entries:
             return []
-        batch = list(self._entries)
+        batch = list(self._tail_context) + list(self._entries)
+        if len(batch) > self.batch_size:
+            batch = batch[-self.batch_size:]
         self._entries.clear()
+        self._tail_context.clear()
         return batch
 
 
@@ -276,7 +300,7 @@ class SessionState:
     def __init__(self, session_key: str):
         self.session_key = session_key
         self.memory_cache = MemoryCache()
-        self.memory_batch = MemoryBatchBuffer(trigger_count=20)
+        self.memory_batch = MemoryBatchBuffer(trigger_count=20, batch_size=25)
         self.activity_tracker = ActiveToolTracker()
         self.input_buffer = InputBuffer()
         self.conversation_context = ConversationContext()
@@ -286,6 +310,8 @@ class SessionState:
         self.scratchpad: str = ""  # AI 可读写的临时便签（session 级）
         self._memory_writer = None  # 由外部设置，用于空闲刷新
         self._idle_flush_task: asyncio.Task | None = None
+        # 强引用集合：保留 fire-and-forget 的记忆批次任务，避免被 GC 回收
+        self._memory_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------ #
     #  记忆批处理：搜索 + 记录
@@ -300,11 +326,13 @@ class SessionState:
             memory_text, fixed_keywords = self.memory_batch.build_batch_payload(ready_batch)
             if not memory_text.strip():
                 continue
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self._memory_search_and_record(
                     memory_writer, memory_text, fixed_keywords, len(ready_batch),
                 )
             )
+            self._memory_tasks.add(task)
+            task.add_done_callback(self._memory_tasks.discard)
 
     async def flush_pending_memory(self, memory_writer) -> None:
         """强制刷新所有未保存的记忆条目（不足阈值也刷新）"""
@@ -336,6 +364,7 @@ class SessionState:
                 memory_text,
                 False,          # save_temp_memory
                 fixed_keywords,  # add_keywords
+                3,              # max_expansion_rounds（异步场景）
             )
             logger.info(
                 f"[记忆批处理] session={self.session_key} 触发一次，条数={batch_count}，"

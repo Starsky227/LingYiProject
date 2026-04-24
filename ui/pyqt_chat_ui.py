@@ -45,32 +45,10 @@ refresh_ui_constants()
 
 
 # ---- 聊天日志 ----
+# 统一入口迁移至 brain.lingyi_core.chat_logger，此处仅保留重导出以兼容外部 import。
+from brain.lingyi_core.chat_logger import write_chat_log  # noqa: F401
+
 LOGS_DIR = config.system.log_dir
-
-
-def write_chat_log(sender: str, text: str, timestamp: str = None):
-    """将单条对话追加到 chat_logs 目录"""
-    try:
-        logs_dir = os.path.join(LOGS_DIR, "chat_logs")
-        os.makedirs(logs_dir, exist_ok=True)
-        filename = datetime.datetime.now().strftime("chat_logs_%Y_%m_%d.txt")
-        path = os.path.join(logs_dir, filename)
-
-        if timestamp is None:
-            ts = datetime.datetime.now().strftime("%H:%M:%S")
-        else:
-            try:
-                dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                ts = dt.strftime("%H:%M:%S")
-            except (ValueError, AttributeError):
-                ts = datetime.datetime.now().strftime("%H:%M:%S")
-
-        safe_text = text.replace("\r", " ").replace("\n", " ")
-        line = f"[{ts}] <{sender}> {safe_text}\n"
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(line)
-    except Exception as e:
-        print(f"[日志错误] 无法写入聊天日志: {e}")
 
 
 class ChatWindow(QWidget):
@@ -91,7 +69,7 @@ class ChatWindow(QWidget):
         self.messages = []
         self.chat_with_model = None  # 由外部注入
         self._service_manager = None
-        self._pet_window = None  # 桌宠模式窗口
+        self._pet_window = None  # 助手模式窗口
         self._screenshot_callback = None  # 截屏发送给AI的回调
 
         self._setup_window()
@@ -295,7 +273,7 @@ class ChatWindow(QWidget):
         self._pending_file_signal.connect(self._on_pending_file_added)
         self._silent_process_signal.connect(self._on_silent_process_trigger)
 
-        # 桌宠模式
+        # 助手模式
         self.image_window.assistant_mode_requested.connect(self.enter_pet_mode)
 
     # ---- 外部注入模型调用 ----
@@ -354,7 +332,7 @@ class ChatWindow(QWidget):
         chat_page = self.main_window.chat_page
         return chat_page.take_pending_files()
 
-    # ---- 桌宠模式 ---- #
+    # ---- 助手模式 ---- #
 
     def enter_pet_mode(self):
         """进入助手模式：隐藏主窗口，显示助手小窗，切换到助手 prompt"""
@@ -388,7 +366,7 @@ class ChatWindow(QWidget):
         self.activateWindow()
 
     def _on_pet_screenshot(self):
-        """桌宠模式下截屏发送给AI"""
+        """助手模式下截屏发送给AI"""
         if self._screenshot_callback:
             self._screenshot_callback()
 
@@ -419,8 +397,7 @@ class ChatWindow(QWidget):
         timestamp_str = datetime.datetime.now().strftime("%H:%M:%S")
         user_timestamp = datetime.datetime.now().isoformat(timespec='milliseconds')
 
-        # 写日志
-        write_chat_log(USERNAME, text)
+        # 用户输入的 chat_log 由 lingyi_core 在处理 input_buffer 时统一写入，此处不再重复写入
 
         # 添加气泡（含附件提示）
         chat_page = self.main_window.chat_page

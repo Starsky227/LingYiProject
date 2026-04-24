@@ -32,7 +32,7 @@ _MAX_LOG_FILES = 3
 
 def _rotate_log_files() -> None:
     """保留最近 _MAX_LOG_FILES 个日志文件，删除更早的。"""
-    logs = sorted(_LOG_DIR.glob("memory_tool_*.log"))
+    logs = sorted(_LOG_DIR.glob("memory_agent_log_*.txt"))
     while len(logs) > _MAX_LOG_FILES:
         oldest = logs.pop(0)
         try:
@@ -41,15 +41,14 @@ def _rotate_log_files() -> None:
             pass
 
 
-def _write_memory_log(entry: dict) -> None:
-    """追加一条 JSON 日志到当天的日志文件。"""
+def _write_memory_log(content: str) -> None:
+    """追加纯文本日志到当天的日志文件（与 model_log 同格式）。"""
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y%m%d")
-    log_path = _LOG_DIR / f"memory_tool_{today}.log"
-    entry["timestamp"] = datetime.now().isoformat()
+    today = datetime.now().strftime("%Y_%m_%d")
+    log_path = _LOG_DIR / f"memory_agent_log_{today}.txt"
     try:
         with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            f.write(content)
         _rotate_log_files()
     except OSError as e:
         logger.warning("写入记忆日志失败: %s", e)
@@ -259,13 +258,15 @@ async def run_memory_agent(
 ) -> str:
     """执行 memory_agent 工具调用循环。"""
     if not user_content.strip():
-        _write_memory_log({"event": "skip", "reason": "空内容"})
+        _write_memory_log(f"[SKIP] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  空内容\n\n")
         return "无内容"
 
-    _write_memory_log({
-        "event": "start",
-        "user_content_preview": user_content[:300],
-    })
+    separator = "=" * 60
+    _write_memory_log(
+        f"{separator}\n"
+        f"[START] memory_agent  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+        f"[user]\n{user_content}\n\n"
+    )
 
     tool_registry = _ToolRegistry(tools_dir, agent_name=agent_name)
     tools = tool_registry.get_tools_schema()
@@ -291,22 +292,40 @@ async def run_memory_agent(
             )
 
             content_text = ""
+            reasoning_texts: list[str] = []
             function_calls = []
             for item in response.output:
                 if item.type == "message":
                     for c in getattr(item, "content", []):
                         if getattr(c, "type", "") == "output_text":
                             content_text += c.text
+                elif item.type == "reasoning":
+                    # 兼容不同 SDK 的 reasoning 结构
+                    for summary in getattr(item, "summary", []) or []:
+                        txt = getattr(summary, "text", "")
+                        if txt:
+                            reasoning_texts.append(str(txt))
                 elif item.type == "function_call":
                     function_calls.append(item)
 
+            feedback_text = content_text.strip()
+            feedback_reasoning = "\n".join(reasoning_texts).strip()
+            if not feedback_text:
+                feedback_text = "(无文本反馈)"
+            if not feedback_reasoning:
+                feedback_reasoning = "(无推理摘要)"
+            _write_memory_log(
+                f"[模型反馈] 第 {iteration} 轮  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"文本: {feedback_text[:2000]}\n"
+                f"推理摘要: {feedback_reasoning[:2000]}\n\n"
+            )
+
             if not function_calls:
-                _write_memory_log({
-                    "event": "ai_decision",
-                    "iteration": iteration,
-                    "action": "no_tool_call",
-                    "ai_text": content_text[:500],
-                })
+                _write_memory_log(
+                    f"[OUTPUT] 第 {iteration} 轮  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"[assistant]\n{content_text[:500]}\n\n"
+                    f"(无工具调用，结束)\n\n"
+                )
                 return content_text
 
             input_items.extend(response.output)
@@ -322,12 +341,12 @@ async def run_memory_agent(
                 )
                 if not isinstance(function_args, dict):
                     function_args = {}
-                _write_memory_log({
-                    "event": "tool_call",
-                    "iteration": iteration,
-                    "tool": fn_name,
-                    "args": function_args,
-                })
+                args_str = json.dumps(function_args, ensure_ascii=False)
+                _write_memory_log(
+                    f"[工具调用] {fn_name}  call_id={fc.call_id}  "
+                    f"round={iteration}  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                    f"{args_str}\n\n"
+                )
                 tool_call_ids.append(fc.call_id)
                 tool_tasks.append(
                     asyncio.ensure_future(
@@ -344,12 +363,12 @@ async def run_memory_agent(
                     if isinstance(tool_result, Exception)
                     else str(tool_result)
                 )
-                _write_memory_log({
-                    "event": "tool_result",
-                    "iteration": iteration,
-                    "call_id": tool_call_ids[index],
-                    "output": output_str[:500],
-                })
+                _write_memory_log(
+                    f"[工具结果] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  "
+                    f"round={iteration}\n"
+                    f"call_id={tool_call_ids[index]}\n"
+                    f"结果: {output_str[:2000]}\n\n"
+                )
                 input_items.append({
                     "type": "function_call_output",
                     "call_id": tool_call_ids[index],
@@ -358,12 +377,11 @@ async def run_memory_agent(
 
         except Exception as exc:
             logger.exception("[%s] 执行失败: %s", agent_name, exc)
-            _write_memory_log({
-                "event": "error",
-                "iteration": iteration,
-                "error": str(exc),
-            })
+            _write_memory_log(
+                f"[ERROR] round={iteration}  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"{exc}\n\n"
+            )
             return f"处理失败: {exc}"
 
-    _write_memory_log({"event": "max_iterations_reached", "max": max_iterations})
+    _write_memory_log(f"[WARN] 达到最大迭代次数 {max_iterations}\n\n")
     return "达到最大迭代次数"

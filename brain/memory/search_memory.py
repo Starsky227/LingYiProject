@@ -376,14 +376,16 @@ def _filter_node_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _remove_embedding(properties: Dict[str, Any]) -> Dict[str, Any]:
-    """只移除节点的embedding属性，保留其他所有属性"""
+    """移除不需要传给模型的系统属性"""
     
     if not properties:
         return {}
     
-    # 创建属性副本并移除embedding
+    # 创建属性副本并移除不重要的大字段/系统时间字段
     filtered_props = dict(properties)
     filtered_props.pop("embedding", None)
+    filtered_props.pop("created_at", None)
+    filtered_props.pop("last_updated", None)
     
     return filtered_props
 
@@ -459,7 +461,7 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
                         "type": reached_node["rel_type"],
                         "start_node": reached_node["rel_start"],
                         "end_node": reached_node["rel_end"],
-                        "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
+                        "properties": _remove_embedding(dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {})
                     }
                 continue
             
@@ -469,7 +471,7 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
                 "type": reached_node["rel_type"],
                 "start_node": reached_node["rel_start"],
                 "end_node": reached_node["rel_end"],
-                "properties": dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {}
+                "properties": _remove_embedding(dict(reached_node["rel_properties"]) if reached_node["rel_properties"] else {})
             }
             node_data = {
                 "id": reached_node_id,
@@ -540,7 +542,7 @@ def _expand_memory_grabbed(session, nodes_data: Dict[str, Any], summary: str = "
                     "type": tr["rel_type"],
                     "start_node": tr["rel_start"],
                     "end_node": tr["rel_end"],
-                    "properties": dict(tr["rel_properties"]) if tr["rel_properties"] else {}
+                    "properties": _remove_embedding(dict(tr["rel_properties"]) if tr["rel_properties"] else {})
                 }
                 ds_node_data = {
                     "id": ds_id,
@@ -785,7 +787,7 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
         return {"nodes": [], "relationships": [], "outer_node_ids": []}
 
 
-def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50, save_temp_memory: bool = False, add_keywords: List[str] = None) -> Dict[str, Any]:
+def get_relevant_memories(keywords: List[str], summary: str = "", max_results: int = 50, save_temp_memory: bool = False, add_keywords: List[str] = None, max_expansion_rounds: int = 2) -> Dict[str, Any]:
     """
     通过_extract_keywords获得基础节点数据。
     而后通过反复调用_expand_memory_grabbed获取相关联的节点和关系。
@@ -794,6 +796,7 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
     Args:
         keywords: 已提取的关键词列表
         max_results: 最大返回结果数
+        max_expansion_rounds: 最大扩展轮数（阻塞场景建议1，异步场景建议3）
         
     Returns Dict[str, Any]:
         {"nodes": [
@@ -839,7 +842,6 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
             
             # 第二步：反复扩展连接的节点，直到达到最大数量限制
             expansion_rounds = 0
-            max_expansion_rounds = 3  # 限制扩展轮数避免过度查询
             
             while (len(nodes_data.get("nodes", [])) < max_results and 
                    nodes_data.get("outer_node_ids") and 
@@ -889,6 +891,7 @@ def get_formatted_memory_graph(
     memory_data: Dict[str, Any] = None,
     save_temp_memory: bool = False,
     add_keywords: list = None,
+    max_expansion_rounds: int = 2,
 ) -> str:
     """将记忆搜索结果转换为图谱记号格式的文本。
 
@@ -905,7 +908,7 @@ def get_formatted_memory_graph(
         图谱记号格式的字符串，无结果时返回空字符串
     """
     if memory_data is None:
-        memory_data = full_memory_search(message, save_temp_memory=save_temp_memory, add_keywords=add_keywords)
+        memory_data = full_memory_search(message, save_temp_memory=save_temp_memory, add_keywords=add_keywords, max_expansion_rounds=max_expansion_rounds)
 
     nodes = memory_data.get("nodes", [])
     rels = memory_data.get("relationships", [])
@@ -960,7 +963,7 @@ def get_formatted_memory_graph(
     return "\n".join(lines)
 
 
-def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None) -> Dict[str, Any]:
+def full_memory_search(message: str, save_temp_memory: bool = False, add_keywords: list = None, max_expansion_rounds: int = 2) -> Dict[str, Any]:
     """
     直接从输入文本进行完整的记忆搜索流程，包含关键词提取和相关记忆查询。
     
@@ -968,6 +971,7 @@ def full_memory_search(message: str, save_temp_memory: bool = False, add_keyword
         message: 输入文本消息
         save_temp_memory: 是否保存临时记忆结果
         add_keywords: 为手动输入的额外关键词列表
+        max_expansion_rounds: 最大扩展轮数（阻塞场景建议1，异步场景建议3）
         
     Returns Dict[str, Any]:
         {"nodes": [...], "relationships": [...]}
@@ -979,7 +983,7 @@ def full_memory_search(message: str, save_temp_memory: bool = False, add_keyword
     
     logger.info(f"从输入消息提取到关键词: {keywords}, 摘要: {summary}")
     
-    relevant_memories = get_relevant_memories(keywords, summary, save_temp_memory=save_temp_memory, add_keywords=add_keywords)
+    relevant_memories = get_relevant_memories(keywords, summary, save_temp_memory=save_temp_memory, add_keywords=add_keywords, max_expansion_rounds=max_expansion_rounds)
     
     # 使用note_memory_used刷新所有被使用的记忆relation的significance值（以及对应的importance）
     relation_ids = [rel["id"] for rel in relevant_memories.get("relationships", []) if rel.get("id")]
