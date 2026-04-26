@@ -159,7 +159,6 @@ class LocalToolRegistry:
                 entry = ToolEntry(name=name, schema=schema, handler_path=handler_path, source="brain")
                 self._items[name] = entry
                 self._schemas.append(schema)
-                logger.info(f"[LocalToolRegistry] 发现工具: {name}")
             except Exception as e:
                 logger.error(f"[LocalToolRegistry] 加载工具配置失败 {item_dir}: {e}")
 
@@ -220,7 +219,6 @@ class AgentSubRegistry:
                 handler = _make_lazy_agent_handler(agent_info)
                 self._schemas.append(schema)
                 self._handlers[name] = handler
-                logger.info(f"[AgentSubRegistry] 发现 agent: {name}")
         except Exception as e:
             logger.warning(f"[AgentSubRegistry] agent 发现失败（不影响基本功能）: {e}")
 

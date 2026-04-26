@@ -774,8 +774,6 @@ def _extract_nodes_by_keyword(kg_manager, keywords: List[str], summary: str = ""
             outer_node_ids = [node["id"] for node in nodes_list]
             node_names = [node["properties"].get("name", "") for node in nodes_list]
             
-            logger.info(f"找到起点记忆：{node_names}")
-            
             return {
                 "nodes": nodes_list,
                 "relationships": [],
@@ -835,7 +833,6 @@ def get_relevant_memories(keywords: List[str], summary: str = "", max_results: i
             nodes_data = _extract_nodes_by_keyword(kg_manager, keywords, summary, add_keywords=add_keywords)
             
             if not nodes_data.get("nodes"):
-                logger.error("[记忆查询] 未找到匹配的节点")
                 return {"nodes": [], "relationships": []}
             
             logger.debug(f"[记忆查询] 初始找到 {len(nodes_data['nodes'])} 个节点")

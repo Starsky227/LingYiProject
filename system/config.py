@@ -88,7 +88,7 @@ class SystemConfig(BaseModel):
     user_name: str = Field(default="用户", description="默认用户名")
     base_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent, description="项目根目录")
     log_dir: Path = Field(default_factory=lambda: Path(__file__).parent.parent / "data", description="日志目录")
-    stream_mode: bool = Field(default=False, description="是否启用流式响应")
+    stream_mode: bool = Field(default=True, description="全局流式开关：开启则 UI 气泡按句子流式出现 + TTS 按句子推送；关闭则整段一次性输出")
     debug: bool = Field(default=False, description="是否启用调试模式")
     log_level: str = Field(default="INFO", description="日志级别")
 

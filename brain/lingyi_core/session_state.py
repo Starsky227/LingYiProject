@@ -185,31 +185,74 @@ class InputBuffer:
 
 
 class ConversationContext:
-    """会话上下文管理 — 储存格式化的对话历史消息
+    """会话上下文管理 — 按 role 储存对话历史
 
-    由外部调用 add_message() 添加格式化后的消息文本，
-    lingyi_core 通过 get_formatted_context() 获取完整对话历史。
+    内部以 (role, content) 形式保存，role ∈ {"user", "assistant"}。
+    - 用户/屏幕/工具等外部内容 → role="user"
+    - AI 自己的回复 → role="assistant"
+
+    lingyi_core 通过 get_role_messages() 获取按 role 分块的消息列表
+    （连续同 role 的条目会自动合并为一条），可以直接喂给 Responses API。
     """
 
     def __init__(self, max_messages: int = 25):
-        self._messages: list[str] = []
+        # 每个元素: {"role": "user"|"assistant", "content": str}
+        self._messages: list[dict[str, str]] = []
         self._max_messages = max_messages
 
-    def add_message(self, formatted_message: str):
-        """添加一条格式化后的消息"""
-        self._messages.append(formatted_message)
+    def add_message(self, formatted_message: str, role: str = "user"):
+        """添加一条消息。
+
+        role: "user" 或 "assistant"；其它值统一按 "user" 处理。
+        """
+        text = (formatted_message or "").rstrip("\n")
+        if not text:
+            return
+        if role != "assistant":
+            role = "user"
+        self._messages.append({"role": role, "content": text})
         if len(self._messages) > self._max_messages:
             self._messages = self._messages[-self._max_messages:]
 
     def initialize(self, messages: list[str]):
-        """初始化历史消息（首次会话创建时从日志读取）"""
-        self._messages = list(messages[-self._max_messages:])
+        """初始化历史消息（首次会话创建时从日志读取）。
+
+        会按行检测 `<{ai_name}>` 标记自动分配 role。
+        """
+        try:
+            from system.config import config
+            ai_name = config.system.ai_name
+        except Exception:
+            ai_name = ""
+        marker = f"<{ai_name}>" if ai_name else None
+
+        self._messages = []
+        for m in (messages or [])[-self._max_messages:]:
+            text = (m or "").rstrip("\n")
+            if not text:
+                continue
+            role = "assistant" if (marker and marker in text) else "user"
+            self._messages.append({"role": role, "content": text})
+
+    def get_role_messages(self) -> list[dict[str, str]]:
+        """返回按 role 分块合并后的消息列表。
+
+        连续相同 role 的条目会被合并为一条（用换行连接），
+        以减少最终发送给模型的消息数量、且语义更连贯。
+        """
+        merged: list[dict[str, str]] = []
+        for m in self._messages:
+            if merged and merged[-1]["role"] == m["role"]:
+                merged[-1]["content"] += "\n" + m["content"]
+            else:
+                merged.append({"role": m["role"], "content": m["content"]})
+        return merged
 
     def get_formatted_context(self) -> str:
-        """返回所有消息的格式化文本"""
+        """向后兼容：返回拼接后的纯文本（不再用于喂模型，仅用于调试/日志）。"""
         if not self._messages:
             return ""
-        return "".join(self._messages)
+        return "\n".join(m["content"] for m in self._messages)
 
 
 class MemoryBatchBuffer:
@@ -365,10 +408,6 @@ class SessionState:
                 False,          # save_temp_memory
                 fixed_keywords,  # add_keywords
                 3,              # max_expansion_rounds（异步场景）
-            )
-            logger.info(
-                f"[记忆批处理] session={self.session_key} 触发一次，条数={batch_count}，"
-                f"关键词数={len(fixed_keywords)}，关联节点={len(related_memory.get('nodes', []))}"
             )
             record_payload = f"{memory_text}\n\n[固定关键词]\n{fixed_keywords}"
             await memory_writer.full_memory_record(record_payload, related_memory)

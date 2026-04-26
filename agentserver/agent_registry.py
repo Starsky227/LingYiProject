@@ -423,7 +423,6 @@ def discover_agents(base_dir: Path = None) -> List[Dict[str, Any]]:
                 "handler_path": handler_path,
                 "dir": item_dir,
             })
-            logger.info(f"[AgentRegistry] 发现 agent: {name}")
         except Exception as e:
             logger.error(f"加载 agent 配置失败 {item_dir}: {e}")
 

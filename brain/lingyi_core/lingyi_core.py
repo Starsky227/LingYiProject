@@ -176,6 +176,7 @@ class LingYiCore:
         session_key: str = "default",
         stream_text_callback: Optional[Callable[[str, bool], None]] = None,
         on_text_output: Optional[Callable[[str], None]] = None,
+        on_stream_delta: Optional[Callable[[str], None]] = None,
     ) -> list:
         """处理输入信息，通过工具调用循环生成回复
 
@@ -186,7 +187,10 @@ class LingYiCore:
             session_key: 会话标识（用于隔离 MemoryWriter / SessionState）
             stream_text_callback: 流式文本回调，签名 (sentence: str, is_first: bool)。
                 当设置时，模型文本输出将以句子为单位实时回调，用于流式 TTS。
-            on_text_output: 文本输出回调，签名 (text: str)。
+            on_text_output: 文本输出回调，签名 (text: str)，每条 message 完整时触发一次。
+            on_stream_delta: 流式 token 回调，签名 (delta: str)，每个 output_text.delta
+                立刻触发。用于 UI 层做逐字浮现的"生长气泡"效果，不做句子缓冲。
+                与 stream_text_callback 互不影响——前者按 token、后者按句。
 
         Returns:
             模型输出的消息列表
@@ -202,6 +206,7 @@ class LingYiCore:
                 session_key, session_state,
                 stream_text_callback=stream_text_callback,
                 on_text_output=on_text_output,
+                on_stream_delta=on_stream_delta,
             )
         finally:
             session_state.input_buffer.is_processing = False
@@ -235,6 +240,7 @@ class LingYiCore:
         session_state: "SessionState",
         stream_text_callback: Optional[Callable[[str, bool], None]] = None,
         on_text_output: Optional[Callable[[str], None]] = None,
+        on_stream_delta: Optional[Callable[[str], None]] = None,
     ) -> list:
         """
         核心处理逻辑 — 非阻塞后台工具执行
@@ -263,24 +269,15 @@ class LingYiCore:
                 original_on_text_output(text)
         on_text_output = _logged_on_text_output
 
-        external_assistant_cb = session_state.tool_context.get("assistant_reply_callback")
-        if external_assistant_cb is not None:
-            def _logged_assistant_cb(text: str, _orig=external_assistant_cb):
-                try:
-                    write_chat_log(f"<{ai_name}> {text}")
-                except Exception:
-                    pass
-                return _orig(text)
-            session_state.tool_context["assistant_reply_callback"] = _logged_assistant_cb
+        # 把发言回调注入 tool_context，供 speak 工具消费
+        # —— 模型唯一的发言路径就是调用 speak 工具，纯文本输出不再被推送到 UI/TTS
+        session_state.tool_context["_on_text_output"] = on_text_output
 
         # 0. 等待收集初始消息批次
         await self._collect_batch(session_state)
         initial_messages = session_state.input_buffer.drain_all()
         if not initial_messages:
             logger.info(f"[process_message] session={session_key} 无消息可处理")
-            # 还原外部回调，避免影响下次调用
-            if external_assistant_cb is not None:
-                session_state.tool_context["assistant_reply_callback"] = external_assistant_cb
             return []
 
         # 1. 初始化消息状态
@@ -363,7 +360,13 @@ class LingYiCore:
                 incoming = pending_messages + buffered
                 pending_messages = []
 
-                history_context = session_state.conversation_context.get_formatted_context()
+                # 历史消息：按 role 拆分（user / assistant），不再拼成单个 user 大块
+                history_role_messages = session_state.conversation_context.get_role_messages()
+
+                # 本轮"新消息"块（仅当本轮收到新消息时生成）；
+                # 不再提前写入 conversation_context —— 等模型收过本轮 user 之后再回写，
+                # 否则历史里和新消息块会出现同一段内容两次。
+                new_message_block: str | None = None
 
                 if incoming:
                     rounds_since_input = 0
@@ -402,17 +405,18 @@ class LingYiCore:
                             fixed_keywords=msg_keywords,
                         )
 
-                    # 将本轮新消息追加到 conversation_context
-                    for msg_text in new_messages:
-                        # 确保每条消息以换行结尾，避免与后续条目粘连
-                        entry = msg_text if msg_text.endswith("\n") else msg_text + "\n"
-                        session_state.conversation_context.add_message(entry)
                     caller_message = incoming[-1].get("caller_message", caller_message)
                     logger.info(f"[收到消息] {len(incoming)} 条")
 
-                    message_chunk = "[历史消息]\n" + history_context + "\n[新消息]\n[消息来源] " + caller_message + "\n" + "\n".join(new_messages)
-                else:
-                    message_chunk = "[历史消息]\n" + history_context + "\n[新消息]没有新消息，请检查工具返回结果，"
+                    new_message_block = (
+                        "[新消息]\n[消息来源] " + caller_message + "\n" + "\n".join(new_messages)
+                    )
+
+                    # 回写到 conversation_context，供下一轮作为历史使用。
+                    # 本轮新消息合并为单条 user 条目（同批次 → 同一条 message）。
+                    session_state.conversation_context.add_message(
+                        "\n".join(new_messages), role="user"
+                    )
 
                 # Step 3: 清理 tool_items 中过期的 reasoning + function_call + function_call_output
                 if call_round_map:
@@ -450,14 +454,29 @@ class LingYiCore:
                         logger.warning(f"已达最大模型调用轮次 {MAX_TOOL_ROUNDS}，停止处理")
                         break
 
-                    # 组装模型输入：prompt + 便签 + 记忆 + 消息上下文 + 工具进度
+                    # 组装模型输入：prompt + 便签 + 记忆 + 历史(role-based) + 新消息 + 工具进度
                     input_items = list(prompt_items) #prompt
                     if session_state.scratchpad:  # 便签
                         input_items.append({"role": "system", "content": f"[你的便签]\n{session_state.scratchpad}"})
                     memory_text = session_state.memory_cache.get_merged() #记忆
                     if memory_text:
-                        input_items.append({"role": "system", "content": f"[相关记忆] 请参考以下记忆信息进行回复\n{memory_text}"})
-                    input_items.append({"role": "user", "content": message_chunk}) #消息上下文
+                        input_items.append({"role": "system", "content": f"[相关记忆] 以下记忆信息可能相关，可以作为参考进行回复\n{memory_text}"})
+
+                    # 历史按 role 拆分注入 —— 让模型清楚区分"自己的发言"与"用户/外部输入"，
+                    # 避免历史里 <ai_name> 行被误读为可复读的模板。
+                    for hm in history_role_messages:
+                        input_items.append({"role": hm["role"], "content": hm["content"]})
+
+                    # 本轮新消息 —— 单独作为最新一条 user message
+                    if new_message_block is not None:
+                        input_items.append({"role": "user", "content": new_message_block})
+                    elif not history_role_messages:
+                        # 极少数情况：既无历史也无新消息（首轮空场），保持模型有一个明确的提示
+                        input_items.append({"role": "user", "content": "[新消息]没有新消息，请检查工具返回结果，"})
+                    else:
+                        # 仅工具结果触发的轮次：用一个简短 user 提示引导模型基于工具结果继续
+                        input_items.append({"role": "user", "content": "[新消息]没有新消息，请检查工具返回结果，"})
+
                     input_items.extend(tool_items) #工具信息
                     progress_text = session_state.activity_tracker.get_status_text()
                     if progress_text:
@@ -489,23 +508,12 @@ class LingYiCore:
                         if tools_param:
                             create_kwargs["tools"] = tools_param
 
-                        if stream_text_callback:
-                            # 流式调用：逐 token 接收，按句子回调
-                            accumulator = _SentenceAccumulator(stream_text_callback)
-                            response = None
-                            stream = self.client.responses.create(**create_kwargs, stream=True)
-                            for event in stream:
-                                event_type = getattr(event, 'type', None)
-                                if event_type == "response.output_text.delta":
-                                    accumulator.add(event.delta)
-                                elif event_type == "response.completed":
-                                    response = event.response
-                            accumulator.flush()
-                            if response is None:
-                                logger.error("流式调用未收到 response.completed 事件")
-                                break
-                        else:
-                            response = self.client.responses.create(**create_kwargs)
+                        # 流式相关参数已废弃：模型唯一发言通道是 speak 工具，
+                        # 纯文本输出不再被推送，故无需逐 token / 逐句回调。
+                        # （保留 stream_text_callback / on_stream_delta 形参以兼容老调用方，但不再生效）
+                        if stream_text_callback or on_stream_delta:
+                            logger.debug("[流式] 已停用：发言改为通过 speak 工具，stream_* 回调将被忽略")
+                        response = self.client.responses.create(**create_kwargs)
 
                         output_messages, tool_calls = self._parse_response(response)
                     except Exception as e:
@@ -533,26 +541,22 @@ class LingYiCore:
                     if valuable_results:
                         for tool_name, v_result in valuable_results:
                             time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                            formatted = f"{time_str} [工具结果-{tool_name}] {v_result}\n"
-                            session_state.conversation_context.add_message(formatted)
+                            formatted = f"{time_str} [工具结果-{tool_name}] {v_result}"
+                            session_state.conversation_context.add_message(formatted, role="user")
                         valuable_results.clear()
 
-                    # 模型的文本消息记录到会话历史（history_context 每轮刷新，无需再加入 tool_items）
+                    # 模型的文本消息：仅作内部独白记录到日志，**不**推送 UI/TTS、**不**进历史/记忆。
+                    # 唯一合法的发言路径是调用 `speak` 工具。这样做的目的是：
+                    #   1. 避免模型用纯文本输出作为发言（绕过沉默判定）
+                    #   2. 避免历史里堆叠的 assistant 文本反过来诱导模型复读
                     if output_messages:
                         for om in output_messages:
                             text_parts = [c.text for c in getattr(om, 'content', []) if getattr(c, 'type', '') == 'output_text' and getattr(c, 'text', '')]
-                            if text_parts:
-                                reply_text = ''.join(text_parts)
-                                # 立即回调：通知外部推送 UI 气泡/日志
-                                if on_text_output:
-                                    on_text_output(reply_text)
-                                time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                formatted = f"{time_str} <{config.system.ai_name}> {reply_text}\n"
-                                session_state.conversation_context.add_message(formatted)
-                                session_state.memory_batch.add_entry(
-                                    text=formatted.rstrip(),
-                                    fixed_keywords=[],
-                                )
+                            if not text_parts:
+                                continue
+                            stray_text = ''.join(text_parts).strip()
+                            if stray_text:
+                                logger.info(f"[文本输出忽略] 模型未通过 speak 工具发言，已丢弃: {stray_text[:80]}")
 
                     # 启动新的工具调用为后台异步任务（不阻塞循环）
                     if tool_calls:
@@ -588,9 +592,6 @@ class LingYiCore:
                     task.cancel()
                 session_state.activity_tracker.complete(call_id)
             background_tasks.clear()
-            # 还原外部注入的 assistant_reply_callback（避免 chat_log 包装层泄漏）
-            if external_assistant_cb is not None:
-                session_state.tool_context["assistant_reply_callback"] = external_assistant_cb
 
         # 对话结束后启动空闲计时器，如果 10 分钟内无新对话则强制刷新未保存的记忆
         session_state.schedule_idle_flush(memory_writer)
@@ -616,6 +617,8 @@ class LingYiCore:
             "session_key": session_state.session_key,
             "_pending_images": kwargs.get("_pending_images", []),
             "_session_state": session_state,
+            # speak 工具需要这个回调把文本送到 UI 气泡 + TTS（外部传入 on_text_output 的包装版）
+            "_on_text_output": session_state.tool_context.get("_on_text_output"),
         }
         if self.tool_manager.has_tool(tc.name):
             result = await self.tool_manager.execute_tool(tc.name, tc_args, context)
@@ -694,7 +697,7 @@ class LingYiCore:
 
         formatted = f"[图片{{{description}}}]"
         try:
-            session_state.conversation_context.add_message(formatted + "\n")
+            session_state.conversation_context.add_message(formatted, role="user")
         except Exception as e:
             logger.warning(f"[图片描述] 写入会话上下文失败: {e}")
         try:

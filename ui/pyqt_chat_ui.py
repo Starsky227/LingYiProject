@@ -58,7 +58,10 @@ class ChatWindow(QWidget):
     chunk_received = pyqtSignal(str)
     thinking_received = pyqtSignal(str)
     finished_reply = pyqtSignal()
-    immediate_reply_signal = pyqtSignal(str)  # AI 回复立即推送（不等待循环结束）
+    immediate_reply_signal = pyqtSignal(str)  # AI 整段回复推送（非流式模式 / 兑底）
+    stream_sentence_signal = pyqtSignal(str, bool)  # 流式句子推送 (sentence, is_first)
+    stream_delta_signal = pyqtSignal(str)  # 流式逐 token 推送（用于生长气泡的字符浮现）
+    stream_finish_signal = pyqtSignal()    # 流式回复封口（生长气泡停止生长，启动 10s 计时）
     external_user_message = pyqtSignal(str)
     _pending_file_signal = pyqtSignal(str, str, str)
     _silent_process_signal = pyqtSignal()  # 后台服务触发静默处理（如 OCR 文字注入）
@@ -269,6 +272,9 @@ class ChatWindow(QWidget):
         self.thinking_received.connect(self._on_thinking)
         self.finished_reply.connect(self._on_finish_reply)
         self.immediate_reply_signal.connect(self._on_immediate_reply)
+        self.stream_sentence_signal.connect(self._on_stream_sentence)
+        self.stream_delta_signal.connect(self._on_stream_delta)
+        self.stream_finish_signal.connect(self._on_stream_finish)
         self.external_user_message.connect(self._on_user_send)
         self._pending_file_signal.connect(self._on_pending_file_added)
         self._silent_process_signal.connect(self._on_silent_process_trigger)
@@ -452,9 +458,9 @@ class ChatWindow(QWidget):
         self._current_reply = ""
 
     def _on_immediate_reply(self, text: str):
-        """AI 回复立即触发 — 每条回复独立创建气泡，不等待循环结束"""
+        """AI 整段回复调用（非流式模式 / 兑底）— 创建一个完整气泡"""
         import re
-        # 剥离 <thinking> 标签（部分模型可能在文本中嵌入）
+        # 剩离 <thinking> 标签（部分模型可能在文本中嵌入）
         clean = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL).strip()
         if not clean:
             return
@@ -464,6 +470,38 @@ class ChatWindow(QWidget):
         chat_page.add_bubble(AI_NAME, clean, timestamp_str, is_self=False)
         if self._pet_window is not None:
             self._pet_window.show_bubble(clean)
+
+    def _on_stream_sentence(self, sentence: str, is_first: bool):
+        """流式模式：句子级回调。
+
+        UI 已由 stream_delta_signal（生长气泡）负责逐 token 浮现，
+        这里不再创建额外气泡，仅保留作为 TTS / 日志 / 调试钩子。
+        is_first 标志由调用方使用（如 TTS 切换首句策略）。
+        """
+        # 主聊天页 与 助手浮窗 都改走 _on_stream_delta 的生长气泡
+        return
+
+    def _on_stream_delta(self, delta: str):
+        """流式逐 token 推送 —— 主聊天页 + 助手浮窗 共用生长气泡。
+
+        过滤 <thinking> 标签的边界处理较复杂，这里假定模型不会在 token 流里
+        穿插 thinking 标签（thinking 走独立的 reasoning 通道）。
+        """
+        if not delta:
+            return
+        # 主聊天页：生长气泡
+        chat_page = self.main_window.chat_page
+        chat_page.append_streaming_delta(AI_NAME, delta)
+        # 助手浮窗：生长气泡
+        if self._pet_window is not None:
+            self._pet_window.append_streaming_delta(delta)
+
+    def _on_stream_finish(self):
+        """流式回复结束：封口主聊天页与助手浮窗的生长气泡。"""
+        chat_page = self.main_window.chat_page
+        chat_page.finish_streaming_bubble()
+        if self._pet_window is not None:
+            self._pet_window.finish_streaming_bubble()
 
     # ---- 静默处理（后台服务触发） ----
 

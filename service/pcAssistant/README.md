@@ -28,8 +28,8 @@ service/pcAssistant/
 │   ├── stepfun_tts_service.py         # 阶跃星辰 TTS（备选）
 │   └── design_voice/                  # 音色克隆/音色设计辅助脚本
 │
-└── tools/                           # 注册到 LingYiCore 的 PC 专属工具
-    └── send_reply/                    # 助手模式下"是否回复"决策工具
+└── tools/                           # PC 专属工具目录（目前为空）
+    └── (send_reply 工具已废弃，助手模式现直接输出文本作为发言，留空则沉默)
 ```
 
 行数概览（含空行）：
@@ -138,7 +138,7 @@ exit_assistant_mode()
 is_assistant_mode() -> bool
 ```
 
-切换 `LingYiCore.main_prompt` 为 [prompt/](prompt/) 中的助手专用人格，并注册 `pc-` 前缀的工具（如 [tools/send_reply](tools/send_reply/)）。
+切换 `LingYiCore.main_prompt` 为 [prompt/](prompt/) 中的助手专用人格。助手模式下模型可直接输出文本作为发言（流式），留空 message 表示沉默。
 
 ---
 

@@ -42,7 +42,7 @@
 | `activity_tracker` | `ActiveToolTracker` | 跟踪当前正在执行的工具（call_id, name, args, task），可被 `cancel_task` 工具取消 |
 | `input_buffer` | `InputBuffer` | 模型思考期间外部到达的消息暂存，工具循环间隙释放给模型 |
 | `conversation_context` | `ConversationContext(max_messages=25)` | 滚动维护最近 25 条格式化消息（含图片描述、valuable 工具结果） |
-| `tool_context: dict` | — | 调用方注入的运行期上下文，常见键：`screen_capture_enabled`、`assistant_reply_callback`、`session`、`event` 等 |
+| `tool_context: dict` | — | 调用方注入的运行期上下文，常见键：`screen_capture_enabled`、`session`、`event` 等 |
 | `external_pending_images: list[dict]` | — | 外部注入的待处理图片 `[{data_url, description}]`（如助手模式截屏） |
 | `screen_context: str` | — | 屏幕 OCR 最新文字（被动环境信息） |
 | `scratchpad: str` | — | AI 可读写的临时便签（session 级） |
@@ -132,7 +132,7 @@ await lingyi.process_message("default",
 await lingyi.flush_all_pending_memory()  # 关闭时
 ```
 
-`session.tool_context` 由调用方塞入运行期回调与上下文（`screen_capture_enabled`、`assistant_reply_callback`、QQ 的 `bot/event/session` 等）。
+`session.tool_context` 由调用方塞入运行期回调与上下文（`screen_capture_enabled`、QQ 的 `bot/event/session` 等）。
 
 ## 调参
 

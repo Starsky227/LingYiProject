@@ -16,7 +16,7 @@
                 },
                 "predicate": {
                     "type": "string",
-                    "description": "关系谓词。"
+                    "description": "关系谓词，(起始节点){关系谓词}(目标节点)应该能连起来形成一个相对顺畅的语义关系。"
                 },
                 "source": {
                     "type": "string",

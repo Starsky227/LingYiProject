@@ -7,7 +7,6 @@ MCP服务器 - 独立的MCP工具调度服务
 
 import asyncio
 import json
-import logging
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional, List
@@ -19,12 +18,6 @@ from .mcp_scheduler import MCPScheduler
 from system.config import config, logger
 # 能力发现逻辑已由注册中心承担，移除独立能力管理器
 # 精简：移除流式工具调用与独立工具解析执行，统一走调度器与管理器
-
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

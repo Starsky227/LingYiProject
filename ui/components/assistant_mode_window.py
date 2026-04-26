@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import (
     Qt, QTimer, QPropertyAnimation, QPoint, pyqtSignal, QSize, QEasingCurve,
 )
-from PyQt5.QtGui import QPixmap, QCursor, QFont, QFontMetrics
+from PyQt5.QtGui import QPixmap, QCursor, QFont, QFontMetrics, QTextDocument, QTextOption
 
 
 # ------------------------------------------------------------------ #
@@ -32,11 +32,15 @@ class _BubbleLabel(QLabel):
     PADDING_V = 8
     BORDER = 1
 
-    def __init__(self, text: str, parent: QWidget):
+    def __init__(self, text: str, parent: QWidget, streaming: bool = False):
+        """
+        Args:
+            text: 初始文本（streaming 模式下可为空字符串，由 set_text 后续追加）
+            streaming: True 时不立即启动生命周期计时器，等 start_lifetime() 被显式调用
+        """
         super().__init__(parent)
         self.setWordWrap(True)
         self.setTextFormat(Qt.PlainText)
-        self.setText(text)
         self.setFont(QFont("Microsoft YaHei", 9))
         self.setStyleSheet("""
             QLabel {
@@ -55,38 +59,69 @@ class _BubbleLabel(QLabel):
         shadow.setColor(Qt.gray)
         self.setGraphicsEffect(shadow)
 
-        # 用 QFontMetrics 自己算宽高：
-        # - 单行能放下 → 宽度 = 实际文本宽度（短文本不被拉伸）
-        # - 超过最大宽 → 锁定到 MAX_BUBBLE_WIDTH 并按 word-wrap 计算所需高度
-        fm = QFontMetrics(self.font())
-        chrome_w = (self.PADDING_H + self.BORDER) * 2  # 左右 padding + 边框
-        chrome_h = (self.PADDING_V + self.BORDER) * 2
-        max_text_w = self.MAX_BUBBLE_WIDTH - chrome_w
+        # 内部状态
+        self._opacity = 1.0
+        self._streaming = streaming
 
-        single_line_w = fm.horizontalAdvance(text)
-        if single_line_w <= max_text_w and "\n" not in text:
-            text_w = single_line_w
-        else:
-            text_w = max_text_w
-        text_rect = fm.boundingRect(
-            0, 0, text_w, 0,
-            Qt.TextWordWrap | Qt.TextWrapAnywhere,
-            text,
-        )
-        # +2 给字体 hinting 的安全裕量，避免末字被裁
-        self.setFixedSize(text_rect.width() + chrome_w + 2,
-                          text_rect.height() + chrome_h + 2)
+        # 设置初始文本并计算尺寸（空字符串也给一个最小尺寸，让气泡能先出现再生长）
+        self.set_text(text or "")
         self.show()
 
-        # 淡出动画用的透明度效果（和阴影分开，套在外层不行，直接用 windowOpacity 替代）
-        self._opacity = 1.0
-
-        # 生命周期计时器
+        # 生命周期计时器（streaming 模式下延迟到 start_lifetime() 启动）
         self._life_timer = QTimer(self)
         self._life_timer.setSingleShot(True)
         self._life_timer.setInterval(self.BUBBLE_LIFETIME_MS)
         self._life_timer.timeout.connect(self._start_fade_out)
-        self._life_timer.start()
+        if not streaming:
+            self._life_timer.start()
+
+    # ------------------------------------------------------------------ #
+    #  尺寸计算 / 文本更新
+    # ------------------------------------------------------------------ #
+
+    def set_text(self, text: str) -> None:
+        """更新气泡文本并重新计算尺寸（流式追加时反复调用）。"""
+        self.setText(text)
+        fm = QFontMetrics(self.font())
+        chrome_w = (self.PADDING_H + self.BORDER) * 2
+        chrome_h = (self.PADDING_V + self.BORDER) * 2
+        max_text_w = self.MAX_BUBBLE_WIDTH - chrome_w
+
+        SAFETY_PX = 4
+        # 空字符串：给一个最小占位宽度，避免 0 尺寸导致气泡看不到
+        if not text:
+            text_w = fm.horizontalAdvance("…") + SAFETY_PX
+            text_h = fm.height()
+        else:
+            single_line_w = fm.horizontalAdvance(text) + SAFETY_PX
+            if single_line_w <= max_text_w and "\n" not in text:
+                text_w = single_line_w
+                text_h = fm.height()
+            else:
+                doc = QTextDocument()
+                doc.setDefaultFont(self.font())
+                opt = QTextOption()
+                opt.setWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+                doc.setDefaultTextOption(opt)
+                doc.setTextWidth(max_text_w)
+                doc.setPlainText(text)
+                size = doc.size()
+                text_w = max_text_w
+                text_h = int(size.height()) + 2
+        self.setFixedSize(text_w + chrome_w + 2, text_h + chrome_h + 2)
+
+    def append_delta(self, delta: str) -> None:
+        """流式追加：把新 token 拼到现有文本后并重排尺寸。"""
+        if not delta:
+            return
+        new_text = (self.text() or "") + delta
+        self.set_text(new_text)
+
+    def start_lifetime(self) -> None:
+        """显式启动生命周期计时器（流式封口时调用）。"""
+        self._streaming = False
+        if not self._life_timer.isActive():
+            self._life_timer.start()
 
     def _start_fade_out(self):
         """开始淡出动画"""
@@ -136,6 +171,7 @@ class PetModeWindow(QWidget):
         self._dragging = False
         self._drag_start_pos = QPoint()
         self._active_bubbles: list[_BubbleLabel] = []  # 当前显示的气泡列表
+        self._streaming_bubble: _BubbleLabel | None = None  # 当前正在生长的流式气泡
 
         self._setup_window()
         self._setup_ui()
@@ -347,7 +383,55 @@ class PetModeWindow(QWidget):
             display_text = display_text[:197] + "..."
 
         bubble = _BubbleLabel(display_text, parent=None)
-        # 设置为独立顶层窗口（无边框 + 置顶 + 工具窗口）
+        self._mount_bubble(bubble)
+
+    # ---- 流式气泡：随 token 浮现的"生长气泡" ---- #
+
+    def start_streaming_bubble(self) -> _BubbleLabel:
+        """创建一个空白生长气泡。返回该气泡，后续通过 append_streaming_delta 追加。"""
+        # 若上一条流式气泡未封口，先封口（启动其生命周期）
+        self.finish_streaming_bubble()
+
+        bubble = _BubbleLabel("", parent=None, streaming=True)
+        self._mount_bubble(bubble)
+        self._streaming_bubble = bubble
+        return bubble
+
+    def append_streaming_delta(self, delta: str) -> None:
+        """向当前生长气泡追加 token 文本并重排。"""
+        bubble = getattr(self, "_streaming_bubble", None)
+        if bubble is None:
+            # 没有打开的流式气泡，自动开一个
+            bubble = self.start_streaming_bubble()
+        # 截断保护：超过 200 字以省略号收尾，避免无限增长
+        current = bubble.text() or ""
+        new_text = current + (delta or "")
+        if len(new_text) > 200:
+            new_text = new_text[:197] + "..."
+        bubble.set_text(new_text)
+        self._reposition_bubbles()
+
+    def finish_streaming_bubble(self) -> None:
+        """封口当前生长气泡 — 启动 10s 生命周期计时器。"""
+        bubble = getattr(self, "_streaming_bubble", None)
+        if bubble is None:
+            return
+        self._streaming_bubble = None
+        # 空气泡直接销毁（模型未输出任何文本）
+        if not (bubble.text() or "").strip():
+            try:
+                if bubble in self._active_bubbles:
+                    self._active_bubbles.remove(bubble)
+                bubble.close()
+                bubble.deleteLater()
+            except Exception:
+                pass
+            self._reposition_bubbles()
+            return
+        bubble.start_lifetime()
+
+    def _mount_bubble(self, bubble: "_BubbleLabel") -> None:
+        """把气泡设为独立顶层窗口、加入活动列表并重排位置。"""
         bubble.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
@@ -355,7 +439,6 @@ class PetModeWindow(QWidget):
         )
         bubble.setAttribute(Qt.WA_TranslucentBackground, False)
         bubble.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        # 注意：不要再调 bubble.adjustSize()，构造函数已用 QFontMetrics 锁定尺寸
         bubble.show()
 
         bubble.removed.connect(self._on_bubble_removed)
@@ -524,4 +607,5 @@ class PetModeWindow(QWidget):
             bubble.close()
             bubble.deleteLater()
         self._active_bubbles.clear()
+        self._streaming_bubble = None
         super().closeEvent(event)

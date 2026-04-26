@@ -17,12 +17,6 @@ from typing import Dict, Optional, List, Any, Callable, Awaitable, Generic, Type
 
 AI_NAME = config.system.ai_name
 
-# 配置日志
-logging.basicConfig(
-    level=logging.DEBUG if config.system.debug else getattr(logging, config.system.log_level.upper()),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
 # 屏蔽HTTP库的DEBUG日志
 logging.getLogger("httpcore.http11").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)

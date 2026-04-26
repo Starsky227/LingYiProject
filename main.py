@@ -243,29 +243,23 @@ class ServiceManager:
                 print(f"⚠️  Agent服务器: 端口 {get_server_port('agent_server')} 已被占用，跳过启动")
                 service_status['Agent'] = "端口占用"
             
-            # 显示服务启动计划
-            print("\n📋 服务启动计划:")
+            # 显示被跳过的服务（端口占用等）
             for service, status in service_status.items():
-                if status == "准备启动":
-                    print(f"   🔄 {service}服务器: 正在启动...")
-                else:
-                    print(f"   ⚠️  {service}服务器: {status}")
-            
-            print("\n🚀 开始启动服务...")
-            print("-" * 30)
+                if status != "准备启动":
+                    print(f"⚠️  {service}服务器: {status}")
 
             # 批量启动所有线程
             for name, thread in threads:
-                thread.start()
-                print(f"✅ {name}服务器: 启动线程已创建")
+                try:
+                    thread.start()
+                    print(f"✅ {name}服务器: 启动成功")
+                except Exception as e:
+                    print(f"❌ {name}服务器: 启动失败 - {e}")
 
             # 等待所有服务启动（给服务器启动时间）
-            print("⏳ 等待服务初始化...")
             time.sleep(2)
 
             self._services_ready = True
-            print("-" * 30)
-            print(f"🎉 服务启动完成: {len(threads)} 个服务正在运行")
             print("=" * 50)
             
         except Exception as e:
@@ -467,7 +461,11 @@ class ServiceManager:
         return self._assistant_mode
 
     def enter_assistant_mode(self) -> bool:
-        """进入助手模式：注入 LY_assistant_prompt，启用 send_reply 工具。"""
+        """进入助手模式：注入 LY_assistant_prompt。
+
+        助手模式下模型可直接输出文本作为发言（享受流式能力）；
+        若决定不发言，模型输出空 message 即可。
+        """
         if self._assistant_mode:
             return True
         if not self._lingyi:
@@ -522,17 +520,6 @@ def _deffered_init_services():
         # 注入 LingYiCore 引用（助手模式 prompt 切换需要）
         if lingyi:
             service_manager.set_lingyi(lingyi)
-
-            # 注册助手模式工具（pc- 前缀），始终可用但仅在助手 prompt 指引下调用
-            try:
-                from brain.lingyi_core.tool_manager import LocalToolRegistry
-                _assistant_tools_dir = Path(os.path.dirname(__file__)) / "service" / "pcAssistant" / "tools"
-                _pc_registry = LocalToolRegistry(_assistant_tools_dir)
-                _pc_registry.load_items()
-                lingyi.tool_manager.register_sub_registry("pc-", _pc_registry)
-                logger.info(f"助手模式工具已注册: {[s.get('name') for s in _pc_registry.get_schema()]}")
-            except Exception as e:
-                logger.warning(f"助手模式工具注册失败: {e}")
         
         print("=" * 30)
         print(f'【{AI_NAME}】已启动')
@@ -706,72 +693,51 @@ if __name__ == "__main__":
                 service_manager is not None and service_manager.is_screen_capture_enabled()
             )
 
-            # ---- 统一的即时回复处理器 ----
-            # 每条 AI 回复（send_reply 工具 / 模型文本输出）立即推送 UI 气泡 + 写日志 + TTS
+            # ---- 统一的回复处理器 ----
+            # 模型唯一发言通道是 brain/tools/speak 工具：
+            # 模型决定要发言时调用 speak(text=...)，工具 handler 通过 on_text_output 回调
+            # 推送 UI 气泡 + TTS。"不调用 speak" 即为保持沉默。
+            # （之前的流式 / 空message-沉默约定已废弃，模型纯文本输出会被丢弃。）
             all_immediate_replies: list[str] = []
 
-            # 语音交互：准备流式 TTS（仅非助手模式 + 流式 TTS 配置时启用）
-            stream_cb = None
+            voice_running = bool(
+                service_manager and service_manager.is_voice_interaction_running()
+            )
             voice_mcp = None
-            use_stream_tts = config.tts.stream
-            if not is_assistant and service_manager and service_manager.is_voice_interaction_running():
+            if voice_running:
                 try:
                     from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
                     voice_mcp = VoiceMCPService.get_instance()
-                    if voice_mcp.has_tts and use_stream_tts:
-                        voice_mcp.start_streaming()
-                        def _on_sentence(sentence: str, is_first: bool) -> None:
-                            voice_mcp.speak_sentence(sentence, is_first)
-                        stream_cb = _on_sentence
+                    if not voice_mcp.has_tts:
+                        voice_mcp = None
                 except Exception as e:
-                    logger.warning(f"语音交互回调设置失败: {e}")
+                    logger.warning(f"语音服务获取失败: {e}")
+                    voice_mcp = None
 
             def _on_reply_immediate(text: str):
-                """每条 AI 回复立即触发 — UI 气泡 + TTS（chat_log 由 lingyi_core 统一写入）"""
+                """speak 工具触发的发言回调：UI 整段气泡 + TTS 整段播放。"""
                 all_immediate_replies.append(text)
                 if window:
                     window.immediate_reply_signal.emit(text)
-                # 非流式 TTS：逐条播放（流式 TTS 由 stream_cb 按句子处理，此处跳过）
-                if stream_cb is None and service_manager and service_manager.is_voice_interaction_running():
+                if voice_mcp:
                     try:
-                        from mcpserver.voice_service.voice_mcp_service import VoiceMCPService
-                        _voice = VoiceMCPService.get_instance()
-                        if _voice.has_tts:
-                            _voice.stream_speak(text)
+                        voice_mcp.stream_speak(text)
                     except Exception as e:
-                        logger.warning(f"即时回复 TTS 失败: {e}")
-
-            # 助手模式：send_reply 工具回调
-            if is_assistant:
-                session_state.tool_context["assistant_reply_callback"] = _on_reply_immediate
+                        logger.warning(f"speak 工具 TTS 失败: {e}")
 
             # 异步处理消息（提交到后台常驻 loop）
             response = submit_async(
                 lingyi.process_message(
                     "default",
-                    stream_text_callback=stream_cb,
-                    on_text_output=_on_reply_immediate if not is_assistant else None,
+                    on_text_output=_on_reply_immediate,
                 )
             )
-
-            # 流式会话结束：启动播放完毕监视
-            if voice_mcp and stream_cb:
-                try:
-                    voice_mcp.finish_streaming()
-                except Exception as e:
-                    logger.warning(f"语音交互流式结束处理失败: {e}")
-
-            # 提取最终回复内容（用于 messages 历史记录）
-            if is_assistant:
-                session_state.tool_context.pop("assistant_reply_callback", None)
 
             if all_immediate_replies:
                 reply = "\n".join(all_immediate_replies)
             else:
-                # 兜底：如果即时回调未触发，尝试从 response 提取（chat_log 已由 lingyi_core 写入）
-                reply = _extract_reply_text(response) if not is_assistant else ""
-                if reply:
-                    on_response(reply)
+                # 模型本轮选择沉默（未调用 speak），无气泡产生。
+                reply = ""
 
             # 统一返回 UI 可识别结构（用于 messages 历史，不再触发气泡）
             return [{"role": "assistant", "content": reply or ""}]

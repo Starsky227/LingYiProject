@@ -22,6 +22,7 @@ class ChatBubble(QFrame):
     def __init__(self, sender: str, content: str, timestamp: str, is_self: bool = False, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent; border: none;")
+        self._is_self = is_self
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
@@ -45,6 +46,8 @@ class ChatBubble(QFrame):
         bubble.setWordWrap(True)
         bubble.setTextInteractionFlags(Qt.TextSelectableByMouse)
         bubble.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        # 暴露给外部：流式生长气泡使用
+        self.bubble_label = bubble
 
         # 气泡最大宽度为父容器的80%（通过 stretch 比例 1:4 实现）
         if is_self:
@@ -83,6 +86,17 @@ class ChatBubble(QFrame):
             bubble_wrapper.addWidget(bubble, 4)  # 气泡占 80%
             bubble_wrapper.addStretch(1)   # 右侧留白 20%
             layout.addLayout(bubble_wrapper)
+
+    def append_text(self, delta: str) -> None:
+        """流式追加：把新 token 拼到现有文本后。QLabel 的 word-wrap 会自动重排尺寸。"""
+        if not delta:
+            return
+        current = self.bubble_label.text() or ""
+        self.bubble_label.setText(current + delta)
+
+    def set_text(self, text: str) -> None:
+        """直接覆盖文本（流式封口时用于清理/收尾）。"""
+        self.bubble_label.setText(text or "")
 
 
 class ThinkingBubble(QFrame):
@@ -279,6 +293,8 @@ class ChatPage(QWidget):
 
         # 思考中气泡引用
         self._thinking_bubble = None
+        # 流式生长气泡引用（每轮回复一个）
+        self._streaming_bubble: ChatBubble | None = None
 
     # ---- 工具栏按钮工厂 ----
     def _make_toolbar_button(self, icon_text: str, tooltip: str) -> QPushButton:
@@ -363,6 +379,40 @@ class ChatPage(QWidget):
             self.chat_layout.removeWidget(self._thinking_bubble)
             self._thinking_bubble.deleteLater()
             self._thinking_bubble = None
+
+    # ---- 流式生长气泡 ----
+    def start_streaming_bubble(self, sender: str, timestamp: str = None) -> "ChatBubble":
+        """创建一个空白生长气泡，后续通过 append_streaming_delta 追加文本。"""
+        # 上一条若未封口，先封口（极少出现）
+        self.finish_streaming_bubble()
+        self.remove_thinking()
+        if timestamp is None:
+            timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        bubble = ChatBubble(sender, "", timestamp, is_self=False, parent=self.chat_content)
+        self.chat_layout.insertWidget(self.chat_layout.count() - 1, bubble)
+        self._streaming_bubble = bubble
+        self._scroll_to_bottom()
+        return bubble
+
+    def append_streaming_delta(self, sender: str, delta: str) -> None:
+        """向当前生长气泡追加 token；若不存在则懒创建。"""
+        if not delta:
+            return
+        if self._streaming_bubble is None:
+            self.start_streaming_bubble(sender)
+        self._streaming_bubble.append_text(delta)
+        self._scroll_to_bottom()
+
+    def finish_streaming_bubble(self) -> None:
+        """封口当前生长气泡。空内容直接删除。"""
+        bubble = self._streaming_bubble
+        if bubble is None:
+            return
+        self._streaming_bubble = None
+        text = (bubble.bubble_label.text() or "").strip()
+        if not text:
+            self.chat_layout.removeWidget(bubble)
+            bubble.deleteLater()
 
     def _scroll_to_bottom(self):
         """滚动到最底部"""
